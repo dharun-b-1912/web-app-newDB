@@ -1,0 +1,1104 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>ID Card Press</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&family=Roboto+Slab:wght@400;700&family=Source+Serif+4:wght@400;600;700&display=swap">
+<style>
+/* Layout: tool rail (size, template, artwork, data) | live card stage + print file | layers + properties. Stacks on phones with the stage first. */
+:root{
+  --bg:#eceff2; --panel:#ffffff; --fg:#15191d; --mute:#5a6670; --line:#d3d9de; --field:#f6f8f9;
+  --accent:#0a6fa8; --accent-fg:#ffffff; --stage:#dfe5ea; --stage-grid:#cfd7de;
+  --danger:#b3261e; --warn:#8a5a00; --ok:#1b7a3d;
+  --c:#00a6d6; --m:#e5007d; --y:#ffd400; --k:#15191d;
+  --ui:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1317; --panel:#171c21; --fg:#e6eaee; --mute:#93a0ab; --line:#2a323a; --field:#1d242b;
+  --accent:#4cb8ea; --accent-fg:#06202e; --stage:#11161b; --stage-grid:#1a2128;
+  --danger:#ff8a80; --warn:#f1c05b; --ok:#6fd08c; --k:#e6eaee; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1317; --panel:#171c21; --fg:#e6eaee; --mute:#93a0ab; --line:#2a323a; --field:#1d242b;
+  --accent:#4cb8ea; --accent-fg:#06202e; --stage:#11161b; --stage-grid:#1a2128;
+  --danger:#ff8a80; --warn:#f1c05b; --ok:#6fd08c; --k:#e6eaee; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 var(--ui);
+  padding-block:16px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3,p{margin:0}
+.wrap{max-width:1500px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+
+/* header */
+.top{display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.dots{display:grid;grid-template-columns:repeat(2,14px);gap:3px;flex:none}
+.dots i{width:14px;height:14px;border-radius:50%;display:block}
+.dots i:nth-child(1){background:var(--c)}.dots i:nth-child(2){background:var(--m)}
+.dots i:nth-child(3){background:var(--y)}.dots i:nth-child(4){background:var(--k)}
+.brand h1{font-size:20px;font-weight:700;letter-spacing:-.01em}
+.brand p{color:var(--mute);font-size:12.5px}
+.top-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#status{color:var(--mute);font-size:12.5px;max-width:42ch}
+#status.bad{color:var(--danger)} #status.good{color:var(--ok)}
+
+/* grid */
+.grid{display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1fr) minmax(260px,320px);gap:16px;align-items:start}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+@media (max-width:1120px){.grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.stage{grid-column:1/-1;order:-1}}
+@media (max-width:700px){.grid{grid-template-columns:minmax(0,1fr)}}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel>h2{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--mute)}
+.hint{color:var(--mute);font-size:12.5px}
+.mono{font-family:var(--mono);font-size:12px}
+
+/* controls */
+.f{display:flex;flex-direction:column;gap:4px;min-width:0}
+.f>span:first-child{font-size:12px;color:var(--mute)}
+input[type=text],input[type=number],select,textarea{width:100%;min-width:0;background:var(--field);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
+textarea{resize:vertical;min-height:70px}
+input[type=color]{width:34px;height:28px;padding:0;border:1px solid var(--line);border-radius:4px;background:var(--field);flex:none}
+.cw{display:flex;align-items:center;gap:8px}
+.cmyk{font-family:var(--mono);font-size:11.5px;color:var(--mute)}
+.r2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.r3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:6px 12px;border:1px solid var(--line);background:var(--field);border-radius:4px;cursor:pointer;font-weight:500;min-height:32px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.sm{padding:3px 8px;min-height:26px;font-size:12.5px}
+.btn.danger{color:var(--danger)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+label.btn:focus-within,.btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,#cv:focus-visible,.tpl:focus-visible,.lay-sel:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.seg button{border:0;background:var(--field);padding:6px 16px;cursor:pointer;font-weight:500}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-fg)}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px}
+.chk input{width:16px;height:16px;accent-color:var(--accent)}
+
+/* templates */
+.tpls{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.tpl{border:1px solid var(--line);background:var(--field);border-radius:4px;padding:6px;cursor:pointer;display:flex;flex-direction:column;gap:4px;align-items:center;font-size:12px}
+.tpl canvas{max-width:100%;height:auto;border:1px solid var(--line)}
+.tpl[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+
+/* artwork rows */
+.art{display:grid;grid-template-columns:1fr auto;gap:6px 8px;align-items:center}
+.art .nm{font-size:12px;color:var(--mute);overflow-wrap:anywhere}
+
+/* stage */
+.stage{gap:16px}
+.stagebox{background:var(--stage);background-image:linear-gradient(var(--stage-grid) 1px,transparent 1px),linear-gradient(90deg,var(--stage-grid) 1px,transparent 1px);background-size:20px 20px;border:1px solid var(--line);border-radius:6px;padding:20px 12px;display:flex;justify-content:center;overflow:auto}
+#cv{display:block;max-width:100%;height:auto;box-shadow:0 1px 2px rgba(0,0,0,.25),0 8px 24px rgba(0,0,0,.18);cursor:default;touch-action:none;background:#fff}
+.tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between}
+.recnav{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mute)}
+.legend b{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+
+/* layers */
+.layers{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.layers li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px;align-items:center}
+.lay-sel{display:flex;gap:8px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--field);border-radius:4px;padding:5px 8px;cursor:pointer;min-width:0}
+.lay-sel[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.lay-sel .tag{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;color:var(--mute);flex:none;width:42px}
+.lay-sel .lb{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.lay-act{display:flex;gap:2px}
+
+/* data */
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{border:1px solid var(--line);background:var(--field);border-radius:99px;padding:1px 9px;font-family:var(--mono);font-size:11.5px;cursor:pointer}
+.chip:hover{border-color:var(--accent)}
+details>summary{cursor:pointer;font-weight:600}
+details[open]>summary{margin-bottom:10px}
+details .stack{display:flex;flex-direction:column;gap:10px}
+
+/* preflight */
+.pf{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.pf li{display:grid;grid-template-columns:52px minmax(0,1fr);gap:8px;align-items:start;font-size:13px}
+.pill{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;border-radius:3px;padding:2px 0;text-align:center;border:1px solid currentColor}
+.pill.fix{color:var(--danger)}.pill.check{color:var(--warn)}.pill.ok{color:var(--ok)}
+.prog{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.prog>div{height:100%;width:0;background:var(--accent);transition:width .15s}
+@media (prefers-reduced-motion:reduce){.prog>div{transition:none}}
+.note{font-size:12.5px;color:var(--mute);border-left:3px solid var(--line);padding-left:10px}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div>
+        <h1>ID Card Press</h1>
+        <p>Design or upload, then export a print-ready CMYK PDF with bleed and crop marks.</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="status" role="status" aria-live="polite"></span>
+      <button class="btn primary" id="exportTop" type="button">Export CMYK PDF</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- LEFT -->
+    <div class="col">
+      <section class="panel" aria-labelledby="h-size">
+        <h2 id="h-size">Card size</h2>
+        <label class="f"><span>Preset</span>
+          <select id="preset">
+            <option value="l">CR80 landscape, 85.6 × 54 mm</option>
+            <option value="p">CR80 portrait, 54 × 85.6 mm</option>
+            <option value="c">Custom size</option>
+          </select>
+        </label>
+        <div class="r3">
+          <label class="f"><span>Width mm</span><input id="sw" type="number" step="0.1" min="20" max="300"></label>
+          <label class="f"><span>Height mm</span><input id="sh" type="number" step="0.1" min="20" max="300"></label>
+          <label class="f"><span>Bleed mm</span><input id="sb" type="number" step="0.5" min="0" max="10"></label>
+        </div>
+        <p class="hint">Most printers ask for 3 mm bleed. Changing the size re-applies the chosen template.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="h-tpl">
+        <h2 id="h-tpl">Template</h2>
+        <div class="tpls" id="tpls"></div>
+        <p class="hint">Applying a template replaces the elements and colours on both sides. Your uploaded artwork stays.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="h-art">
+        <h2 id="h-art">Your artwork</h2>
+        <div class="art">
+          <span>Front background</span>
+          <label class="btn sm">Upload<input class="sr" type="file" accept="image/*" id="bgF"></label>
+          <span class="nm" id="bgFn">None</span><button class="btn sm" id="bgFx" type="button" hidden>Remove</button>
+        </div>
+        <div class="art">
+          <span>Back background</span>
+          <label class="btn sm">Upload<input class="sr" type="file" accept="image/*" id="bgB"></label>
+          <span class="nm" id="bgBn">None</span><button class="btn sm" id="bgBx" type="button" hidden>Remove</button>
+        </div>
+        <div class="art">
+          <span>Logo</span>
+          <label class="btn sm">Upload<input class="sr" type="file" accept="image/*" id="logoF"></label>
+          <span class="nm" id="logoN">None</span><button class="btn sm" id="logoX" type="button" hidden>Remove</button>
+        </div>
+        <div class="r2">
+          <label class="f"><span>Front colour</span><span class="cw"><input type="color" id="bgcF"><span class="cmyk" id="bgcFm"></span></span></label>
+          <label class="f"><span>Back colour</span><span class="cw"><input type="color" id="bgcB"><span class="cmyk" id="bgcBm"></span></span></label>
+        </div>
+        <p class="hint" id="artHint"></p>
+        <div class="row">
+          <button class="btn sm" id="clrF" type="button">Clear elements, front</button>
+          <button class="btn sm" id="clrB" type="button">Clear elements, back</button>
+        </div>
+        <p class="hint">Finished artwork? Upload it as the background, clear the elements, and export. It is converted to CMYK as is.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="h-data">
+        <h2 id="h-data">People</h2>
+        <div class="recnav">
+          <button class="btn sm" id="prev" type="button" aria-label="Previous card">‹</button>
+          <select id="recSel" aria-label="Choose card"></select>
+          <button class="btn sm" id="next" type="button" aria-label="Next card">›</button>
+        </div>
+        <div id="recForm" class="stack" style="display:flex;flex-direction:column;gap:8px"></div>
+        <div class="row">
+          <button class="btn sm" id="addRec" type="button">Add card</button>
+          <button class="btn sm danger" id="delRec" type="button">Delete card</button>
+        </div>
+        <details open>
+          <summary>Import many cards</summary>
+          <div class="stack">
+            <p class="hint">Paste rows copied from Excel or Sheets, or choose a CSV file. The first row holds the column names. Use a <span class="mono">photo</span> column with photo file names.</p>
+            <textarea id="paste" id-hint="paste" placeholder="name&#9;designation&#9;idno&#9;photo"></textarea>
+            <div class="row">
+              <select id="impMode" aria-label="Import mode" style="width:auto"><option value="replace">Replace all cards</option><option value="append">Add to existing</option></select>
+              <button class="btn sm" id="impBtn" type="button">Import pasted rows</button>
+            </div>
+            <div class="row">
+              <label class="btn sm">Choose CSV file<input class="sr" type="file" accept=".csv,.tsv,.txt,text/csv" id="csvF"></label>
+              <button class="btn sm" id="csvTpl" type="button">Download CSV template</button>
+            </div>
+            <div class="row">
+              <label class="btn sm">Add photos (many)<input class="sr" type="file" accept="image/*" multiple id="photosF"></label>
+              <span class="hint" id="photoCount">No photos loaded</span>
+            </div>
+          </div>
+        </details>
+      </section>
+    </div>
+
+    <!-- CENTRE -->
+    <div class="col stage">
+      <section class="panel" aria-labelledby="h-prev">
+        <h2 id="h-prev">Card preview</h2>
+        <div class="tools">
+          <div class="seg" role="group" aria-label="Card side">
+            <button type="button" id="sideF" aria-pressed="true">Front</button>
+            <button type="button" id="sideB" aria-pressed="false">Back</button>
+          </div>
+          <label class="chk"><input type="checkbox" id="guides" checked>Show trim, bleed and safe lines</label>
+        </div>
+        <div class="stagebox"><canvas id="cv" tabindex="0" aria-label="Card preview. Drag elements to move them. Arrow keys nudge the selected element."></canvas></div>
+        <div class="legend">
+          <span><b style="color:var(--m)"></b>Trim (cut line)</span>
+          <span><b style="color:var(--c);border-top-style:dashed"></b>Bleed edge</span>
+          <span><b style="color:var(--ok);border-top-style:dashed"></b>Safe area, 3 mm in</span>
+        </div>
+        <p class="hint">Drag to move, drag the corner square to resize, arrow keys nudge by 0.1 mm (Shift for 1 mm). Shapes that touch the card edge extend into the bleed on their own.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="h-exp">
+        <h2 id="h-exp">Print file</h2>
+        <div class="r2">
+          <label class="f"><span>Layout</span>
+            <select id="xLayout">
+              <option value="card">One card per page, with crop marks</option>
+              <option value="sheet">Sheet with several cards per page</option>
+            </select>
+          </label>
+          <label class="f"><span>Paper (sheet layout)</span>
+            <select id="xPaper">
+              <option value="210x297">A4</option><option value="297x420">A3</option>
+              <option value="320x450">SRA3</option><option value="215.9x279.4">US Letter</option>
+            </select>
+          </label>
+          <label class="f"><span>Resolution</span>
+            <select id="xDpi"><option value="300">300 dpi (standard)</option><option value="600">600 dpi (fine text, larger file)</option></select>
+          </label>
+          <label class="f"><span>Cards</span>
+            <select id="xRecs"><option value="all">All cards</option><option value="cur">Current card only</option></select>
+          </label>
+          <label class="f"><span>Sides</span>
+            <select id="xSides"><option value="both">Front and back</option><option value="front">Front only</option><option value="back">Back only</option></select>
+          </label>
+          <label class="chk" style="align-self:end;padding-bottom:6px"><input type="checkbox" id="xMarks" checked>Crop marks</label>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="exportBtn" type="button">Export CMYK PDF</button>
+          <button class="btn" id="saveAgain" type="button" hidden>Save last file again</button>
+          <button class="btn" id="pfBtn" type="button">Run checks</button>
+        </div>
+        <div class="prog" id="progWrap" hidden><div id="prog"></div></div>
+        <ul class="pf" id="pf" aria-live="polite"></ul>
+        <p class="note">Colours are converted from screen RGB to CMYK with a standard formula, not a printer profile, and text is printed as 300 or 600 dpi pixels. Bright screen blues, greens and oranges print duller. Ask your printer for a proof or their colour profile before a large run.</p>
+      </section>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="col">
+      <section class="panel" aria-labelledby="h-lay">
+        <h2 id="h-lay">Elements on <span id="layerSide">front</span></h2>
+        <div class="row">
+          <button class="btn sm" id="addT" type="button">+ Text</button>
+          <button class="btn sm" id="addI" type="button">+ Image</button>
+          <button class="btn sm" id="addR" type="button">+ Shape</button>
+        </div>
+        <ul class="layers" id="layers"></ul>
+      </section>
+      <section class="panel" aria-labelledby="h-prop">
+        <h2 id="h-prop">Properties</h2>
+        <div id="props" class="stack" style="display:flex;flex-direction:column;gap:10px"></div>
+        <div class="chips" id="chips" aria-label="Insert a field into the selected text"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+/*#core-start*/
+const MM = 25.4, PT = 72 / 25.4;
+
+function toCmyk(rgba) {
+  const n = rgba.length / 4, out = new Uint8Array(n * 4);
+  for (let i = 0, j = 0; i < rgba.length; i += 4, j += 4) {
+    const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2], mx = Math.max(r, g, b);
+    if (mx === 0) { out[j + 3] = 255; continue; }
+    out[j] = Math.round((mx - r) * 255 / mx);
+    out[j + 1] = Math.round((mx - g) * 255 / mx);
+    out[j + 2] = Math.round((mx - b) * 255 / mx);
+    out[j + 3] = 255 - mx;
+  }
+  return out;
+}
+function hex2rgb(h) { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function cmykPct(hex) {
+  const [r, g, b] = hex2rgb(hex), mx = Math.max(r, g, b);
+  if (!mx) return [0, 0, 0, 100];
+  return [Math.round((mx - r) / mx * 100), Math.round((mx - g) / mx * 100), Math.round((mx - b) / mx * 100), Math.round((255 - mx) / 255 * 100)];
+}
+const cmykText = hex => { const [c, m, y, k] = cmykPct(hex); return `C${c} M${m} Y${y} K${k}`; };
+
+class Pdf {
+  constructor() {
+    this.parts = []; this.pos = 0; this.off = []; this.enc = new TextEncoder(); this.next = 3; this.pageIds = [];
+    this.bin(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]));
+  }
+  bin(u) { this.parts.push(u); this.pos += u.length; }
+  txt(s) { this.bin(this.enc.encode(s)); }
+  alloc() { return this.next++; }
+  obj(id, body) { this.off[id] = this.pos; this.txt(`${id} 0 obj\n${body}\nendobj\n`); }
+  stream(id, dict, data) {
+    this.off[id] = this.pos;
+    this.txt(`${id} 0 obj\n<< ${dict} /Length ${data.length} >>\nstream\n`);
+    this.bin(data);
+    this.txt('\nendstream\nendobj\n');
+  }
+  /* pw, ph and all item/trim coordinates are in mm, origin top-left. items: {w,h,data,z,x,y,mw,mh} */
+  page(pw, ph, trim, bl, items, marks) {
+    const pt = v => (v * PT).toFixed(3), res = [];
+    let content = '';
+    items.forEach((it, i) => {
+      const id = this.alloc();
+      this.stream(id, `/Type /XObject /Subtype /Image /Width ${it.w} /Height ${it.h} /ColorSpace /DeviceCMYK /BitsPerComponent 8${it.z ? ' /Filter /FlateDecode' : ''}`, it.data);
+      res.push(`/Im${i} ${id} 0 R`);
+      content += `q ${pt(it.mw)} 0 0 ${pt(it.mh)} ${pt(it.x)} ${pt(ph - it.y - it.mh)} cm /Im${i} Do Q\n`;
+    });
+    if (marks && marks.length) {
+      content += '1 1 1 1 K 0.25 w\n';
+      for (const [x1, y1, x2, y2] of marks) content += `${pt(x1)} ${pt(ph - y1)} m ${pt(x2)} ${pt(ph - y2)} l S\n`;
+    }
+    const cid = this.alloc();
+    this.stream(cid, '', this.enc.encode(content));
+    let boxes = '';
+    if (trim) {
+      const b = (x, y, w, h) => `[${pt(x)} ${pt(ph - y - h)} ${pt(x + w)} ${pt(ph - y)}]`;
+      boxes = `/TrimBox ${b(trim.x, trim.y, trim.w, trim.h)} /BleedBox ${b(Math.max(0, trim.x - bl), Math.max(0, trim.y - bl), Math.min(pw, trim.w + 2 * bl), Math.min(ph, trim.h + 2 * bl))} `;
+    }
+    const pid = this.alloc();
+    this.obj(pid, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pt(pw)} ${pt(ph)}] ${boxes}/Resources << /XObject << ${res.join(' ')} >> >> /Contents ${cid} 0 R >>`);
+    this.pageIds.push(pid);
+  }
+  finish() {
+    this.obj(2, `<< /Type /Pages /Kids [${this.pageIds.map(i => i + ' 0 R').join(' ')}] /Count ${this.pageIds.length} >>`);
+    this.obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+    const xref = this.pos, N = this.next;
+    let x = `xref\n0 ${N}\n0000000000 65535 f \n`;
+    for (let i = 1; i < N; i++) x += String(this.off[i]).padStart(10, '0') + ' 00000 n \n';
+    x += `trailer\n<< /Size ${N} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    this.txt(x);
+    return new Blob(this.parts, { type: 'application/pdf' });
+  }
+}
+function cropMarks(x0, y0, x1, y1, off, len) {
+  const m = [];
+  for (const cx of [x0, x1]) for (const cy of [y0, y1]) {
+    const dx = cx === x0 ? -1 : 1, dy = cy === y0 ? -1 : 1;
+    m.push([cx + dx * off, cy, cx + dx * (off + len), cy]);
+    m.push([cx, cy + dy * off, cx, cy + dy * (off + len)]);
+  }
+  return m;
+}
+async function deflate(u8) {
+  if (typeof CompressionStream === 'undefined') return { data: u8, z: false };
+  try {
+    const s = new Blob([u8]).stream().pipeThrough(new CompressionStream('deflate'));
+    return { data: new Uint8Array(await new Response(s).arrayBuffer()), z: true };
+  } catch (e) { return { data: u8, z: false }; }
+}
+/*#core-end*/
+
+/* ---------- state ---------- */
+const FONTS = ['IBM Plex Sans', 'Barlow Condensed', 'Poppins', 'Source Serif 4', 'Roboto Slab', 'Arial'];
+const COLS0 = ['name', 'designation', 'idno', 'department', 'phone', 'blood', 'dob', 'address', 'valid', 'org', 'photo'];
+const SAMPLES = [
+  { name: 'Aarav Menon', designation: 'Senior Engineer', idno: 'EMP-20418', department: 'Product Design', phone: '+91 98765 43210', blood: 'B+', dob: '14 Mar 1992', address: '12 Mill Road, Coimbatore 641001', valid: 'Dec 2027', org: 'Northfield Works', photo: '' },
+  { name: 'Meera Krishnan', designation: 'Quality Lead', idno: 'EMP-20533', department: 'Operations', phone: '+91 99440 11872', blood: 'O+', dob: '02 Nov 1988', address: '12 Mill Road, Coimbatore 641001', valid: 'Dec 2027', org: 'Northfield Works', photo: '' },
+  { name: 'Joseph Anthony Fernandes', designation: 'Facilities Coordinator', idno: 'EMP-20907', department: 'Administration', phone: '+91 90030 55621', blood: 'A-', dob: '29 Jul 1995', address: '12 Mill Road, Coimbatore 641001', valid: 'Dec 2027', org: 'Northfield Works', photo: '' }
+];
+const state = {
+  w: 85.6, h: 54, bleed: 3, safe: 3, side: 'front', tpl: 'corporate', preset: 'l',
+  sides: { front: { bg: '#ffffff', bgImg: null, bgName: '', els: [] }, back: { bg: '#ffffff', bgImg: null, bgName: '', els: [] } },
+  columns: COLS0.slice(), records: SAMPLES.map(r => ({ ...r })), cur: 0, sel: null,
+  photos: new Map(), logo: null, logoName: '', guides: true
+};
+let uid = 1; const nid = () => 'e' + (uid++);
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const geom = () => ({ w: state.w, h: state.h, bleed: state.bleed, safe: state.safe });
+const rec = () => state.records[state.cur] || {};
+const recLabel = (r, i) => (r.name || r[state.columns[0]] || '').trim() || 'Card ' + (i + 1);
+const selEl = () => state.sides[state.side].els.find(e => e.id === state.sel) || null;
+let dl = null;
+
+/* ---------- element factories ---------- */
+const T = o => ({ id: nid(), type: 'text', font: 'IBM Plex Sans', size: 9, weight: 400, color: '#14181c', align: 'left', text: '', fit: false, x: 0, y: 0, w: 40, h: 6, ...o });
+const R = o => ({ id: nid(), type: 'rect', fill: '#000000', radius: 0, x: 0, y: 0, w: 10, h: 10, ...o });
+const I = o => ({ id: nid(), type: 'image', src: 'photo', shape: 'rect', fit: 'cover', radius: 1.5, border: 0, borderColor: '#ffffff', img: null, srcName: '', x: 0, y: 0, w: 20, h: 25, ...o });
+
+/* ---------- templates (designed on CR80 and scaled to other sizes) ---------- */
+const PAL = {
+  corporate: { main: '#0f2f57', acc: '#1d7bd8', ink: '#14181c', sub: '#3a444d', tag: '#cfe0f5', label: 'EMPLOYEE ID' },
+  campus: { main: '#1b4332', acc: '#f4a261', ink: '#14181c', sub: '#3a444d', tag: '#d8f3dc', label: 'STUDENT ID' },
+  minimal: { main: '#111111', acc: '#e63946', ink: '#111111', sub: '#4a4f55', tag: '#ffffff', label: 'IDENTITY CARD' }
+};
+function baseLandscape(n) {
+  const p = PAL[n], W = 85.6, f = [], b = [];
+  if (n === 'corporate') {
+    f.push(R({ x: 0, y: 0, w: W, h: 14, fill: p.main }), I({ src: 'logo', x: 5, y: 3, w: 8, h: 8, fit: 'contain', radius: 0 }),
+      T({ text: '{org}', x: 15, y: 3.2, w: 66, size: 10, weight: 700, color: '#ffffff', fit: true }),
+      T({ text: p.label, x: 15, y: 8.6, w: 66, size: 5.5, weight: 500, color: p.tag }),
+      I({ x: 5, y: 18.5, w: 22, h: 28, shape: 'rounded' }),
+      T({ text: '{name}', x: 31, y: 19, w: 50, size: 13, weight: 700, color: p.ink, fit: true }),
+      T({ text: '{designation}', x: 31, y: 26, w: 50, size: 8.5, weight: 500, color: p.main }),
+      T({ text: 'ID: {idno}\nDept: {department}\nPhone: {phone}', x: 31, y: 33, w: 50, size: 7.5, color: p.sub }),
+      R({ x: 0, y: 51, w: W, h: 3, fill: p.acc }));
+  } else if (n === 'campus') {
+    f.push(R({ x: 0, y: 0, w: 28, h: 54, fill: p.main }), I({ x: 3, y: 8, w: 22, h: 22, shape: 'circle', border: 0.8, borderColor: '#ffffff' }),
+      T({ text: '{idno}', x: 1, y: 34, w: 26, size: 8, weight: 700, color: '#ffffff', align: 'center', fit: true }),
+      T({ text: 'Valid till {valid}', x: 1, y: 41, w: 26, size: 6, color: p.tag, align: 'center' }),
+      I({ src: 'logo', x: 33, y: 5, w: 8, h: 8, fit: 'contain', radius: 0 }),
+      T({ text: '{org}', x: 43, y: 6, w: 38, size: 9, weight: 700, color: p.main, fit: true }),
+      T({ text: p.label, x: 43, y: 11, w: 38, size: 5.5, weight: 600, color: p.acc }),
+      T({ text: '{name}', x: 33, y: 20, w: 48, size: 13, weight: 700, color: p.ink, fit: true }),
+      T({ text: '{designation}', x: 33, y: 27, w: 48, size: 8.5, weight: 500, color: p.sub }),
+      T({ text: '{department}\nPhone: {phone}\nBlood group: {blood}', x: 33, y: 33.5, w: 48, size: 7.5, color: p.sub }),
+      R({ x: 28, y: 51, w: W - 28, h: 3, fill: p.acc }));
+  } else {
+    f.push(R({ x: 0, y: 0, w: 3, h: 54, fill: p.acc }), I({ x: 9, y: 8, w: 24, h: 30, radius: 0, shape: 'rect' }),
+      T({ text: '{org}', x: 38, y: 8, w: 42, size: 6.5, weight: 600, color: p.acc, fit: true }),
+      T({ text: '{name}', x: 38, y: 13, w: 42, size: 13, weight: 700, color: p.ink, fit: true }),
+      T({ text: '{designation}', x: 38, y: 20.5, w: 42, size: 8.5, color: p.sub }),
+      T({ text: 'ID: {idno}\nPhone: {phone}\nValid till {valid}', x: 38, y: 29, w: 42, size: 7.5, color: p.ink }),
+      R({ x: 9, y: 44, w: 70, h: 0.25, fill: p.ink }),
+      T({ text: p.label, x: 9, y: 46, w: 70, size: 5.5, weight: 600, color: p.sub }));
+  }
+  b.push(R({ x: 0, y: 0, w: W, h: 8, fill: n === 'minimal' ? p.acc : p.main }),
+    T({ text: 'If found, please return to:', x: 5, y: 11, w: 75, size: 7, weight: 700, color: p.ink }),
+    T({ text: '{org}\n{address}', x: 5, y: 16, w: 75, size: 7.5, color: p.sub }),
+    T({ text: 'Blood group: {blood}\nDate of birth: {dob}\nValid till: {valid}', x: 5, y: 28, w: 75, size: 7.5, color: p.ink }),
+    R({ x: 5, y: 44, w: 28, h: 0.25, fill: p.ink }), T({ text: 'Authorised signatory', x: 5, y: 45.2, w: 40, size: 6, color: p.sub }),
+    R({ x: 0, y: 51, w: W, h: 3, fill: p.acc }));
+  return { f, b };
+}
+function basePortrait(n) {
+  const p = PAL[n], W = 54, f = [], b = [];
+  if (n === 'corporate') {
+    f.push(R({ x: 0, y: 0, w: W, h: 20, fill: p.main }), I({ src: 'logo', x: 4, y: 4, w: 9, h: 9, fit: 'contain', radius: 0 }),
+      T({ text: '{org}', x: 15, y: 4.2, w: 35, size: 9, weight: 700, color: '#ffffff', fit: true }),
+      T({ text: p.label, x: 15, y: 9.4, w: 35, size: 5.2, weight: 500, color: p.tag }),
+      I({ x: 12, y: 24, w: 30, h: 36, shape: 'rounded' }),
+      T({ text: '{name}', x: 4, y: 63, w: 46, size: 12, weight: 700, color: p.ink, align: 'center', fit: true }),
+      T({ text: '{designation}', x: 4, y: 69.5, w: 46, size: 8, weight: 500, color: p.main, align: 'center', fit: true }),
+      T({ text: 'ID: {idno}', x: 4, y: 75, w: 46, size: 7.5, color: p.sub, align: 'center' }),
+      R({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }));
+  } else if (n === 'campus') {
+    f.push(R({ x: 0, y: 0, w: W, h: 34, fill: p.main }), I({ src: 'logo', x: 4, y: 4, w: 8, h: 8, fit: 'contain', radius: 0 }),
+      T({ text: '{org}', x: 14, y: 5, w: 36, size: 8.5, weight: 700, color: '#ffffff', fit: true }),
+      I({ x: 14, y: 17, w: 26, h: 26, shape: 'circle', border: 1, borderColor: '#ffffff' }),
+      T({ text: '{name}', x: 4, y: 47, w: 46, size: 12, weight: 700, color: p.ink, align: 'center', fit: true }),
+      T({ text: '{designation}', x: 4, y: 53.5, w: 46, size: 8, weight: 500, color: p.sub, align: 'center', fit: true }),
+      T({ text: p.label, x: 4, y: 61, w: 46, size: 6, weight: 600, color: p.acc, align: 'center' }),
+      T({ text: 'ID: {idno}\nPhone: {phone}\nValid till {valid}', x: 4, y: 66, w: 46, size: 7.5, color: p.sub, align: 'center' }),
+      R({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }));
+  } else {
+    f.push(R({ x: 0, y: 0, w: W, h: 3, fill: p.acc }), T({ text: '{org}', x: 7, y: 8, w: 40, size: 7, weight: 600, color: p.acc, fit: true }),
+      I({ x: 9, y: 15, w: 36, h: 42, radius: 0, shape: 'rect' }),
+      T({ text: '{name}', x: 7, y: 61, w: 40, size: 12.5, weight: 700, color: p.ink, fit: true }),
+      T({ text: '{designation}', x: 7, y: 67.5, w: 40, size: 8.5, color: p.sub, fit: true }),
+      R({ x: 7, y: 74, w: 40, h: 0.25, fill: p.ink }),
+      T({ text: 'ID: {idno}  ·  {valid}', x: 7, y: 76, w: 40, size: 7, color: p.ink, fit: true }));
+  }
+  b.push(R({ x: 0, y: 0, w: W, h: 8, fill: n === 'minimal' ? p.acc : p.main }),
+    T({ text: 'If found, please return to:', x: 5, y: 12, w: 44, size: 7, weight: 700, color: p.ink }),
+    T({ text: '{org}\n{address}', x: 5, y: 17, w: 44, size: 7.5, color: p.sub }),
+    T({ text: 'Blood group: {blood}\nDate of birth: {dob}\nValid till: {valid}', x: 5, y: 40, w: 44, size: 7.5, color: p.ink }),
+    R({ x: 5, y: 70, w: 30, h: 0.25, fill: p.ink }), T({ text: 'Authorised signatory', x: 5, y: 71.2, w: 44, size: 6, color: p.sub }),
+    R({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }));
+  return { f, b };
+}
+function makeTemplate(n, W, H) {
+  const portrait = H > W, base = portrait ? basePortrait(n) : baseLandscape(n);
+  const bw = portrait ? 54 : 85.6, bh = portrait ? 85.6 : 54, sx = W / bw, sy = H / bh, ss = Math.min(sx, sy);
+  const sc = els => els.map(e => { e.x *= sx; e.y *= sy; e.w *= sx; e.h *= sy; if (e.size) e.size *= ss; return e; });
+  return { front: sc(base.f), back: sc(base.b) };
+}
+function applyTemplate(n) {
+  state.tpl = n;
+  const t = makeTemplate(n, state.w, state.h);
+  state.sides.front.els = t.front; state.sides.back.els = t.back;
+  state.sides.front.bg = '#ffffff'; state.sides.back.bg = '#ffffff';
+  state.sel = null;
+  refreshAll();
+}
+
+/* ---------- drawing ---------- */
+function rr(ctx, x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function expand(tpl, r) {
+  return String(tpl || '').split('\n').map(line => {
+    let had = false, any = false;
+    const out = line.replace(/\{([^}]+)\}/g, (m, k) => { had = true; const v = String(r[k.trim()] ?? ''); if (v) any = true; return v; });
+    return had && !any ? null : out;
+  }).filter(l => l !== null).join('\n');
+}
+function getPhoto(r) {
+  if (r.__img) return r.__img;
+  const n = String(r.photo || '').trim().toLowerCase(); if (!n) return null;
+  return state.photos.get(n) || state.photos.get(n.replace(/\.[a-z0-9]+$/, '')) || null;
+}
+function drawFit(ctx, img, x, y, w, h, fit) {
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const s = fit === 'contain' ? Math.min(w / iw, h / ih) : Math.max(w / iw, h / ih);
+  const dw = iw * s, dh = ih * s;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  return MM / s; /* effective dpi */
+}
+const elLabel = e => e.type === 'text' ? (e.text.split('\n')[0] || 'Text').slice(0, 26) : e.type === 'image' ? (e.src === 'photo' ? 'Photo' : e.src === 'logo' ? 'Logo' : 'Image') : 'Shape';
+
+function drawText(ctx, el, r, g, o) {
+  const txt = expand(el.text, r);
+  if (!txt) { el._box = { x: el.x, y: el.y, w: el.w, h: 4 }; return; }
+  let size = el.size * MM / 72;
+  const fam = `"${el.font}", Arial, sans-serif`, setF = s => { ctx.font = `${el.weight} ${s}px ${fam}`; };
+  setF(size);
+  if (el.fit) {
+    const longest = Math.max(...txt.split('\n').map(l => ctx.measureText(l).width));
+    if (longest > el.w) size = Math.max(size * 0.55, size * el.w / longest);
+    setF(size);
+  }
+  const lines = [];
+  for (const para of txt.split('\n')) {
+    let cur = '';
+    for (const wd of para.split(' ')) {
+      const t = cur ? cur + ' ' + wd : wd;
+      if (cur && ctx.measureText(t).width > el.w) { lines.push(cur); cur = wd; } else cur = t;
+    }
+    lines.push(cur);
+  }
+  const lh = size * 1.3, widest = Math.max(...lines.map(l => ctx.measureText(l).width));
+  ctx.fillStyle = el.color; ctx.textBaseline = 'top'; ctx.textAlign = el.align;
+  const ax = el.align === 'center' ? el.x + el.w / 2 : el.align === 'right' ? el.x + el.w : el.x;
+  lines.forEach((l, i) => ctx.fillText(l, ax, el.y + i * lh + (lh - size) / 2));
+  const hh = lines.length * lh;
+  el._box = { x: el.x, y: el.y, w: el.w, h: hh };
+  if (o.collect) {
+    const x0 = el.align === 'center' ? el.x + el.w / 2 - widest / 2 : el.align === 'right' ? el.x + el.w - widest : el.x, x1 = x0 + widest;
+    const y0 = el.y, y1 = el.y + hh;
+    if (x0 < -0.01 || y0 < -0.01 || x1 > g.w + 0.01 || y1 > g.h + 0.01) o.collect.issues.push({ key: 'cut:' + el.id, lv: 'fix', t: `“${elLabel(el)}” runs past the cut line` });
+    else if (x0 < g.safe - 0.01 || y0 < g.safe - 0.01 || x1 > g.w - g.safe + 0.01 || y1 > g.h - g.safe + 0.01) o.collect.issues.push({ key: 'safe:' + el.id, lv: 'check', t: `“${elLabel(el)}” is inside the ${g.safe} mm safe area edge` });
+    if (widest > el.w + 0.2) o.collect.issues.push({ key: 'fit:' + el.id, lv: 'check', t: `“${elLabel(el)}” is wider than its box` });
+  }
+}
+function drawImageEl(ctx, el, r, g, o) {
+  const img = el.src === 'photo' ? getPhoto(r) : el.src === 'logo' ? state.logo : el.img;
+  el._box = { x: el.x, y: el.y, w: el.w, h: el.h };
+  const path = () => { if (el.shape === 'circle') { ctx.beginPath(); ctx.ellipse(el.x + el.w / 2, el.y + el.h / 2, el.w / 2, el.h / 2, 0, 0, Math.PI * 2); } else rr(ctx, el.x, el.y, el.w, el.h, el.shape === 'rounded' ? el.radius : 0); };
+  ctx.save(); path(); ctx.clip();
+  if (img) {
+    const dpi = drawFit(ctx, img, el.x, el.y, el.w, el.h, el.fit);
+    if (o.collect) o.collect.issues.push({ key: 'dpi:' + el.id, lv: dpi < 150 ? 'fix' : dpi < 250 ? 'check' : 'ok', dpi, t: `${elLabel(el)} image` });
+  } else if (o.preview) {
+    ctx.fillStyle = '#c9d1d8'; ctx.fillRect(el.x, el.y, el.w, el.h);
+    ctx.fillStyle = '#9aa6b0';
+    const cx = el.x + el.w / 2, cy = el.y + el.h * 0.38, rad = Math.min(el.w, el.h) * 0.2;
+    ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx, el.y + el.h * 0.92, el.w * 0.36, el.h * 0.3, 0, Math.PI, 0); ctx.fill();
+  }
+  ctx.restore();
+  if (el.border > 0) { path(); ctx.lineWidth = el.border; ctx.strokeStyle = el.borderColor; ctx.stroke(); }
+}
+function drawRect(ctx, el, g) {
+  const b = g.bleed; let x1 = el.x, y1 = el.y, x2 = el.x + el.w, y2 = el.y + el.h;
+  if (!el.radius) { if (x1 <= 0.01) x1 = -b; if (y1 <= 0.01) y1 = -b; if (x2 >= g.w - 0.01) x2 = g.w + b; if (y2 >= g.h - 0.01) y2 = g.h + b; }
+  ctx.fillStyle = el.fill;
+  if (el.radius) { rr(ctx, x1, y1, x2 - x1, y2 - y1, el.radius); ctx.fill(); } else ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+  el._box = { x: el.x, y: el.y, w: el.w, h: el.h };
+}
+/* ppm = pixels per mm. Canvas covers trim + bleed on every side. */
+function drawSide(ctx, S, r, g, ppm, o = {}) {
+  ctx.save();
+  ctx.setTransform(ppm, 0, 0, ppm, g.bleed * ppm, g.bleed * ppm);
+  ctx.fillStyle = S.bg; ctx.fillRect(-g.bleed, -g.bleed, g.w + 2 * g.bleed, g.h + 2 * g.bleed);
+  if (S.bgImg) {
+    const dpi = drawFit(ctx, S.bgImg, -g.bleed, -g.bleed, g.w + 2 * g.bleed, g.h + 2 * g.bleed, 'cover');
+    if (o.collect) o.collect.issues.push({ key: 'bgdpi', lv: dpi < 150 ? 'fix' : dpi < 250 ? 'check' : 'ok', dpi, t: 'Background artwork' });
+  }
+  for (const el of S.els) {
+    if (el.type === 'rect') drawRect(ctx, el, g);
+    else if (el.type === 'image') drawImageEl(ctx, el, r, g, o);
+    else drawText(ctx, el, r, g, o);
+  }
+  if (o.guides) {
+    ctx.lineWidth = 0.22; ctx.strokeStyle = '#e5007d'; ctx.setLineDash([]); ctx.strokeRect(0, 0, g.w, g.h);
+    ctx.setLineDash([1, 0.8]); ctx.strokeStyle = '#00a6d6'; ctx.strokeRect(-g.bleed + 0.11, -g.bleed + 0.11, g.w + 2 * g.bleed - 0.22, g.h + 2 * g.bleed - 0.22);
+    ctx.strokeStyle = '#2a9d4a'; ctx.strokeRect(g.safe, g.safe, g.w - 2 * g.safe, g.h - 2 * g.safe); ctx.setLineDash([]);
+  }
+  if (o.sel) {
+    const e = S.els.find(x => x.id === o.sel);
+    if (e && e._box) {
+      const b = e._box; ctx.lineWidth = 0.3; ctx.strokeStyle = '#1a8cff'; ctx.setLineDash([]); ctx.strokeRect(b.x, b.y, b.w, b.h);
+      ctx.fillStyle = '#1a8cff'; ctx.fillRect(b.x + b.w - 1.2, b.y + b.h - 1.2, 2.4, 2.4);
+    }
+  }
+  ctx.restore();
+}
+
+const cv = $('#cv'), PREV_PPM = 12;
+let raf = 0, pfTimer = 0;
+function draw() {
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(() => {
+    const g = geom(), tw = g.w + 2 * g.bleed, th = g.h + 2 * g.bleed;
+    cv.width = Math.round(tw * PREV_PPM); cv.height = Math.round(th * PREV_PPM);
+    cv.style.width = Math.min(tw * 7.5, 760) + 'px';
+    drawSide(cv.getContext('2d'), state.sides[state.side], rec(), g, cv.width / tw, { preview: true, guides: state.guides, sel: state.sel });
+  });
+}
+async function ensureFonts() {
+  const jobs = [];
+  for (const S of Object.values(state.sides)) for (const e of S.els) if (e.type === 'text') jobs.push(document.fonts.load(`${e.weight} 16px "${e.font}"`).catch(() => { }));
+  await Promise.all(jobs);
+}
+function schedulePreflight() {
+  clearTimeout(pfTimer);
+  if (state.records.length <= 60) pfTimer = setTimeout(() => runPreflight(), 700);
+}
+function changed() { draw(); schedulePreflight(); }
+
+/* ---------- thumbnails ---------- */
+function renderThumbs() {
+  const box = $('#tpls'); box.innerHTML = '';
+  for (const [n, label] of [['corporate', 'Corporate'], ['campus', 'Campus'], ['minimal', 'Minimal']]) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'tpl'; b.dataset.t = n; b.setAttribute('aria-pressed', state.tpl === n);
+    const c = document.createElement('canvas'), g = geom(), tw = g.w + 2 * g.bleed, th = g.h + 2 * g.bleed;
+    const maxW = 88, maxH = 66, ppm = Math.min(maxW / tw, maxH / th) * 2;
+    c.width = Math.round(tw * ppm); c.height = Math.round(th * ppm); c.style.width = c.width / 2 + 'px';
+    const t = makeTemplate(n, g.w, g.h);
+    drawSide(c.getContext('2d'), { bg: '#ffffff', bgImg: null, els: t.front }, SAMPLES[0], g, c.width / tw, { preview: true });
+    b.append(c, document.createTextNode(label)); box.append(b);
+  }
+}
+
+/* ---------- panels ---------- */
+function refreshAll() {
+  $('#sw').value = state.w; $('#sh').value = state.h; $('#sb').value = state.bleed; $('#preset').value = state.preset;
+  $('#bgcF').value = state.sides.front.bg; $('#bgcB').value = state.sides.back.bg;
+  $('#bgcFm').textContent = cmykText(state.sides.front.bg); $('#bgcBm').textContent = cmykText(state.sides.back.bg);
+  $('#guides').checked = state.guides;
+  $('#sideF').setAttribute('aria-pressed', state.side === 'front'); $('#sideB').setAttribute('aria-pressed', state.side === 'back');
+  $('#layerSide').textContent = state.side;
+  for (const [id, S] of [['bgF', state.sides.front], ['bgB', state.sides.back]]) { $('#' + id + 'n').textContent = S.bgName || 'None'; $('#' + id + 'x').hidden = !S.bgImg; }
+  $('#logoN').textContent = state.logoName || 'None'; $('#logoX').hidden = !state.logo;
+  const g = geom(), pxw = Math.round((g.w + 2 * g.bleed) * 300 / MM), pxh = Math.round((g.h + 2 * g.bleed) * 300 / MM);
+  $('#artHint').textContent = `For sharp print, make background images ${pxw} × ${pxh} px (card plus bleed at 300 dpi), PNG or JPG.`;
+  renderThumbs(); renderLayers(); renderProps(); renderRecords(); renderChips(); changed();
+}
+function renderLayers() {
+  const ul = $('#layers'); ul.innerHTML = '';
+  const els = state.sides[state.side].els;
+  if (!els.length) { ul.innerHTML = '<li class="hint" style="display:block">No elements. Add text, an image or a shape, or pick a template.</li>'; return; }
+  for (let i = els.length - 1; i >= 0; i--) {
+    const e = els[i], li = document.createElement('li');
+    li.innerHTML = `<button type="button" class="lay-sel" data-id="${e.id}" aria-pressed="${e.id === state.sel}"><span class="tag">${e.type === 'rect' ? 'shape' : e.type}</span><span class="lb">${esc(elLabel(e))}</span></button>
+      <span class="lay-act"><button class="btn sm" type="button" data-act="up" data-id="${e.id}" aria-label="Bring forward" title="Bring forward">↑</button><button class="btn sm" type="button" data-act="down" data-id="${e.id}" aria-label="Send backward" title="Send backward">↓</button><button class="btn sm" type="button" data-act="dup" data-id="${e.id}" aria-label="Duplicate" title="Duplicate">⧉</button><button class="btn sm danger" type="button" data-act="del" data-id="${e.id}" aria-label="Delete" title="Delete">✕</button></span>`;
+    ul.append(li);
+  }
+}
+const fld = (label, k, v, type = 'text', extra = '') => `<label class="f"><span>${label}</span><input id="p_${k}" data-k="${k}" type="${type}" value="${esc(v)}" ${extra}></label>`;
+const sel = (label, k, v, opts) => `<label class="f"><span>${label}</span><select id="p_${k}" data-k="${k}">${opts.map(([val, t]) => `<option value="${val}"${val === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>`;
+const col = (label, k, v) => `<label class="f"><span>${label}</span><span class="cw"><input id="p_${k}" data-k="${k}" type="color" value="${v}"><span class="cmyk">${cmykText(v)}</span></span></label>`;
+const num = (label, k, v, step = 0.1) => fld(label, k, +(+v).toFixed(2), 'number', `step="${step}"`);
+function renderProps() {
+  const box = $('#props'), e = selEl();
+  if (!e) { box.innerHTML = '<p class="hint">Click an element on the card or in the list to edit it.</p>'; return; }
+  let h = '';
+  if (e.type === 'text') {
+    h += `<label class="f"><span>Text (use {name}, {idno}… for each person)</span><textarea id="p_text" data-k="text">${esc(e.text)}</textarea></label>`;
+    h += `<div class="r2">${sel('Font', 'font', e.font, FONTS.map(f => [f, f]))}${sel('Weight', 'weight', String(e.weight), [['400', 'Regular'], ['500', 'Medium'], ['600', 'Semibold'], ['700', 'Bold']])}</div>`;
+    h += `<div class="r2">${num('Size pt', 'size', e.size, 0.5)}${sel('Align', 'align', e.align, [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']])}</div>`;
+    h += col('Colour', 'color', e.color);
+    h += `<label class="chk"><input id="p_fit" data-k="fit" type="checkbox"${e.fit ? ' checked' : ''}>Shrink long text to fit the width</label>`;
+    h += `<div class="r3">${num('X mm', 'x', e.x)}${num('Y mm', 'y', e.y)}${num('Width mm', 'w', e.w)}</div>`;
+  } else if (e.type === 'image') {
+    h += sel('Picture', 'src', e.src, [['photo', 'Person photo'], ['logo', 'Logo'], ['custom', 'Uploaded image']]);
+    if (e.src === 'custom') h += `<div class="row"><label class="btn sm">Upload image<input class="sr" type="file" accept="image/*" id="elImg"></label><span class="hint">${esc(e.srcName || 'None')}</span></div>`;
+    h += `<div class="r2">${sel('Shape', 'shape', e.shape, [['rect', 'Square corners'], ['rounded', 'Rounded'], ['circle', 'Circle']])}${sel('Fit', 'fit', e.fit, [['cover', 'Fill and crop'], ['contain', 'Show whole picture']])}</div>`;
+    h += `<div class="r2">${num('Corner radius mm', 'radius', e.radius)}${num('Border mm', 'border', e.border)}</div>`;
+    h += col('Border colour', 'borderColor', e.borderColor);
+    h += `<div class="r2">${num('X mm', 'x', e.x)}${num('Y mm', 'y', e.y)}${num('Width mm', 'w', e.w)}${num('Height mm', 'h', e.h)}</div>`;
+  } else {
+    h += col('Fill', 'fill', e.fill);
+    h += `<div class="r2">${num('X mm', 'x', e.x)}${num('Y mm', 'y', e.y)}${num('Width mm', 'w', e.w)}${num('Height mm', 'h', e.h)}</div>`;
+    h += num('Corner radius mm', 'radius', e.radius);
+  }
+  box.innerHTML = h;
+}
+function syncProps() {
+  const e = selEl(); if (!e) return;
+  for (const k of ['x', 'y', 'w', 'h']) { const i = $('#p_' + k); if (i && document.activeElement !== i) i.value = +(+e[k]).toFixed(2); }
+}
+function renderChips() {
+  $('#chips').innerHTML = state.columns.filter(c => c !== 'photo').map(c => `<button type="button" class="chip" data-c="${esc(c)}">{${esc(c)}}</button>`).join('');
+}
+function renderRecords() {
+  const s = $('#recSel');
+  s.innerHTML = state.records.map((r, i) => `<option value="${i}">${i + 1}. ${esc(recLabel(r, i))}</option>`).join('');
+  s.value = state.cur;
+  const r = rec();
+  let h = '';
+  for (const c of state.columns) {
+    if (c === 'photo') continue;
+    h += `<label class="f"><span>${esc(c)}</span><input type="text" data-col="${esc(c)}" id="rf_${esc(c)}" value="${esc(r[c] ?? '')}"></label>`;
+  }
+  h += `<div class="f"><span>photo</span><div class="row"><label class="btn sm">Upload for this card<input class="sr" type="file" accept="image/*" id="recPhoto"></label><button class="btn sm" id="recPhotoX" type="button"${getPhoto(r) ? '' : ' hidden'}>Remove</button></div><span class="hint">${r.__img ? 'Uploaded photo in use' : getPhoto(r) ? 'Matched: ' + esc(r.photo) : r.photo ? 'No file named ' + esc(r.photo) + ' loaded' : 'No photo'}</span></div>`;
+  $('#recForm').innerHTML = h;
+  updatePhotoCount();
+}
+function updatePhotoCount() {
+  const n = state.photos.size, ph = state.records.filter(r => r.__img || getPhoto(r)).length;
+  $('#photoCount').textContent = n ? `${n} photo file${n > 1 ? 's' : ''} loaded · ${ph} of ${state.records.length} cards matched` : (ph ? `${ph} of ${state.records.length} cards have a photo` : 'No photos loaded');
+}
+function say(t, cls = '') { const s = $('#status'); s.textContent = t; s.className = cls; }
+
+/* ---------- interactions ---------- */
+function select(id) { state.sel = id; renderLayers(); renderProps(); draw(); }
+$('#layers').addEventListener('click', ev => {
+  const b = ev.target.closest('button'); if (!b) return;
+  const els = state.sides[state.side].els, i = els.findIndex(e => e.id === b.dataset.id); if (i < 0) return;
+  const a = b.dataset.act;
+  if (!a) return select(b.dataset.id);
+  if (a === 'up' && i < els.length - 1) [els[i], els[i + 1]] = [els[i + 1], els[i]];
+  if (a === 'down' && i > 0) [els[i], els[i - 1]] = [els[i - 1], els[i]];
+  if (a === 'dup') { const c = { ...els[i], id: nid(), x: els[i].x + 2, y: els[i].y + 2 }; els.splice(i + 1, 0, c); state.sel = c.id; }
+  if (a === 'del') { els.splice(i, 1); if (state.sel === b.dataset.id) state.sel = null; }
+  renderLayers(); renderProps(); changed();
+});
+$('#addT').onclick = () => { const e = T({ text: 'New text', x: 6, y: 6, w: 40, size: 9 }); state.sides[state.side].els.push(e); select(e.id); changed(); };
+$('#addI').onclick = () => { const e = I({ x: 6, y: 6, w: 18, h: 18, shape: 'rect' }); state.sides[state.side].els.push(e); select(e.id); changed(); };
+$('#addR').onclick = () => { const e = R({ x: 6, y: 6, w: 30, h: 8, fill: '#1d7bd8' }); state.sides[state.side].els.push(e); select(e.id); changed(); };
+
+$('#props').addEventListener('input', ev => {
+  const t = ev.target, k = t.dataset.k, e = selEl(); if (!k || !e) return;
+  let v = t.type === 'checkbox' ? t.checked : t.type === 'number' ? parseFloat(t.value) : t.value;
+  if (t.type === 'number' && Number.isNaN(v)) return;
+  if (k === 'weight') v = parseInt(v, 10);
+  e[k] = v;
+  if (t.type === 'color') { const o = t.parentElement.querySelector('.cmyk'); if (o) o.textContent = cmykText(v); }
+  if (k === 'src') renderProps();
+  if (k === 'text') renderLayers();
+  if (k === 'font' || k === 'weight') ensureFonts().then(draw);
+  changed();
+});
+$('#props').addEventListener('change', async ev => {
+  if (ev.target.id !== 'elImg') return;
+  const f = ev.target.files[0], e = selEl(); if (!f || !e) return;
+  e.img = await loadImage(f); e.srcName = f.name; renderProps(); renderLayers(); changed();
+});
+$('#chips').addEventListener('click', ev => {
+  const b = ev.target.closest('.chip'); if (!b) return;
+  const e = selEl();
+  if (!e || e.type !== 'text') { say('Select a text element first, then click a field to add it.', 'bad'); return; }
+  e.text += (e.text && !e.text.endsWith('\n') ? ' ' : '') + '{' + b.dataset.c + '}';
+  renderProps(); renderLayers(); changed();
+});
+
+/* canvas pointer: move, resize, select */
+let drag = null;
+const toMm = ev => { const r = cv.getBoundingClientRect(), g = geom(), tw = g.w + 2 * g.bleed; const k = tw / r.width; return { x: (ev.clientX - r.left) * k - g.bleed, y: (ev.clientY - r.top) * k - g.bleed, k }; };
+cv.addEventListener('pointerdown', ev => {
+  cv.focus(); const p = toMm(ev), els = state.sides[state.side].els, cur = selEl();
+  if (cur && cur._box) {
+    const b = cur._box;
+    if (Math.abs(p.x - (b.x + b.w)) < 2.2 * Math.max(1, p.k * 2) && Math.abs(p.y - (b.y + b.h)) < 2.2 * Math.max(1, p.k * 2)) {
+      drag = { mode: 'size', el: cur, sx: p.x, sy: p.y, ow: cur.w, oh: cur.h }; cv.setPointerCapture(ev.pointerId); return;
+    }
+  }
+  let hit = null;
+  for (let i = els.length - 1; i >= 0; i--) { const b = els[i]._box; if (b && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) { hit = els[i]; break; } }
+  if (!hit) { if (state.sel) select(null); return; }
+  if (hit.id !== state.sel) select(hit.id);
+  drag = { mode: 'move', el: hit, sx: p.x, sy: p.y, ox: hit.x, oy: hit.y }; cv.setPointerCapture(ev.pointerId);
+});
+cv.addEventListener('pointermove', ev => {
+  const p = toMm(ev);
+  if (!drag) {
+    const cur = selEl(); let c = 'default';
+    if (cur && cur._box) { const b = cur._box; if (Math.abs(p.x - (b.x + b.w)) < 2.2 && Math.abs(p.y - (b.y + b.h)) < 2.2) c = 'nwse-resize'; else if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) c = 'move'; }
+    cv.style.cursor = c; return;
+  }
+  const e = drag.el, snap = v => Math.round(v * 2) / 2;
+  if (drag.mode === 'move') {
+    let nx = snap(drag.ox + p.x - drag.sx), ny = snap(drag.oy + p.y - drag.sy);
+    const cx = nx + e.w / 2; if (Math.abs(cx - state.w / 2) < 0.8) nx = state.w / 2 - e.w / 2;
+    e.x = nx; e.y = ny;
+  } else {
+    e.w = Math.max(1, snap(drag.ow + p.x - drag.sx));
+    if (e.type !== 'text') e.h = Math.max(0.2, snap(drag.oh + p.y - drag.sy));
+  }
+  syncProps(); draw();
+});
+const endDrag = () => { if (drag) { drag = null; schedulePreflight(); } };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('keydown', ev => {
+  const e = selEl(); if (!e) return;
+  const st = ev.shiftKey ? 1 : 0.1;
+  const mv = { ArrowLeft: ['x', -st], ArrowRight: ['x', st], ArrowUp: ['y', -st], ArrowDown: ['y', st] }[ev.key];
+  if (mv) { ev.preventDefault(); e[mv[0]] = +(e[mv[0]] + mv[1]).toFixed(2); syncProps(); changed(); }
+  else if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); const els = state.sides[state.side].els; els.splice(els.indexOf(e), 1); state.sel = null; renderLayers(); renderProps(); changed(); }
+  else if (ev.key === 'Escape') select(null);
+});
+
+$('#sideF').onclick = () => { state.side = 'front'; state.sel = null; refreshAll(); };
+$('#sideB').onclick = () => { state.side = 'back'; state.sel = null; refreshAll(); };
+$('#guides').onchange = e => { state.guides = e.target.checked; draw(); };
+
+/* size */
+function setSize(w, h, preset) { state.w = w; state.h = h; state.preset = preset; applyTemplate(state.tpl); }
+$('#preset').onchange = e => { const v = e.target.value; if (v === 'l') setSize(85.6, 54, 'l'); else if (v === 'p') setSize(54, 85.6, 'p'); else { state.preset = 'c'; refreshAll(); } };
+const sizeInput = () => { const w = parseFloat($('#sw').value), h = parseFloat($('#sh').value); if (w >= 20 && h >= 20) { state.w = w; state.h = h; state.preset = (w === 85.6 && h === 54) ? 'l' : (w === 54 && h === 85.6) ? 'p' : 'c'; applyTemplate(state.tpl); } };
+$('#sw').onchange = sizeInput; $('#sh').onchange = sizeInput;
+$('#sb').onchange = e => { const v = parseFloat(e.target.value); if (v >= 0 && v <= 10) { state.bleed = v; refreshAll(); } };
+$('#tpls').addEventListener('click', ev => { const b = ev.target.closest('.tpl'); if (b) applyTemplate(b.dataset.t); });
+
+/* artwork */
+function loadImage(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => res(img); img.onerror = () => { rej(new Error('Could not read ' + file.name)); };
+    img.src = url;
+  });
+}
+function bindBg(inputId, side) {
+  $('#' + inputId).addEventListener('change', async ev => {
+    const f = ev.target.files[0]; if (!f) return;
+    try { state.sides[side].bgImg = await loadImage(f); state.sides[side].bgName = f.name; say('Artwork added to the ' + side + '.', 'good'); } catch (e) { say(e.message, 'bad'); }
+    ev.target.value = ''; refreshAll();
+  });
+  $('#' + inputId + 'x').onclick = () => { state.sides[side].bgImg = null; state.sides[side].bgName = ''; refreshAll(); };
+}
+bindBg('bgF', 'front'); bindBg('bgB', 'back');
+$('#logoF').addEventListener('change', async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  try { state.logo = await loadImage(f); state.logoName = f.name; say('Logo added.', 'good'); } catch (e) { say(e.message, 'bad'); }
+  ev.target.value = ''; refreshAll();
+});
+$('#logoX').onclick = () => { state.logo = null; state.logoName = ''; refreshAll(); };
+$('#bgcF').oninput = e => { state.sides.front.bg = e.target.value; $('#bgcFm').textContent = cmykText(e.target.value); changed(); };
+$('#bgcB').oninput = e => { state.sides.back.bg = e.target.value; $('#bgcBm').textContent = cmykText(e.target.value); changed(); };
+$('#clrF').onclick = () => { state.sides.front.els = []; if (state.side === 'front') state.sel = null; refreshAll(); };
+$('#clrB').onclick = () => { state.sides.back.els = []; if (state.side === 'back') state.sel = null; refreshAll(); };
+
+/* records */
+$('#recSel').onchange = e => { state.cur = +e.target.value; renderRecords(); changed(); };
+$('#prev').onclick = () => { state.cur = (state.cur - 1 + state.records.length) % state.records.length; renderRecords(); changed(); };
+$('#next').onclick = () => { state.cur = (state.cur + 1) % state.records.length; renderRecords(); changed(); };
+$('#recForm').addEventListener('input', ev => {
+  const c = ev.target.dataset.col; if (!c) return;
+  rec()[c] = ev.target.value;
+  const o = $('#recSel').options[state.cur]; if (o) o.textContent = `${state.cur + 1}. ${recLabel(rec(), state.cur)}`;
+  changed();
+});
+$('#recForm').addEventListener('change', async ev => {
+  if (ev.target.id !== 'recPhoto') return;
+  const f = ev.target.files[0]; if (!f) return;
+  try { rec().__img = await loadImage(f); } catch (e) { say(e.message, 'bad'); }
+  renderRecords(); changed();
+});
+$('#recForm').addEventListener('click', ev => { if (ev.target.id === 'recPhotoX') { const r = rec(); delete r.__img; r.photo = ''; renderRecords(); changed(); } });
+$('#addRec').onclick = () => {
+  const n = {}; state.columns.forEach(c => n[c] = ''); const r = rec();
+  ['org', 'valid', 'address'].forEach(k => { if (k in n) n[k] = r[k] || ''; });
+  state.records.push(n); state.cur = state.records.length - 1; renderRecords(); changed(); say('Card added.');
+};
+$('#delRec').onclick = () => {
+  if (state.records.length === 1) { state.columns.forEach(c => state.records[0][c] = ''); delete state.records[0].__img; }
+  else { state.records.splice(state.cur, 1); state.cur = Math.min(state.cur, state.records.length - 1); }
+  renderRecords(); changed();
+};
+
+function parseCSV(t) {
+  t = t.replace(/^﻿/, '');
+  const first = t.split(/\r?\n/)[0] || '';
+  const d = first.includes('\t') ? '\t' : (first.split(';').length > first.split(',').length ? ';' : ',');
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === d) { row.push(cur); cur = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && t[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+    else cur += c;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+const normKey = (s, i) => (String(s).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')) || 'col' + (i + 1);
+function importRows(text) {
+  const rows = parseCSV(text).filter(r => r.some(c => String(c).trim() !== ''));
+  if (rows.length < 2) { say('Add a header row and at least one data row.', 'bad'); return; }
+  const heads = rows[0].map(normKey), mode = $('#impMode').value;
+  const list = rows.slice(1).map(r => { const o = {}; heads.forEach((h, i) => o[h] = String(r[i] ?? '').trim()); return o; });
+  if (mode === 'replace') { state.columns = [...new Set(heads)]; state.records = list; state.cur = 0; }
+  else { heads.forEach(h => { if (!state.columns.includes(h)) state.columns.push(h); }); list.forEach(o => state.columns.forEach(c => { if (!(c in o)) o[c] = ''; })); state.records.push(...list); state.cur = state.records.length - list.length; }
+  state.records.forEach(r => state.columns.forEach(c => { if (!(c in r)) r[c] = ''; }));
+  say(`Imported ${list.length} card${list.length > 1 ? 's' : ''}. Columns: ${heads.join(', ')}.`, 'good');
+  renderChips(); renderRecords(); renderLayers(); changed();
+}
+$('#impBtn').onclick = () => importRows($('#paste').value);
+$('#csvF').addEventListener('change', async ev => { const f = ev.target.files[0]; if (!f) return; importRows(await f.text()); ev.target.value = ''; });
+$('#photosF').addEventListener('change', async ev => {
+  const files = [...ev.target.files]; let bad = 0;
+  for (const f of files) { try { const img = await loadImage(f), k = f.name.toLowerCase(); state.photos.set(k, img); state.photos.set(k.replace(/\.[a-z0-9]+$/, ''), img); } catch (e) { bad++; } }
+  ev.target.value = ''; state.photos.size; renderRecords(); changed();
+  say(bad ? `${bad} file${bad > 1 ? 's' : ''} could not be read.` : 'Photos added.', bad ? 'bad' : 'good');
+});
+async function saveFile(name, data) {
+  if (!dl) { say('Saving files is not available in this view. Open the page in claude.ai to download.', 'bad'); return false; }
+  try { await dl.save({ filename: name, data }); return true; }
+  catch (e) { say(e && e.code === 'declined' ? 'Save cancelled.' : 'Could not save: ' + ((e && e.message) || 'unknown error'), 'bad'); return false; }
+}
+$('#csvTpl').onclick = async () => {
+  const head = state.columns.join(','), row = state.columns.map(c => c === 'photo' ? 'aarav.jpg' : (SAMPLES[0][c] || '')).map(v => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v).join(',');
+  if (await saveFile('id-cards-template.csv', head + '\n' + row + '\n')) say('CSV template saved.', 'good');
+};
+
+/* ---------- preflight ---------- */
+function runPreflight() {
+  const g = geom(), out = [], add = (lv, t) => out.push({ lv, t });
+  if (g.bleed < 2) add('check', `Bleed is ${g.bleed} mm. Most printers need 3 mm.`); else add('ok', `Bleed ${g.bleed} mm on every side.`);
+  const c = document.createElement('canvas'), ppm = 2, tw = g.w + 2 * g.bleed, th = g.h + 2 * g.bleed;
+  c.width = Math.round(tw * ppm); c.height = Math.round(th * ppm);
+  const cx = c.getContext('2d'), agg = new Map();
+  state.records.forEach((r, ri) => {
+    for (const side of ['front', 'back']) {
+      const info = { issues: [] };
+      drawSide(cx, state.sides[side], r, g, c.width / tw, { collect: info });
+      for (const is of info.issues) {
+        const key = side + is.key;
+        if (!agg.has(key)) agg.set(key, { ...is, side, recs: [], min: Infinity });
+        const a = agg.get(key); a.recs.push(ri); if (is.dpi) { a.min = Math.min(a.min, is.dpi); if (is.dpi < a.dpi) a.dpi = is.dpi; }
+      }
+    }
+  });
+  const names = a => { const n = a.recs.slice(0, 3).map(i => recLabel(state.records[i], i)).join(', '); return a.recs.length > 3 ? `${n} and ${a.recs.length - 3} more` : n; };
+  let dpiOk = true;
+  for (const a of agg.values()) {
+    if (a.key === 'bgdpi' || a.key.startsWith('dpi:')) {
+      if (a.lv === 'ok') continue; dpiOk = false;
+      add(a.lv, `${a.side[0].toUpperCase() + a.side.slice(1)}: ${a.t} is about ${Math.round(a.dpi)} dpi at this size. Aim for 300.${a.key.startsWith('dpi:') && a.recs.length < state.records.length ? ' Lowest on ' + names(a) + '.' : ''}`);
+    } else add(a.lv, `${a.side[0].toUpperCase() + a.side.slice(1)}: ${a.t}${state.records.length > 1 ? ' on ' + names(a) : ''}.`);
+  }
+  if (dpiOk && [...agg.values()].some(a => a.key === 'bgdpi' || a.key.startsWith('dpi:'))) add('ok', 'Images are 250 dpi or better at their printed size.');
+  const hasPhoto = Object.values(state.sides).some(S => S.els.some(e => e.type === 'image' && e.src === 'photo'));
+  if (hasPhoto) { const miss = state.records.map((r, i) => [r, i]).filter(([r]) => !(r.__img || getPhoto(r))); if (miss.length) add('check', `${miss.length} card${miss.length > 1 ? 's have' : ' has'} no photo: ${miss.slice(0, 3).map(([r, i]) => recLabel(r, i)).join(', ')}${miss.length > 3 ? '…' : ''}. The photo area will print empty.`); else add('ok', 'Every card has a photo.'); }
+  if (Object.values(state.sides).some(S => S.els.some(e => e.type === 'image' && e.src === 'logo')) && !state.logo) add('check', 'A logo spot is on the card but no logo is uploaded.');
+  const unknown = new Set();
+  for (const S of Object.values(state.sides)) for (const e of S.els) if (e.type === 'text') for (const m of e.text.matchAll(/\{([^}]+)\}/g)) if (!state.columns.includes(m[1].trim())) unknown.add(m[1].trim());
+  if (unknown.size) add('fix', `Text uses fields with no matching column: ${[...unknown].map(u => '{' + u + '}').join(', ')}. Those lines print blank.`); else add('ok', 'Every {field} in the text matches a column.');
+  const fonts = new Set(); for (const S of Object.values(state.sides)) for (const e of S.els) if (e.type === 'text') fonts.add(e.font + '|' + e.weight);
+  const missing = [...fonts].filter(f => { const [n, w] = f.split('|'); return n !== 'Arial' && !document.fonts.check(`${w} 16px "${n}"`); });
+  if (missing.length) add('check', `Font not loaded yet: ${[...new Set(missing.map(m => m.split('|')[0]))].join(', ')}. Wait a moment and run the checks again.`);
+  const fix = out.filter(o => o.lv === 'fix').length, chk = out.filter(o => o.lv === 'check').length;
+  out.sort((a, b) => ({ fix: 0, check: 1, ok: 2 }[a.lv] - { fix: 0, check: 1, ok: 2 }[b.lv]));
+  $('#pf').innerHTML = out.map(o => `<li><span class="pill ${o.lv}">${o.lv === 'ok' ? 'OK' : o.lv === 'fix' ? 'Fix' : 'Check'}</span><span>${esc(o.t)}</span></li>`).join('');
+  return { fix, chk };
+}
+$('#pfBtn').onclick = () => { const r = runPreflight(); say(r.fix ? `${r.fix} to fix, ${r.chk} to check.` : r.chk ? `${r.chk} to check, nothing blocking.` : 'All checks passed.', r.fix ? 'bad' : 'good'); };
+
+/* ---------- export ---------- */
+const rc = document.createElement('canvas');
+async function renderCmyk(r, side, dpi) {
+  const g = geom(), tw = g.w + 2 * g.bleed, th = g.h + 2 * g.bleed;
+  const W = Math.round(tw * dpi / MM), H = Math.round(th * dpi / MM);
+  rc.width = W; rc.height = H;
+  const cx = rc.getContext('2d', { willReadFrequently: true });
+  drawSide(cx, state.sides[side], r, g, W / tw, {});
+  const cm = toCmyk(cx.getImageData(0, 0, W, H).data), z = await deflate(cm);
+  return { w: W, h: H, data: z.data, z: z.z, mw: tw, mh: th };
+}
+let lastPdf = null, busy = false;
+const tick = () => new Promise(r => setTimeout(r, 0));
+async function exportPdf() {
+  if (busy) return; busy = true;
+  const btns = [$('#exportBtn'), $('#exportTop')]; btns.forEach(b => b.disabled = true);
+  const prog = $('#prog'); $('#progWrap').hidden = false; prog.style.width = '0%';
+  try {
+    const pf = runPreflight();
+    await ensureFonts();
+    const g = geom(), dpi = +$('#xDpi').value, layout = $('#xLayout').value, marks = $('#xMarks').checked;
+    const recs = $('#xRecs').value === 'cur' ? [rec()] : state.records.slice();
+    const sides = $('#xSides').value === 'both' ? ['front', 'back'] : [$('#xSides').value];
+    const total = recs.length * sides.length; let done = 0;
+    if (total * (dpi / 300) ** 2 > 600) say('Large job. This can take a few minutes.');
+    const pdf = new Pdf(), tw = g.w + 2 * g.bleed, th = g.h + 2 * g.bleed;
+    const bump = () => { done++; prog.style.width = Math.round(done / total * 100) + '%'; say(`Rendering ${done} of ${total}…`); };
+    if (layout === 'card') {
+      const slug = marks ? g.bleed + 5 : g.bleed, pw = g.w + 2 * slug, ph = g.h + 2 * slug;
+      for (const r of recs) for (const s of sides) {
+        const im = await renderCmyk(r, s, dpi); bump();
+        pdf.page(pw, ph, { x: slug, y: slug, w: g.w, h: g.h }, g.bleed, [{ ...im, x: slug - g.bleed, y: slug - g.bleed }], marks ? cropMarks(slug, slug, slug + g.w, slug + g.h, g.bleed + 0.5, 3.5) : []);
+        await tick();
+      }
+    } else {
+      const [PW, PH] = $('#xPaper').value.split('x').map(Number), gut = 6.5, mrg = 8;
+      const cols = Math.floor((PW - 2 * mrg + gut) / (tw + gut)), rows = Math.floor((PH - 2 * mrg + gut) / (th + gut));
+      if (cols < 1 || rows < 1) throw new Error('The card is too large for this paper. Choose a bigger sheet or one card per page.');
+      const per = cols * rows, gw = cols * tw + (cols - 1) * gut, gh = rows * th + (rows - 1) * gut, ox = (PW - gw) / 2, oy = (PH - gh) / 2;
+      for (let s0 = 0; s0 < recs.length; s0 += per) {
+        const chunk = recs.slice(s0, s0 + per);
+        for (const s of sides) {
+          const items = [], mk = [];
+          for (let i = 0; i < chunk.length; i++) {
+            const im = await renderCmyk(chunk[i], s, dpi); bump();
+            let c = i % cols; const rw = Math.floor(i / cols);
+            if (s === 'back' && sides.length === 2) c = cols - 1 - c; /* mirrored so the back lines up when the sheet is flipped */
+            const x = ox + c * (tw + gut), y = oy + rw * (th + gut);
+            items.push({ ...im, x, y });
+            if (marks) mk.push(...cropMarks(x + g.bleed, y + g.bleed, x + g.bleed + g.w, y + g.bleed + g.h, g.bleed + 0.5, 2.5));
+            if (i % 2 === 1) await tick();
+          }
+          pdf.page(PW, PH, null, g.bleed, items, mk);
+        }
+      }
+    }
+    const blob = pdf.finish(); lastPdf = blob; $('#saveAgain').hidden = false;
+    prog.style.width = '100%';
+    const mb = (blob.size / 1048576).toFixed(1), name = `id-cards-cmyk-${new Date().toISOString().slice(0, 10)}.pdf`;
+    say(`Built ${pdf.pageIds.length} page${pdf.pageIds.length > 1 ? 's' : ''}, ${mb} MB.${pf.fix ? ' ' + pf.fix + ' item to fix in the checks.' : ''}`, pf.fix ? 'bad' : 'good');
+    if (await saveFile(name, blob)) say(`Saved ${name} (${mb} MB, CMYK, ${dpi} dpi).`, 'good');
+  } catch (e) { say(e.message || 'Export failed.', 'bad'); }
+  finally { busy = false; btns.forEach(b => b.disabled = false); setTimeout(() => { $('#progWrap').hidden = true; }, 600); }
+}
+$('#exportBtn').onclick = exportPdf; $('#exportTop').onclick = exportPdf;
+$('#saveAgain').onclick = async () => { if (lastPdf && await saveFile(`id-cards-cmyk-${new Date().toISOString().slice(0, 10)}.pdf`, lastPdf)) say('Saved.', 'good'); };
+$('#xLayout').onchange = () => { $('#xPaper').disabled = $('#xLayout').value !== 'sheet'; };
+$('#xPaper').disabled = true;
+
+/* ---------- boot ---------- */
+(async function boot() {
+  const t = makeTemplate('corporate', state.w, state.h);
+  state.sides.front.els = t.front; state.sides.back.els = t.back;
+  refreshAll();
+  runPreflight();
+  try { await Promise.race([ensureFonts(), new Promise(r => setTimeout(r, 2500))]); } catch (e) { }
+  refreshAll(); runPreflight();
+  document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', () => draw());
+  try { const c = window.claude && window.claude.use && await window.claude.use('downloads'); dl = c || null; } catch (e) { dl = null; }
+  if (!dl) say('Preview works here. Saving the PDF needs the page opened in claude.ai.');
+})();
+</script>
+
+
+    <!-- Joy PeopleHR Supabase Synchronization Enhancement -->
+    <script>
+      window.addEventListener('message', function(e) {
+        if (e.data && e.data.type === 'SYNC_SUPABASE_EMPLOYEES' && Array.isArray(e.data.records)) {
+          console.log('[ID Card Press] Received ' + e.data.records.length + ' employees from Supabase');
+          state.records = e.data.records;
+          state.cur = 0;
+          if (typeof renderRecords === 'function') renderRecords();
+          if (typeof refreshAll === 'function') refreshAll();
+          if (typeof schedulePreflight === 'function') schedulePreflight();
+          var st = document.getElementById('status');
+          if (st) st.textContent = '✓ ' + e.data.records.length + ' employees synced from Supabase';
+        }
+      });
+    </script>
+
+</body></html>
