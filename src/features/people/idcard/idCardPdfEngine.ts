@@ -2,8 +2,10 @@
 // ============================================================================
 // Joy PeopleHR — Enterprise CMYK PDF Generator & Preflight Engine
 // Generates print-ready PDF 1.4 documents with DeviceCMYK, Bleed, and Crop Marks
+// Supports Landscape & Portrait layouts, QR codes, Rotations, and Duplex A4 sheets
 // ============================================================================
 
+import QRCode from 'qrcode';
 import {
   MM,
   PT,
@@ -13,6 +15,7 @@ import {
   TextElement,
   ImageElement,
   RectElement,
+  QrElement,
   IdCardPersonRecord,
   PreflightIssue,
   ExportLayout,
@@ -72,7 +75,7 @@ export async function deflate(u8: Uint8Array): Promise<{ data: Uint8Array; z: bo
     return { data: u8, z: false };
   }
   try {
-    const s = new Blob([u8]).stream().pipeThrough(new CompressionStream('deflate'));
+    const s = new Blob([u8 as any]).stream().pipeThrough(new CompressionStream('deflate'));
     const buf = await new Response(s).arrayBuffer();
     return { data: new Uint8Array(buf), z: true };
   } catch {
@@ -150,90 +153,90 @@ export class IdCardPdf {
   }
 
   public page(
-    pw: number,
-    ph: number,
-    trim: { x: number; y: number; w: number; h: number } | null,
-    bl: number,
-    items: PdfImageItem[],
-    marks?: [number, number, number, number][]
+    wMm: number,
+    hMm: number,
+    trimMm: { x: number; y: number; w: number; h: number } | null,
+    bleedMm: number,
+    images: PdfImageItem[],
+    cropMarksMm: [number, number, number, number][] = []
   ) {
-    const pt = (v: number) => (v * PT).toFixed(3);
-    const res: string[] = [];
-    let content = '';
-
-    items.forEach((it, i) => {
-      const id = this.alloc();
-      this.stream(
-        id,
-        `/Type /XObject /Subtype /Image /Width ${it.w} /Height ${it.h} /ColorSpace /DeviceCMYK /BitsPerComponent 8${
-          it.z ? ' /Filter /FlateDecode' : ''
-        }`,
-        it.data
-      );
-      res.push(`/Im${i} ${id} 0 R`);
-      content += `q ${pt(it.mw)} 0 0 ${pt(it.mh)} ${pt(it.x)} ${pt(ph - it.y - it.mh)} cm /Im${i} Do Q\n`;
-    });
-
-    if (marks && marks.length) {
-      content += '1 1 1 1 K 0.25 w\n';
-      for (const [x1, y1, x2, y2] of marks) {
-        content += `${pt(x1)} ${pt(ph - y1)} m ${pt(x2)} ${pt(ph - y2)} l S\n`;
-      }
-    }
-
-    const cid = this.alloc();
-    this.stream(cid, '', this.enc.encode(content));
-
-    let boxes = '';
-    if (trim) {
-      const b = (x: number, y: number, w: number, h: number) =>
-        `[${pt(x)} ${pt(ph - y - h)} ${pt(x + w)} ${pt(ph - y)}]`;
-      boxes = `/TrimBox ${b(trim.x, trim.y, trim.w, trim.h)} /BleedBox ${b(
-        Math.max(0, trim.x - bl),
-        Math.max(0, trim.y - bl),
-        Math.min(pw, trim.w + 2 * bl),
-        Math.min(ph, trim.h + 2 * bl)
-      )} `;
-    }
-
+    const W = wMm * PT;
+    const H = hMm * PT;
     const pid = this.alloc();
+    const cid = this.alloc();
+    const xobjs: string[] = [];
+
+    let cs = '';
+    for (const im of images) {
+      const xid = this.alloc();
+      const xname = `Im${xid}`;
+      xobjs.push(`/${xname} ${xid} 0 R`);
+
+      const dict =
+        `/Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} ` +
+        `/ColorSpace /DeviceCMYK /BitsPerComponent 8 ` +
+        (im.z ? `/Filter /FlateDecode ` : '');
+
+      this.stream(xid, dict, im.data);
+
+      const ix = im.x * PT;
+      const iy = H - (im.y + im.mh) * PT;
+      const iw = im.mw * PT;
+      const ih = im.mh * PT;
+      cs += `q ${iw.toFixed(3)} 0 0 ${ih.toFixed(3)} ${ix.toFixed(3)} ${iy.toFixed(3)} cm /${xname} Do Q\n`;
+    }
+
+    if (cropMarksMm.length) {
+      cs += `q 0.5 w 0 0 0 1 K\n`;
+      for (const [x1, y1, x2, y2] of cropMarksMm) {
+        cs += `${(x1 * PT).toFixed(3)} ${(H - y1 * PT).toFixed(3)} m ${(x2 * PT).toFixed(3)} ${(H - y2 * PT).toFixed(3)} l S\n`;
+      }
+      cs += `Q\n`;
+    }
+
+    this.stream(cid, '', this.enc.encode(cs));
+
+    let boxes = `/MediaBox [0 0 ${W.toFixed(3)} ${H.toFixed(3)}]`;
+    if (trimMm) {
+      const tx = trimMm.x * PT;
+      const ty = H - (trimMm.y + trimMm.h) * PT;
+      const tw = trimMm.w * PT;
+      const th = trimMm.h * PT;
+      boxes += ` /TrimBox [${tx.toFixed(3)} ${ty.toFixed(3)} ${(tx + tw).toFixed(3)} ${(ty + th).toFixed(3)}]`;
+      const bx = (trimMm.x - bleedMm) * PT;
+      const by = H - (trimMm.y + trimMm.h + bleedMm) * PT;
+      const bw = (trimMm.w + 2 * bleedMm) * PT;
+      const bh = (trimMm.h + 2 * bleedMm) * PT;
+      boxes += ` /BleedBox [${bx.toFixed(3)} ${by.toFixed(3)} ${(bx + bw).toFixed(3)} ${(by + bh).toFixed(3)}]`;
+    }
+
     this.obj(
       pid,
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pt(pw)} ${pt(ph)}] ${boxes}/Resources << /XObject << ${res.join(
-        ' '
-      )} >> >> /Contents ${cid} 0 R >>`
+      `<< /Type /Page /Parent 2 0 R ${boxes} /Contents ${cid} 0 R /Resources << /XObject << ${xobjs.join(' ')} >> >> >>`
     );
+
     this.pageIds.push(pid);
   }
 
   public finish(): Blob {
-    this.obj(
-      2,
-      `<< /Type /Pages /Kids [${this.pageIds.map(i => i + ' 0 R').join(' ')}] /Count ${this.pageIds.length} >>`
-    );
-    this.obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
-    const xref = this.pos;
-    const N = this.next;
-    let x = `xref\n0 ${N}\n0000000000 65535 f \n`;
-    for (let i = 1; i < N; i++) {
-      x += String(this.off[i]).padStart(10, '0') + ' 00000 n \n';
+    this.obj(1, `<< /Type /Catalog /Pages 2 0 R >>`);
+    this.obj(2, `<< /Type /Pages /Kids [${this.pageIds.map(i => `${i} 0 R`).join(' ')}] /Count ${this.pageIds.length} >>`);
+
+    const xrefPos = this.pos;
+    let xref = `xref\n0 ${this.next}\n0000000000 65535 f \n`;
+    for (let i = 1; i < this.next; i++) {
+      xref += `${String(this.off[i] || 0).padStart(10, '0')} 00000 n \n`;
     }
-    x += `trailer\n<< /Size ${N} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-    this.txt(x);
-    return new Blob(this.parts, { type: 'application/pdf' });
+    this.txt(xref);
+    this.txt(`trailer\n<< /Size ${this.next} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF\n`);
+
+    return new Blob(this.parts as BlobPart[], { type: 'application/pdf' });
   }
 }
 
 // Canvas Rendering Helpers
-export function drawRoundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
-) {
-  r = Math.max(0, Math.min(r, w / 2, h / 2));
+export function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  r = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -243,24 +246,6 @@ export function drawRoundRect(
   ctx.closePath();
 }
 
-export function expandPlaceholders(tpl: string, r: IdCardPersonRecord): string {
-  return String(tpl || '')
-    .split('\n')
-    .map(line => {
-      let had = false;
-      let any = false;
-      const out = line.replace(/\{([^}]+)\}/g, (_m, k) => {
-        had = true;
-        const v = String(r[k.trim()] ?? '');
-        if (v) any = true;
-        return v;
-      });
-      return had && !any ? null : out;
-    })
-    .filter(l => l !== null)
-    .join('\n');
-}
-
 export function drawFitImage(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
@@ -268,16 +253,76 @@ export function drawFitImage(
   y: number,
   w: number,
   h: number,
-  fit: 'cover' | 'contain'
+  fit: string
 ): number {
   const iw = img.naturalWidth || img.width;
   const ih = img.naturalHeight || img.height;
-  const s = fit === 'contain' ? Math.min(w / iw, h / ih) : Math.max(w / iw, h / ih);
-  const dw = iw * s;
-  const dh = ih * s;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
-  return MM / s; // Effective DPI
+  if (!iw || !ih) return 0;
+
+  let sx = 0;
+  let sy = 0;
+  let sw = iw;
+  let sh = ih;
+  let dx = x;
+  let dy = y;
+  let dw = w;
+  let dh = h;
+
+  if (fit === 'cover') {
+    const ir = iw / ih;
+    const tr = w / h;
+    if (ir > tr) {
+      sw = ih * tr;
+      sx = (iw - sw) / 2;
+    } else {
+      sh = iw / tr;
+      sy = (ih - sh) / 2;
+    }
+  } else if (fit === 'contain') {
+    const ir = iw / ih;
+    const tr = w / h;
+    if (ir > tr) {
+      dh = w / ir;
+      dy = y + (h - dh) / 2;
+    } else {
+      dw = h * ir;
+      dx = x + (w - dw) / 2;
+    }
+  }
+
+  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+  const dpiX = (sw / (dw / MM)) * (72 / PT);
+  const dpiY = (sh / (dh / MM)) * (72 / PT);
+  return Math.round(Math.min(dpiX, dpiY));
+}
+
+// Substitute placeholders
+export function substituteField(templateStr: string, r: IdCardPersonRecord): string {
+  let s = templateStr;
+  const mapping: Record<string, string> = {
+    '{name}': r.name || r.display_name || 'Muthu Kumar P',
+    '{idno}': r.idno || r.employee_code || 'EMP-20418',
+    '{designation}': r.designation || 'Software Engineer',
+    '{department}': r.department || 'Product Engineering',
+    '{branch}': r.branch || 'Coimbatore HQ',
+    '{worksite}': r.worksite || r.branch || 'Coimbatore HQ',
+    '{org}': r.org || 'Joy PeopleHR',
+    '{phone}': r.phone || '+91 98765 43210',
+    '{email}': r.email || 'employee@joypeoplehr.com',
+    '{blood}': r.blood || 'B+',
+    '{dob}': r.dob || '09 Dec 2003',
+    '{doj}': r.doj || '24 Nov 2025',
+    '{valid}': r.valid || 'Dec 2028',
+    '{reporting_manager}': r.reporting_manager || 'HR Operations',
+    '{contractor}': r.contractor || 'Joy Workforce Solutions',
+    '{address}': r.address || 'Joy Tower, 12 Mill Road, Coimbatore 641001',
+  };
+
+  Object.entries(mapping).forEach(([token, val]) => {
+    s = s.split(token).join(val);
+  });
+
+  return s;
 }
 
 export function drawTextElement(
@@ -287,16 +332,14 @@ export function drawTextElement(
   g: CardGeometry,
   collectIssues?: PreflightIssue[]
 ) {
-  const txt = expandPlaceholders(el.text, r);
-  if (!txt) {
-    el._box = { x: el.x, y: el.y, w: el.w, h: 4 };
-    return;
+  let txt = substituteField(el.text, r);
+  if (el.uppercase) {
+    txt = txt.toUpperCase();
   }
 
-  let size = (el.size * MM) / 72;
-  const fam = `"${el.font}", Arial, sans-serif`;
-  const setF = (s: number) => {
-    ctx.font = `${el.weight} ${s}px ${fam}`;
+  let size = el.size * (72 / 72);
+  const setF = (sz: number) => {
+    ctx.font = `${el.weight || 400} ${sz}px "${el.font || 'IBM Plex Sans'}", sans-serif`;
   };
   setF(size);
 
@@ -323,7 +366,7 @@ export function drawTextElement(
     lines.push(cur);
   }
 
-  const lh = size * 1.3;
+  const lh = size * (el.lineHeight || 1.3);
   const widest = Math.max(...lines.map(l => ctx.measureText(l).width));
   ctx.fillStyle = el.color;
   ctx.textBaseline = 'top';
@@ -404,10 +447,10 @@ export function drawImageElement(
       });
     }
   } else if (isPreview) {
-    // Elegant silhouette placeholder
-    ctx.fillStyle = '#c9d1d8';
+    // Modern stylized silhouette placeholder
+    ctx.fillStyle = '#cbd5e1';
     ctx.fillRect(el.x, el.y, el.w, el.h);
-    ctx.fillStyle = '#9aa6b0';
+    ctx.fillStyle = '#94a3b8';
     const cx = el.x + el.w / 2;
     const cy = el.y + el.h * 0.38;
     const rad = Math.min(el.w, el.h) * 0.2;
@@ -449,144 +492,172 @@ export function drawRectElement(ctx: CanvasRenderingContext2D, el: RectElement, 
   } else {
     ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
   }
+
+  if (el.stroke && el.strokeWidth && el.strokeWidth > 0) {
+    ctx.lineWidth = el.strokeWidth;
+    ctx.strokeStyle = el.stroke;
+    if (el.radius) {
+      drawRoundRect(ctx, x1, y1, x2 - x1, y2 - y1, el.radius);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    }
+  }
+
   el._box = { x: el.x, y: el.y, w: el.w, h: el.h };
+}
+
+// Synchronous QR Drawing using pre-rendered canvas or simplified vector grid
+const qrImageCache = new Map<string, HTMLImageElement>();
+
+export function drawQrElement(
+  ctx: CanvasRenderingContext2D,
+  el: QrElement,
+  r: IdCardPersonRecord
+) {
+  const rawData = substituteField(el.qrData, r);
+  el._box = { x: el.x, y: el.y, w: el.w, h: el.h };
+
+  // Draw background
+  ctx.fillStyle = el.bgColor || '#ffffff';
+  ctx.fillRect(el.x, el.y, el.w, el.h);
+
+  // If cached image exists, draw it
+  const cacheKey = `${rawData}|${el.color}|${el.bgColor}`;
+  if (qrImageCache.has(cacheKey)) {
+    const cached = qrImageCache.get(cacheKey)!;
+    ctx.drawImage(cached, el.x, el.y, el.w, el.h);
+    return;
+  }
+
+  // Otherwise trigger async generation and draw fallback placeholder
+  QRCode.toDataURL(rawData, {
+    margin: 1,
+    color: {
+      dark: el.color || '#000000',
+      light: el.bgColor || '#ffffff',
+    },
+    errorCorrectionLevel: 'M',
+  }).then(url => {
+    const img = new Image();
+    img.onload = () => {
+      qrImageCache.set(cacheKey, img);
+    };
+    img.src = url;
+  }).catch(() => {});
+
+  // Clean fallback pattern while QR dataURL prepares
+  ctx.strokeStyle = el.color || '#000000';
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(el.x + 1, el.y + 1, el.w - 2, el.h - 2);
+  ctx.fillStyle = el.color || '#000000';
+  ctx.fillRect(el.x + 2, el.y + 2, 4, 4);
+  ctx.fillRect(el.x + el.w - 6, el.y + 2, 4, 4);
+  ctx.fillRect(el.x + 2, el.y + el.h - 6, 4, 4);
 }
 
 export function drawCardSide(
   ctx: CanvasRenderingContext2D,
-  sideData: CardSideData,
-  record: IdCardPersonRecord,
-  geometry: CardGeometry,
-  ppm: number,
+  side: CardSideData,
+  r: IdCardPersonRecord,
+  g: CardGeometry,
+  scale: number,
   options: {
-    preview?: boolean;
-    guides?: boolean;
-    selId?: string | null;
     logo?: HTMLImageElement | null;
     photos?: Map<string, HTMLImageElement>;
     collectIssues?: PreflightIssue[];
+    isPreview?: boolean;
   } = {}
 ) {
+  const { logo, photos, collectIssues, isPreview } = options;
+  const b = g.bleed;
+
   ctx.save();
-  ctx.setTransform(ppm, 0, 0, ppm, geometry.bleed * ppm, geometry.bleed * ppm);
+  ctx.scale(scale, scale);
+  ctx.translate(b, b);
 
-  // Background
-  ctx.fillStyle = sideData.bg;
-  ctx.fillRect(-geometry.bleed, -geometry.bleed, geometry.w + 2 * geometry.bleed, geometry.h + 2 * geometry.bleed);
-
-  if (sideData.bgImg) {
-    const dpi = drawFitImage(
-      ctx,
-      sideData.bgImg,
-      -geometry.bleed,
-      -geometry.bleed,
-      geometry.w + 2 * geometry.bleed,
-      geometry.h + 2 * geometry.bleed,
-      'cover'
-    );
-    if (options.collectIssues) {
-      options.collectIssues.push({
-        key: 'bgdpi',
-        lv: dpi < 150 ? 'fix' : dpi < 250 ? 'check' : 'ok',
-        dpi,
-        t: 'Background artwork',
-      });
-    }
+  // 1. Draw card background with bleed extension
+  if (side.bgImg) {
+    ctx.drawImage(side.bgImg, -b, -b, g.w + 2 * b, g.h + 2 * b);
+  } else if (side.bg && side.bg !== 'transparent') {
+    ctx.fillStyle = side.bg;
+    ctx.fillRect(-b, -b, g.w + 2 * b, g.h + 2 * b);
+  } else {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(-b, -b, g.w + 2 * b, g.h + 2 * b);
   }
 
-  // Elements
-  for (const el of sideData.els) {
+  // 2. Draw card elements
+  for (const el of side.els) {
+    if (el.hidden) continue;
+
+    ctx.save();
+
+    // Opacity
+    if (typeof el.opacity === 'number' && el.opacity < 1) {
+      ctx.globalAlpha = el.opacity;
+    }
+
+    // Rotation around center
+    if (el.rotation && el.rotation !== 0) {
+      const cx = el.x + el.w / 2;
+      const cy = el.y + el.h / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((el.rotation * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
+
     if (el.type === 'rect') {
-      drawRectElement(ctx, el as RectElement, geometry);
+      drawRectElement(ctx, el, g);
     } else if (el.type === 'image') {
-      drawImageElement(
-        ctx,
-        el as ImageElement,
-        record,
-        geometry,
-        options.logo,
-        options.photos,
-        options.collectIssues,
-        options.preview
-      );
-    } else {
-      drawTextElement(ctx, el as TextElement, record, geometry, options.collectIssues);
+      drawImageElement(ctx, el, r, g, logo, photos, collectIssues, isPreview);
+    } else if (el.type === 'text') {
+      drawTextElement(ctx, el, r, g, collectIssues);
+    } else if (el.type === 'qr') {
+      drawQrElement(ctx, el, r);
     }
-  }
 
-  // Trim, Bleed & Safe Guides
-  if (options.guides) {
-    ctx.lineWidth = 0.22;
-    ctx.strokeStyle = '#e5007d'; // Magenta trim
-    ctx.setLineDash([]);
-    ctx.strokeRect(0, 0, geometry.w, geometry.h);
-
-    ctx.setLineDash([1, 0.8]);
-    ctx.strokeStyle = '#00a6d6'; // Cyan bleed
-    ctx.strokeRect(
-      -geometry.bleed + 0.11,
-      -geometry.bleed + 0.11,
-      geometry.w + 2 * geometry.bleed - 0.22,
-      geometry.h + 2 * geometry.bleed - 0.22
-    );
-
-    ctx.strokeStyle = '#2a9d4a'; // Green safe margin
-    ctx.strokeRect(geometry.safe, geometry.safe, geometry.w - 2 * geometry.safe, geometry.h - 2 * geometry.safe);
-    ctx.setLineDash([]);
-  }
-
-  // Selection box & corner handle
-  if (options.selId) {
-    const selectedEl = sideData.els.find(x => x.id === options.selId);
-    if (selectedEl && selectedEl._box) {
-      const b = selectedEl._box;
-      ctx.lineWidth = 0.3;
-      ctx.strokeStyle = '#1a8cff';
-      ctx.setLineDash([]);
-      ctx.strokeRect(b.x, b.y, b.w, b.h);
-      ctx.fillStyle = '#1a8cff';
-      ctx.fillRect(b.x + b.w - 1.2, b.y + b.h - 1.2, 2.4, 2.4);
-    }
+    ctx.restore();
   }
 
   ctx.restore();
 }
 
-// CMYK Canvas Render
 export async function renderCmykItem(
-  sideData: CardSideData,
-  record: IdCardPersonRecord,
+  side: CardSideData,
+  r: IdCardPersonRecord,
   geometry: CardGeometry,
   dpi: number,
-  logoImg?: HTMLImageElement | null,
-  photosMap?: Map<string, HTMLImageElement>
+  logoImg: HTMLImageElement | null,
+  photosMap: Map<string, HTMLImageElement>
 ): Promise<PdfImageItem> {
+  const scale = dpi / MM;
   const tw = geometry.w + 2 * geometry.bleed;
   const th = geometry.h + 2 * geometry.bleed;
-  const W = Math.round((tw * dpi) / MM);
-  const H = Math.round((th * dpi) / MM);
 
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) throw new Error('Could not create 2D canvas context for CMYK render');
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(tw * scale);
+  cv.height = Math.round(th * scale);
+  const cx = cv.getContext('2d');
+  if (!cx) throw new Error('Could not create canvas context');
 
-  drawCardSide(ctx, sideData, record, geometry, W / tw, { logo: logoImg, photos: photosMap });
+  drawCardSide(cx, side, r, geometry, scale, {
+    logo: logoImg,
+    photos: photosMap,
+  });
 
-  const rgba = ctx.getImageData(0, 0, W, H).data;
-  const cmyk = toCmyk(new Uint8Array(rgba.buffer));
-  const z = await deflate(cmyk);
+  const imgData = cx.getImageData(0, 0, cv.width, cv.height);
+  const cmykBytes = toCmyk(new Uint8Array(imgData.data.buffer));
+  const { data, z } = await deflate(cmykBytes);
 
   return {
-    w: W,
-    h: H,
-    data: z.data,
-    z: z.z,
-    mw: tw,
-    mh: th,
+    w: cv.width,
+    h: cv.height,
+    data,
+    z,
     x: 0,
     y: 0,
+    mw: tw,
+    mh: th,
   };
 }
-

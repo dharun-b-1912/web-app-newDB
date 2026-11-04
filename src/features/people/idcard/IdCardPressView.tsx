@@ -1,157 +1,520 @@
 // src/features/people/idcard/IdCardPressView.tsx
 // ============================================================================
-// Joy PeopleHR — ID Card Press Enterprise Studio
-// Design or upload, then export a print-ready CMYK PDF with bleed and crop marks.
-// 100% Faithful adaptation of ID Card Press integrated with Supabase Workforce
+// Joy PeopleHR — Enterprise ID Card Studio (Master Component)
+// Integrated with Live Supabase Workforce, Smart Photo Matcher, Duplex CMYK PDF,
+// 8-Point Precision Placement Editor, and Dedicated Landscape & Portrait Templates
 // ============================================================================
 
-import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, RefreshCw, Users, ShieldCheck, Download, ExternalLink } from 'lucide-react';
-import { supabase } from '../../../lib/supabase';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  CardElement,
+  CardGeometry,
+  CardSide,
+  CardSideData,
+  IdCardPersonRecord,
+  CR80_LANDSCAPE,
+  CR80_PORTRAIT,
+  ElementType,
+  MatchedPhotoRecord,
+} from './idCardTypes';
+import {
+  fetchEmployeesForIdCards,
+  getSampleEmployees,
+  getTemplateByName,
+  createTextElement,
+  createImageElement,
+  createRectElement,
+  createQrElement,
+  runPreflightChecks,
+  exportCmykPdfFile,
+  loadImageFromFile,
+} from './idCardService';
+import { IdCardToolbar } from './components/IdCardToolbar';
+import { IdCardCanvas } from './components/IdCardCanvas';
+import { IdCardPropertiesPanel } from './components/IdCardPropertiesPanel';
+import { IdCardLayersPanel } from './components/IdCardLayersPanel';
+import { IdCardLeftSidebar } from './components/IdCardLeftSidebar';
+import { IdCardPhotoManagerModal } from './components/IdCardPhotoManagerModal';
+import { IdCardBulkExportModal } from './components/IdCardBulkExportModal';
+import { IdCardPreflightModal } from './components/IdCardPreflightModal';
+import { IdCardSaveTemplateModal } from './components/IdCardSaveTemplateModal';
 
 interface IdCardPressViewProps {
   onBackToPeople?: () => void;
 }
 
+interface HistoryState {
+  front: CardSideData;
+  back: CardSideData;
+  geometry: CardGeometry;
+}
+
 export const IdCardPressView: React.FC<IdCardPressViewProps> = ({ onBackToPeople }) => {
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncedCount, setSyncedCount] = useState<number>(0);
-  const [statusMsg, setStatusMsg] = useState<string>('Ready');
+  // 1. Workforce & Active Employee State
+  const [employees, setEmployees] = useState<IdCardPersonRecord[]>(getSampleEmployees());
+  const [activeEmployeeIndex, setActiveEmployeeIndex] = useState<number>(0);
+  const [photosMap, setPhotosMap] = useState<Map<string, HTMLImageElement>>(new Map());
+  const [logoImg, setLogoImg] = useState<HTMLImageElement | null>(null);
 
-  // Fetch employees from Supabase and dispatch to ID Card Press
-  const syncEmployeesToPress = async () => {
-    setIsSyncing(true);
-    setStatusMsg('Syncing employees from Supabase...');
-    try {
-      const { data, error } = await supabase
-        .from('employees')
-        .select('id, full_name, employee_id, department, designation, phone_number, blood_group, date_of_birth, address, avatar_url')
-        .order('full_name', { ascending: true })
-        .limit(100);
+  // 2. Card Geometry & Orientation
+  const [geometry, setGeometry] = useState<CardGeometry>(CR80_LANDSCAPE);
+  const [activeSide, setActiveSide] = useState<CardSide>('front');
 
-      if (error) {
-        console.warn('Supabase fetch error:', error);
+  // 3. Card Sides Content
+  const initialTemplates = getTemplateByName('corporate', 'landscape');
+  const [frontSide, setFrontSide] = useState<CardSideData>({
+    bg: '#ffffff',
+    bgImg: null,
+    bgName: '',
+    els: initialTemplates.front,
+  });
+  const [backSide, setBackSide] = useState<CardSideData>({
+    bg: '#ffffff',
+    bgImg: null,
+    bgName: '',
+    els: initialTemplates.back,
+  });
+
+  // 4. Studio Canvas & Selection
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<number>(1.0);
+  const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
+  const [showGuides, setShowGuides] = useState<boolean>(true);
+
+  // 5. History Undo / Redo Stacks
+  const [history, setHistory] = useState<HistoryState[]>([
+    {
+      front: { ...frontSide },
+      back: { ...backSide },
+      geometry: { ...geometry },
+    },
+  ]);
+  const [historyIndex, setHistoryIndex] = useState<number>(0);
+
+  // 6. Modals
+  const [isPhotoManagerOpen, setIsPhotoManagerOpen] = useState(false);
+  const [isBulkExportOpen, setIsBulkExportOpen] = useState(false);
+  const [isPreflightOpen, setIsPreflightOpen] = useState(false);
+  const [isSaveTemplateOpen, setIsSaveTemplateOpen] = useState(false);
+
+  // 7. Export Progress
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+
+  // Load Real Supabase Employees on Mount
+  useEffect(() => {
+    let isMounted = true;
+    fetchEmployeesForIdCards().then(loaded => {
+      if (isMounted && loaded && loaded.length > 0) {
+        setEmployees(loaded);
       }
+    }).catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
-      let records: any[] = [];
-      if (data && data.length > 0) {
-        records = data.map(emp => ({
-          name: emp.full_name || 'Unnamed Employee',
-          designation: emp.designation || 'Staff',
-          idno: emp.employee_id || `EMP-${emp.id.slice(0, 5).toUpperCase()}`,
-          department: emp.department || 'General',
-          phone: emp.phone_number || '+91 90430 22330',
-          blood: emp.blood_group || 'B+',
-          dob: emp.date_of_birth || '15 Aug 1995',
-          address: emp.address || 'HQ Campus, Joy PeopleHR',
-          valid: 'Dec 2027',
-          org: 'Joy PeopleHR',
-          photo: emp.avatar_url || '',
-        }));
-      } else {
-        // Fallback sample employees if database is empty
-        records = [
-          { name: 'Aarav Menon', designation: 'Senior Engineer', idno: 'EMP-20418', department: 'Product Design', phone: '+91 98765 43210', blood: 'B+', dob: '14 Mar 1992', address: '12 Mill Road, Coimbatore 641001', valid: 'Dec 2027', org: 'Joy PeopleHR', photo: '' },
-          { name: 'Meera Krishnan', designation: 'Quality Lead', idno: 'EMP-20533', department: 'Operations', phone: '+91 99440 11872', blood: 'O+', dob: '02 Nov 1988', address: '12 Mill Road, Coimbatore 641001', valid: 'Dec 2027', org: 'Joy PeopleHR', photo: '' },
-          { name: 'Joseph Anthony Fernandes', designation: 'Facilities Coordinator', idno: 'EMP-20907', department: 'Administration', phone: '+91 90030 55621', blood: 'A-', dob: '29 Jul 1995', address: '12 Mill Road, Coimbatore 641001', valid: 'Dec 2027', org: 'Joy PeopleHR', photo: '' }
-        ];
-      }
+  // Push Snapshot to History
+  const pushHistory = useCallback(
+    (newFront: CardSideData, newBack: CardSideData, newGeo: CardGeometry) => {
+      const snap: HistoryState = {
+        front: JSON.parse(JSON.stringify(newFront)),
+        back: JSON.parse(JSON.stringify(newBack)),
+        geometry: { ...newGeo },
+      };
+      setHistory(prev => {
+        const sliced = prev.slice(0, historyIndex + 1);
+        return [...sliced, snap];
+      });
+      setHistoryIndex(prev => prev + 1);
+    },
+    [historyIndex]
+  );
 
-      setSyncedCount(records.length);
-
-      // Post message to iframe
-      if (iframeRef.current && iframeRef.current.contentWindow) {
-        iframeRef.current.contentWindow.postMessage(
-          {
-            type: 'SYNC_SUPABASE_EMPLOYEES',
-            records,
-          },
-          '*'
-        );
-      }
-
-      setStatusMsg(`✓ ${records.length} employees synced`);
-    } catch (err: any) {
-      console.error('Sync failed:', err);
-      setStatusMsg('Failed to sync employees');
-    } finally {
-      setIsSyncing(false);
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      const target = history[historyIndex - 1];
+      setFrontSide(JSON.parse(JSON.stringify(target.front)));
+      setBackSide(JSON.parse(JSON.stringify(target.back)));
+      setGeometry({ ...target.geometry });
+      setHistoryIndex(historyIndex - 1);
+      setSelectedElementId(null);
     }
   };
 
-  // When iframe finishes loading, automatically sync
-  const handleIframeLoad = () => {
-    syncEmployeesToPress();
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      const target = history[historyIndex + 1];
+      setFrontSide(JSON.parse(JSON.stringify(target.front)));
+      setBackSide(JSON.parse(JSON.stringify(target.back)));
+      setGeometry({ ...target.geometry });
+      setHistoryIndex(historyIndex + 1);
+      setSelectedElementId(null);
+    }
   };
 
+  // Active side accessor
+  const currentSideData = activeSide === 'front' ? frontSide : backSide;
+  const setCurSideElements = (newEls: CardElement[]) => {
+    if (activeSide === 'front') {
+      const next = { ...frontSide, els: newEls };
+      setFrontSide(next);
+      pushHistory(next, backSide, geometry);
+    } else {
+      const next = { ...backSide, els: newEls };
+      setBackSide(next);
+      pushHistory(frontSide, next, geometry);
+    }
+  };
+
+  // Update specific element
+  const handleUpdateElement = (id: string, updates: Partial<CardElement>) => {
+    const updated = currentSideData.els.map(el => (el.id === id ? ({ ...el, ...updates } as CardElement) : el));
+    if (activeSide === 'front') {
+      setFrontSide({ ...frontSide, els: updated });
+    } else {
+      setBackSide({ ...backSide, els: updated });
+    }
+  };
+
+  // Delete Element
+  const handleDeleteElement = (id: string) => {
+    const remaining = currentSideData.els.filter(e => e.id !== id);
+    setCurSideElements(remaining);
+    setSelectedElementId(null);
+  };
+
+  // Duplicate Element
+  const handleDuplicateElement = (id: string) => {
+    const target = currentSideData.els.find(e => e.id === id);
+    if (!target) return;
+    const dup = {
+      ...JSON.parse(JSON.stringify(target)),
+      id: 'el_' + Date.now(),
+      x: target.x + 2,
+      y: target.y + 2,
+    };
+    const next = [...currentSideData.els, dup];
+    setCurSideElements(next);
+    setSelectedElementId(dup.id);
+  };
+
+  // Add New Element
+  const handleAddElement = (type: ElementType) => {
+    let newEl: CardElement;
+    if (type === 'text') {
+      newEl = createTextElement({ text: 'New Text', x: 5, y: 5, w: 40, h: 8 });
+    } else if (type === 'image') {
+      newEl = createImageElement({ x: 5, y: 5, w: 22, h: 28 });
+    } else if (type === 'rect') {
+      newEl = createRectElement({ x: 0, y: 0, w: geometry.w, h: 6, fill: '#0f2f57' });
+    } else {
+      newEl = createQrElement({ x: 5, y: 5, w: 16, h: 16 });
+    }
+
+    const next = [...currentSideData.els, newEl];
+    setCurSideElements(next);
+    setSelectedElementId(newEl.id);
+  };
+
+  // Alignment Helpers
+  const handleAlignElement = (alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+    if (!selectedElementId) return;
+    const target = currentSideData.els.find(e => e.id === selectedElementId);
+    if (!target) return;
+
+    let nx = target.x;
+    let ny = target.y;
+
+    if (alignment === 'left') nx = geometry.safe;
+    else if (alignment === 'center') nx = (geometry.w - target.w) / 2;
+    else if (alignment === 'right') nx = geometry.w - geometry.safe - target.w;
+    else if (alignment === 'top') ny = geometry.safe;
+    else if (alignment === 'middle') ny = (geometry.h - target.h) / 2;
+    else if (alignment === 'bottom') ny = geometry.h - geometry.safe - target.h;
+
+    handleUpdateElement(target.id, { x: Math.round(nx * 10) / 10, y: Math.round(ny * 10) / 10 });
+  };
+
+  // Orientation Switch
+  const handleOrientationChange = (newOrientation: 'landscape' | 'portrait' | 'custom') => {
+    if (newOrientation === geometry.orientation) return;
+    const targetGeo = newOrientation === 'portrait' ? CR80_PORTRAIT : CR80_LANDSCAPE;
+    const templates = getTemplateByName('corporate', newOrientation === 'portrait' ? 'portrait' : 'landscape');
+
+    setGeometry(targetGeo);
+    const newFront = { ...frontSide, els: templates.front };
+    const newBack = { ...backSide, els: templates.back };
+    setFrontSide(newFront);
+    setBackSide(newBack);
+    setSelectedElementId(null);
+    pushHistory(newFront, newBack, targetGeo);
+  };
+
+  // Apply Template Category
+  const handleApplyTemplate = (category: 'corporate' | 'campus' | 'minimal' | 'worker' | 'contractor' | 'security') => {
+    const templates = getTemplateByName(category, geometry.orientation === 'portrait' ? 'portrait' : 'landscape');
+    const newFront = { ...frontSide, els: templates.front };
+    const newBack = { ...backSide, els: templates.back };
+    setFrontSide(newFront);
+    setBackSide(newBack);
+    setSelectedElementId(null);
+    pushHistory(newFront, newBack, geometry);
+  };
+
+  // Background update
+  const handleUpdateSideBg = (side: 'front' | 'back', bg: string, bgImg?: HTMLImageElement | null) => {
+    if (side === 'front') {
+      const next = { ...frontSide, bg, bgImg: bgImg || null };
+      setFrontSide(next);
+      pushHistory(next, backSide, geometry);
+    } else {
+      const next = { ...backSide, bg, bgImg: bgImg || null };
+      setBackSide(next);
+      pushHistory(frontSide, next, geometry);
+    }
+  };
+
+  // Logo Upload
+  const handleUploadLogo = async (file: File) => {
+    const img = await loadImageFromFile(file);
+    setLogoImg(img);
+  };
+
+  // Assign photo to employee
+  const handleAssignPhotoToEmployee = (employeeId: string, img: HTMLImageElement, fileName: string) => {
+    setEmployees(prev =>
+      prev.map(e => {
+        if (e.id === employeeId || e.idno === employeeId) {
+          return {
+            ...e,
+            __img: img,
+            photo: fileName,
+            photo_matched: true,
+          };
+        }
+        return e;
+      })
+    );
+    setPhotosMap(prev => {
+      const next = new Map(prev);
+      next.set(fileName.toLowerCase(), img);
+      return next;
+    });
+  };
+
+  // Bulk Photos Update
+  const handleBulkUpdatePhotos = (matchedRecords: MatchedPhotoRecord[]) => {
+    const newMap = new Map(photosMap);
+    const matchedEmpMap = new Map<string, { img: HTMLImageElement; fileName: string }>();
+
+    matchedRecords.forEach(m => {
+      newMap.set(m.fileName.toLowerCase(), m.img);
+      if (m.matchedEmployeeId) {
+        matchedEmpMap.set(m.matchedEmployeeId, { img: m.img, fileName: m.fileName });
+      }
+      if (m.matchedEmployeeCode) {
+        matchedEmpMap.set(m.matchedEmployeeCode, { img: m.img, fileName: m.fileName });
+      }
+    });
+
+    setPhotosMap(newMap);
+    setEmployees(prev =>
+      prev.map(e => {
+        const found = matchedEmpMap.get(e.id || '') || matchedEmpMap.get(e.idno);
+        if (found) {
+          return {
+            ...e,
+            __img: found.img,
+            photo: found.fileName,
+            photo_matched: true,
+          };
+        }
+        return e;
+      })
+    );
+  };
+
+  // Preflight Issues Calculation
+  const activeEmp = employees[activeEmployeeIndex] || employees[0] || getSampleEmployees()[0];
+  const preflightReport = runPreflightChecks(
+    { front: frontSide, back: backSide },
+    employees,
+    geometry,
+    logoImg,
+    photosMap
+  );
+
+  // Quick 1-Click Export CMYK PDF
+  const handleQuickExportPdf = async () => {
+    setIsExporting(true);
+    setExportProgress(10);
+    try {
+      const blob = await exportCmykPdfFile(
+        { front: frontSide, back: backSide },
+        [activeEmp],
+        geometry,
+        {
+          dpi: 300,
+          layout: 'card',
+          paper: '210x297',
+          sides: 'both',
+          cropMarks: true,
+          logo: logoImg,
+          photos: photosMap,
+          onProgress: pct => setExportProgress(pct),
+        }
+      );
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `JOY_ID_Card_${activeEmp.idno}_${activeEmp.name.replace(/\s+/g, '_')}_CMYK.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 500);
+    } catch (err) {
+      console.error('Quick export error:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const selectedElement = currentSideData.els.find(e => e.id === selectedElementId) || null;
+  const matchedCount = employees.filter(e => e.__img || e.avatar_url).length;
+
   return (
-    <div className="flex flex-col h-[calc(100vh-60px)] w-full bg-[#0f1317] text-[#e6eaee] overflow-hidden">
-      {/* Studio Header Bar */}
-      <header className="h-12 bg-[#171c21] border-b border-[#2a323a] px-4 flex items-center justify-between shrink-0 select-none z-20">
-        <div className="flex items-center gap-3">
-          {onBackToPeople && (
-            <button
-              onClick={onBackToPeople}
-              className="px-2.5 py-1 rounded bg-[#1d242b] hover:bg-[#2a323a] text-xs font-bold text-gray-300 hover:text-white border border-[#2a323a] flex items-center gap-1.5 cursor-pointer transition-colors"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Back to Workforce</span>
-            </button>
-          )}
+    <div className="flex flex-col h-[calc(100vh-60px)] w-full bg-[#0a0c0e] text-[#e6eaee] overflow-hidden select-none">
+      {/* 1. Top Professional Toolbar */}
+      <IdCardToolbar
+        onBack={onBackToPeople}
+        activeSide={activeSide}
+        onSideChange={setActiveSide}
+        orientation={geometry.orientation}
+        onOrientationChange={handleOrientationChange}
+        zoom={zoom}
+        onZoomChange={setZoom}
+        snapToGrid={snapToGrid}
+        onSnapToggle={() => setSnapToGrid(!snapToGrid)}
+        canUndo={historyIndex > 0}
+        canRedo={historyIndex < history.length - 1}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        preflightCount={{ fix: preflightReport.fixCount, check: preflightReport.checkCount }}
+        onOpenPreflight={() => setIsPreflightOpen(true)}
+        onSaveTemplate={() => setIsSaveTemplateOpen(true)}
+        onOpenBulkModal={() => setIsBulkExportOpen(true)}
+        onQuickExportPdf={handleQuickExportPdf}
+        isExporting={isExporting}
+        exportProgress={exportProgress}
+      />
 
-          <div className="flex items-center gap-2">
-            <div className="grid grid-cols-2 gap-0.5">
-              <span className="w-2 h-2 rounded-full bg-[#00a6d6]" />
-              <span className="w-2 h-2 rounded-full bg-[#e5007d]" />
-              <span className="w-2 h-2 rounded-full bg-[#ffd400]" />
-              <span className="w-2 h-2 rounded-full bg-[#e6eaee]" />
-            </div>
-            <span className="text-sm font-black tracking-tight text-white">ID Card Press™</span>
-            <span className="text-[10px] font-bold px-2 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
-              Print-Ready DeviceCMYK
-            </span>
-          </div>
-        </div>
+      {/* 2. Main 5-Panel Workspace */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Left Control Panel: Templates, Setup, Artwork, Workforce */}
+        <IdCardLeftSidebar
+          geometry={geometry}
+          onUpdateGeometry={newGeo => {
+            setGeometry(newGeo);
+            pushHistory(frontSide, backSide, newGeo);
+          }}
+          onApplyTemplate={handleApplyTemplate}
+          frontSide={frontSide}
+          backSide={backSide}
+          onUpdateSideBg={handleUpdateSideBg}
+          logoImg={logoImg}
+          onUploadLogo={handleUploadLogo}
+          employees={employees}
+          activeEmployeeIndex={activeEmployeeIndex}
+          onSelectEmployeeIndex={setActiveEmployeeIndex}
+          onOpenPhotoManager={() => setIsPhotoManagerOpen(true)}
+          onOpenBulkModal={() => setIsBulkExportOpen(true)}
+          photoMatchedCount={matchedCount}
+        />
 
-        <div className="flex items-center gap-2.5">
-          <span className="text-xs text-gray-400 font-mono hidden sm:inline">
-            {statusMsg}
-          </span>
+        {/* Center Interactive Canvas */}
+        <IdCardCanvas
+          geometry={geometry}
+          sideData={currentSideData}
+          activeEmployee={activeEmp}
+          selectedElementId={selectedElementId}
+          onSelectElement={setSelectedElementId}
+          onUpdateElement={handleUpdateElement}
+          onDeleteElement={handleDeleteElement}
+          onDuplicateElement={handleDuplicateElement}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          zoom={zoom}
+          snapToGrid={snapToGrid}
+          logoImg={logoImg}
+          photosMap={photosMap}
+          showGuides={showGuides}
+          onToggleGuides={() => setShowGuides(!showGuides)}
+        />
 
-          <button
-            onClick={syncEmployeesToPress}
-            disabled={isSyncing}
-            className="px-3 py-1 rounded bg-[#1d242b] hover:bg-[#2a323a] text-xs font-bold text-emerald-400 border border-[#2a323a] flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
-            title="Reload employee records from Supabase"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>Sync Supabase ({syncedCount})</span>
-          </button>
+        {/* Right Layers Panel */}
+        <IdCardLayersPanel
+          elements={currentSideData.els}
+          selectedElementId={selectedElementId}
+          onSelectElement={setSelectedElementId}
+          onReorderElements={setCurSideElements}
+          onUpdateElement={handleUpdateElement}
+          onDeleteElement={handleDeleteElement}
+          onDuplicateElement={handleDuplicateElement}
+          onAddElement={handleAddElement}
+          activeSide={activeSide}
+        />
 
-          <a
-            href="/id-card-press.html"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3 py-1 rounded bg-[#1d242b] hover:bg-[#2a323a] text-xs font-bold text-gray-300 hover:text-white border border-[#2a323a] flex items-center gap-1.5 cursor-pointer transition-colors"
-            title="Open in new window"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Fullscreen</span>
-          </a>
-        </div>
-      </header>
-
-      {/* Embedded Studio */}
-      <div className="flex-1 w-full h-full relative overflow-hidden bg-[#0f1317]">
-        <iframe
-          ref={iframeRef}
-          src="/id-card-press.html"
-          onLoad={handleIframeLoad}
-          className="w-full h-full border-0 absolute inset-0"
-          title="ID Card Press Studio"
+        {/* Right Precision Properties Panel */}
+        <IdCardPropertiesPanel
+          selectedElement={selectedElement}
+          onUpdateElement={handleUpdateElement}
+          onDeleteElement={handleDeleteElement}
+          onDuplicateElement={handleDuplicateElement}
+          geometry={geometry}
+          onAlignElement={handleAlignElement}
         />
       </div>
+
+      {/* Modals */}
+      <IdCardPhotoManagerModal
+        isOpen={isPhotoManagerOpen}
+        onClose={() => setIsPhotoManagerOpen(false)}
+        employees={employees}
+        onAssignPhotoToEmployee={handleAssignPhotoToEmployee}
+        onBulkUpdatePhotos={handleBulkUpdatePhotos}
+      />
+
+      <IdCardBulkExportModal
+        isOpen={isBulkExportOpen}
+        onClose={() => setIsBulkExportOpen(false)}
+        employees={employees}
+        geometry={geometry}
+        frontSide={frontSide}
+        backSide={backSide}
+        logoImg={logoImg}
+        photosMap={photosMap}
+      />
+
+      <IdCardPreflightModal
+        isOpen={isPreflightOpen}
+        onClose={() => setIsPreflightOpen(false)}
+        issues={preflightReport.issues}
+      />
+
+      <IdCardSaveTemplateModal
+        isOpen={isSaveTemplateOpen}
+        onClose={() => setIsSaveTemplateOpen(false)}
+        geometry={geometry}
+        frontSide={frontSide}
+        backSide={backSide}
+        onSaveSuccess={tmplName => {
+          alert(`✓ Saved template "${tmplName}" successfully!`);
+        }}
+      />
     </div>
   );
 };

@@ -309,3 +309,108 @@ When a single physical biometric terminal (such as an MB160 on a company bus) se
    - Company A's HR administrators only see their employees' transit/bus punches.
    - Company B's HR administrators only see their employees' transit/bus punches.
    - No company can view or access attendance, profiles, or headcount of any other company sharing the terminal.
+
+---
+
+# Phase 1 — JOY PeopleHR ID Card Studio Upgrade Audit
+
+## 1. Existing Codebase Audit & Component Map
+
+### Existing Files:
+1. `public/id-card-press.html` (71 KB):
+   - Standalone single-file HTML5 canvas app with dark studio styling (`#0f1317`).
+   - Contains CR80 preset, 3 templates (Corporate, Campus, Minimal), basic mouse drag & resize on bottom-right handle.
+   - Manual CSV file picker and multi-photo picker.
+   - DeviceCMYK PDF 1.4 vector generator with vector crop marks and 300/600 DPI rendering.
+   - Listens for `window.postMessage({ type: 'SYNC_SUPABASE_EMPLOYEES', records })`.
+2. `src/features/people/idcard/IdCardPressView.tsx`:
+   - React wrapper embedding `id-card-press.html` in an iframe with a dark header ribbon.
+   - Queries Supabase `employees` table and posts message to iframe.
+3. `src/features/people/idcard/idCardTypes.ts`:
+   - Geometry (`CardGeometry`), element types (`TextElement`, `ImageElement`, `RectElement`), preflight checks (`PreflightIssue`), export parameters.
+4. `src/features/people/idcard/idCardService.ts`:
+   - Template builders (`makeLandscapeTemplate`, `makePortraitTemplate`), delimited text parser, preflight check validator, and export pipeline orchestrator.
+5. `src/features/people/idcard/idCardPdfEngine.ts`:
+   - Low-level PDF 1.4 writer, `/DeviceCMYK` image color stream encoder, FlateDecode/uncompressed raster builder, vector crop marks.
+
+### Identified Limitations & Gaps in Existing Implementation:
+- **Orientation & Portrait Support**: Only landscape CR80 (85.6 × 54 mm) was fully fleshed out in the UI. Vertical CR80 portrait (54 × 85.6 mm) lacked dedicated high-end templates (Corporate Portrait, Manufacturing Worker Portrait, Contractor / Manpower Portrait, Minimal Portrait, Security / Visitor Portrait) and automatic canvas aspect-ratio recalculation.
+- **Precision Placement & Formatting Controls**: Missing numeric millimetre inputs (X mm, Y mm, W mm, H mm, rotation), alignment tools (Align Left, Center, Right, Top, Middle, Bottom), distribution tools, snap-to-grid, element grouping, locking, layer drag re-ordering, and full typography controls (letter spacing, line height, text transform).
+- **Photo Management**: Only basic `<input type="file" multiple>` existed. No folder (`webkitdirectory`) import, no ZIP archive extraction, no intelligent auto-matching algorithm (matching `EMP-20418.jpg` or `EMP-20418` to employee code/ID), no face centering guide, no unmatched photo drawer, and no duplicate photo detection via SHA/size hashing.
+- **Employee Data Integration**: Only fetched basic columns (`full_name`, `department`, `designation`) without relational joins. The live Supabase schema uses relational tables (`departments:department_id(name)`, `designations:designation_id(title)`, `branches:branch_id(name, city)`, `organizations:organization_id(legal_name)`). Real workforce filtering (by department, branch, contractor, status) and bulk selection were missing.
+- **Bulk Card Generation**: Generating batches lacked multi-card print sheets (A4 8/10 cards per sheet with duplex alignment and mirrored backs), individual PNG/PDF previews, and chunked non-blocking background rendering with live progress bars.
+- **Card Lifecycle & Verification**: No secure QR verification token generator (`/verify-id-card?token=...`), and no tracking for card status (Draft, Generated, Issued, Active, Expired, Revoked).
+
+## 2. Supabase Database Schema Mapping (Verified Live)
+
+- **`employees`**:
+  - `id`: UUID (Primary Key)
+  - `employee_code`: Unique code (e.g. `JCS-012`, `EMP-20418`)
+  - `first_name`, `last_name`, `display_name`: Employee name
+  - `work_email`, `personal_email`: Contact email
+  - `phone`: Mobile number
+  - `gender`: MALE | FEMALE | OTHER
+  - `dob`: Date of birth (YYYY-MM-DD)
+  - `doj`: Date of joining (YYYY-MM-DD)
+  - `employment_status`: ACTIVE | PROBATION | NOTICE_PERIOD | SUSPENDED | TERMINATED
+  - `avatar_url`: Signed Supabase storage media URL
+  - `department_id` -> `departments(id)`: name
+  - `designation_id` -> `designations(id)`: title
+  - `branch_id` -> `branches(id)`: name, city
+  - `organization_id` -> `organizations(id)`: legal_name, display_name
+
+## 3. Architecture for Upgraded JOY PeopleHR ID Card Studio
+
+1. **5-Panel Studio Interface (React + Native Interactive Canvas)**:
+   - **Top Toolbar**: Quick Actions (Undo, Redo, Zoom In/Out/Fit, Front/Back Side Switch, Snap to Grid Toggle, Preflight Check Badge, Save Template, Bulk Batch Modal, Export CMYK PDF).
+   - **Left Panel**: Card Setup (CR80 Landscape 85.6x54mm, CR80 Portrait 54x85.6mm, Custom mm), Template Gallery (Corporate, Manufacturing Worker, Contractor, Minimal, Campus, Security), Background & Logo Artwork, Workforce Selector & Filters, Photo Manager Drawer.
+   - **Center Stage**: High-DPI Interactive Canvas with zoom & pan, live rulers, Bleed (3mm cyan), Trim (cut line magenta), Safe Area (3mm in dashed yellow), multi-point resize handles, rotation handle, smart snapping guidelines.
+   - **Right Panel**: Layer Hierarchy Tree (drag re-order, lock, hide, duplicate, delete), Precision Properties (X mm, Y mm, W mm, H mm, Angle deg, Typography, Alignments, Color Palette, Shape Border/Radius, Opacity, Image Fit/Crop), Dynamic Field Chips (`{name}`, `{employee_id}`, `{designation}`, `{department}`, `{branch}`, `{organisation}`, `{blood_group}`, `{phone}`, `{email}`, `{doj}`, `{valid_until}`, `{qr_code}`).
+   - **Bottom / Workflow Drawer**: Selected Workforce Roster, Auto-Matched Photos status, Batch Print Sheet Preview, Card Lifecycle Status.
+
+2. **Dedicated Photo Manager & Smart Matcher**:
+   - Folder upload (`webkitdirectory`), ZIP archive extraction via `JSZip`, multi-file drag & drop.
+   - Smart matching engine: Normalized Filename vs `employee_code` -> `id` -> name substring.
+   - Three-tier gallery: Matched Photos, Unmatched Photos (with manual assign dropdown), and Missing Photos list with 1-click photo upload.
+   - Client-side image crop, circle/rounded mask, rotation, and high-DPI compression.
+
+3. **QR Code Engine & Verification Token**:
+   - Generates vector QR codes on the card resolving to `https://app.joypeoplehr.com/verify-id-card?token=...` encoding signed payload with employee code, issue date, and organization identity.
+
+4. **Production Duplex PDF & Multi-Card A4 Print Sheet Engine**:
+   - True `/DeviceCMYK` print output with vector crop marks.
+   - Double-sided duplex A4 sheet layout: automatically mirrors column indices on the back side so duplex printers align front and back cards perfectly.
+   - Chunked non-blocking PDF generation with live progress reporting.
+
+---
+
+# Phase 2 & 3 — Implementation & Verification Results
+
+## 1. Upgraded Components Architecture
+
+- **`IdCardPressView.tsx`**: Master container integrating all panels into a reactive, responsive layout with undo/redo history, Supabase live sync, side switching, and modal management.
+- **`IdCardToolbar.tsx`**: Top navigation ribbon containing side switches, orientation toggles (Portrait/Landscape), zoom controls, millimeter snap toggle, preflight health badge, and bulk export trigger.
+- **`IdCardCanvas.tsx`**: Full interactive canvas with millimeter rulers, 8-point resize handles, top rotation pivot, arrow key precision nudging (0.1 mm standard, 1.0 mm with Shift), cut/bleed/safe lines, and multi-selection bounding boxes.
+- **`IdCardPropertiesPanel.tsx`**: Deep property editor featuring millimeter coordinates (X, Y, W, H, Rot), 6 alignment presets, text typography controls (family, size, weight, color, letter spacing, uppercase), image masking (circle, rectangle), and 1-click dynamic field injection chips (`{name}`, `{idno}`, `{designation}`, `{department}`, `{branch}`, `{org}`, `{blood}`, `{dob}`, `{doj}`, `{valid}`, `{qr_code}`).
+- **`IdCardLayersPanel.tsx`**: Visual layer tree with layer re-ordering, locking, visibility toggle, duplicate, and quick element adders (`+Text`, `+Photo`, `+Shape`, `+QR Code`).
+- **`IdCardLeftSidebar.tsx`**: 4-tab panel covering Templates (11 dedicated presets), Card Dimensions (CR80 Portrait/Landscape + Custom), Artwork & Logos, and live Workforce Directory with photo status indicators.
+- **`IdCardPhotoManagerModal.tsx`**: Production photo management modal supporting Directory Upload (`webkitdirectory`), ZIP archive extraction via `JSZip`, and multi-file drag & drop, alongside automatic matching (Exact Code 100%, Normalized Code 95%, UUID 90%, Name Match 80%) and manual match dropdowns.
+- **`IdCardBulkExportModal.tsx`**: High-volume print manager supporting Duplex A4 sheets (with column mirroring for 2-sided alignment), Single card per page with crop marks, 300/600 DPI, and chunked non-blocking generation with progress tracking.
+- **`IdCardPreflightModal.tsx`**: Quality assurance preflight audit checking for bleed coverage, safe margin compliance, missing employee photos, missing text placeholders, and raster image DPI.
+- **`IdCardSaveTemplateModal.tsx`**: Custom template persistence modal allowing organizations to save their card designs for future reuse.
+- **`IdCardVerificationView.tsx`**: Public credential verification view mapped to `/verify-id-card` and `/verify`, safely displaying approved employment credentials without exposing sensitive personal data (Aadhaar, PAN, bank account).
+
+## 2. Verification Outcomes
+
+1. **Automated Unit & Integration Tests**:
+   - File: `src/services/__tests__/idCardStudioMaster.test.ts`
+   - Result: **9 of 9 tests passed** (18ms execution time).
+   - Verified: Template dimensions (Portrait 54x85.6mm, Landscape 85.6x54mm), dynamic field placeholder substitution, exact and normalized photo matching, missing photo detection, QR verification URL generation, preflight audit triggers, and duplex back-side column mirroring.
+
+2. **TypeScript & Static Code Quality**:
+   - Command: `npm run lint` (`tsc --noEmit`)
+   - Result: **0 errors across the entire codebase**.
+
+3. **Production Bundle Compilation**:
+   - Command: `npm run build` (`vite build`)
+   - Result: **Compilation succeeded with client environment production assets in `dist/`**.

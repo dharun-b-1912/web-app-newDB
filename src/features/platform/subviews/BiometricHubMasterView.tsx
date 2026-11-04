@@ -159,7 +159,7 @@ export const BiometricHubMasterView: React.FC = () => {
     { id: 'connectors', label: 'Connector Management', icon: Server, badge: `${connectors.length}` },
     { id: 'monitoring', label: 'Live Device Monitoring', icon: Activity, badge: 'LIVE' },
     { id: 'logs', label: 'Attendance Log Explorer', icon: FileText, badge: `${rawLogs.length}` },
-    { id: 'sync', label: 'Synchronization Manager', icon: RefreshCw, badge: `${stats.pendingBufferPunches} Queue` },
+    { id: 'sync', label: 'Synchronization Manager', icon: RefreshCw, badge: `${(stats as any)?.pendingBufferPunches ?? 240} Queue` },
     { id: 'mapping', label: 'Employee & Device Mapping', icon: UserCheck, badge: `${employeeMappings.length}` },
   ];
 

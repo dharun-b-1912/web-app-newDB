@@ -39,6 +39,7 @@ const OnboardingView = lazy(() => import('./features/onboarding/OnboardingView')
 const OffboardingView = lazy(() => import('./features/offboarding/OffboardingView').then(m => ({ default: m.OffboardingView })));
 const TalentManagementView = lazy(() => import('./features/talent/TalentManagementView').then(m => ({ default: m.TalentManagementView })));
 const IdCardPressView = lazy(() => import('./features/people/idcard/IdCardPressView').then(m => ({ default: m.IdCardPressView })));
+const IdCardVerificationView = lazy(() => import('./features/people/idcard/IdCardVerificationView').then(m => ({ default: m.IdCardVerificationView })));
 const LmsMasterModule = lazy(() => import('./features/lms/LmsMasterModule').then(m => ({ default: m.LmsMasterModule })));
 const PerformanceMasterModule = lazy(() => import('./features/performance/PerformanceMasterModule').then(m => ({ default: m.PerformanceMasterModule })));
 const WorkOvertimeMasterModule = lazy(() => import('./features/work/WorkOvertimeMasterModule').then(m => ({ default: m.WorkOvertimeMasterModule })));
@@ -551,6 +552,9 @@ const AppContent: React.FC = () => {
       case 'idcard':
       case 'id-card-press':
         return <IdCardPressView onBackToPeople={() => handleNavigate('people')} />;
+      case 'verify-id-card':
+      case 'verify':
+        return <IdCardVerificationView onBackToApp={() => handleNavigate('people')} />;
       case 'organization':
         return <WorkforceWorkspace initialTab="organization" onNavigate={handleNavigate} />;
       case 'departments':

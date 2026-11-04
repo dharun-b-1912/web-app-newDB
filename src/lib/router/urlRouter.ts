@@ -50,6 +50,8 @@ export const ROUTE_ALIASES: Record<string, string> = {
   '/employees': 'people',
   '/id-cards': 'id-cards',
   '/people/id-cards': 'id-cards',
+  '/verify-id-card': 'verify-id-card',
+  '/verify': 'verify-id-card',
   '/organization': 'organization',
   '/departments': 'departments',
   '/designations': 'designations',
