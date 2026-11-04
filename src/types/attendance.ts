@@ -77,6 +77,8 @@ export interface AttendanceDaily {
   overtime_minutes: number;
   regularization_status?: RegularizationStatus;
   is_regularized?: boolean;
+  payable_status?: number | string;
+  attendance_date?: string;
   punch_source?: string;
   source: PunchSource;
   check_in_source?: PunchSource;

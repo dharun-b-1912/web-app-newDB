@@ -287,7 +287,9 @@ export const AttendanceBulkUploadModal: React.FC<AttendanceBulkUploadModalProps>
   // Helper: Normalize Status (Returns null for empty cells so they are never fabricated as 'P')
   const normalizeStatus = (raw: string): { status: ParsedAttendanceRow['normalizedStatus']; payable: number } | null => {
     const s = (raw || '').toUpperCase().trim();
-    if (!s || s === '-' || s === '—' || s === 'NA' || s === 'N/A' || s === 'NULL' || s === 'UNDEFINED') {
+    if (!s || s === '-' || s === '—' || s === 'NA' || s === 'N/A' || s === 'NULL' || s === 'UNDEFINED' || s === '0' || s === 'REST') {
+      if (s === '0') return { status: 'ABSENT', payable: 0.0 };
+      if (s === 'REST') return { status: 'WEEKLY_OFF', payable: 1.0 };
       return null;
     }
     if (s === 'A' || s === 'ABSENT' || s === '0' || s === 'LOP' || s === 'AB') {
@@ -516,7 +518,26 @@ export const AttendanceBulkUploadModal: React.FC<AttendanceBulkUploadModalProps>
       XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions & Legend');
 
       const targetFileName = `JOY_Monthly_Attendance_${monthName}_${selectedYear}_Template.xlsx`;
-      XLSX.writeFile(wb, targetFileName);
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([excelBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8',
+      });
+
+      // Cross-platform bulletproof download for macOS Safari, Chrome, Windows, Linux
+      if (typeof window !== 'undefined') {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = targetFileName;
+        link.setAttribute('download', targetFileName);
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+        }, 200);
+      }
+
       showToast(`Downloaded ${monthName} ${selectedYear} timesheet for ${combinedWorkforce.length} employees!`);
     } catch (err: any) {
       console.error('Download template error:', err);

@@ -138,6 +138,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
     existingRecord?: any;
   } | null>(null);
   const [showBulkUploadModal, setShowBulkUploadModal] = useState<boolean>(false);
+  const [isResolvingExceptions, setIsResolvingExceptions] = useState<boolean>(false);
 
   // Vendor detection helper
   const checkIsVendor = (emp: any): boolean => {
@@ -250,6 +251,9 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
               setDailyRecords(dbRecords.map(r => ({
                 ...r,
                 date: r.attendance_date,
+                late_minutes: r.late_minutes ?? r.late_entry_minutes ?? 0,
+                net_working_minutes: r.net_working_minutes ?? r.total_work_minutes ?? 0,
+                early_checkout_minutes: r.early_checkout_minutes ?? r.early_exit_minutes ?? 0,
               })));
             } else {
               setDailyRecords([]);
@@ -727,6 +731,57 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleAutoResolveMissingPunches = async () => {
+    if (isPayrollLocked) {
+      showToast(`Cannot modify attendance: ${monthName} ${currentYear} is locked for payroll. Click "Unlock Month" first.`, 'warning');
+      return;
+    }
+
+    const missingRecords = dailyRecords.filter(r => 
+      !r.last_check_out && r.first_check_in && !r.is_regularized
+    );
+
+    if (missingRecords.length === 0) {
+      showToast(`No missing punch exceptions found for ${monthName} ${currentYear}.`, 'info');
+      return;
+    }
+
+    const confirmResolve = window.confirm(
+      `Resolve all ${missingRecords.length} missing punch exceptions for ${monthName} ${currentYear}?\n\nThis will record standard shift checkout times (18:30) and credit full 1.0 Paid Day.`
+    );
+    if (!confirmResolve) return;
+
+    setIsResolvingExceptions(true);
+    try {
+      if (isSupabaseEnabled && supabase) {
+        let count = 0;
+        for (const rec of missingRecords) {
+          const checkoutTime = `${rec.date || rec.attendance_date}T13:00:00.000Z`;
+          const { error: uErr } = await supabase
+            .from('attendance_daily')
+            .update({
+              last_check_out: checkoutTime,
+              status: 'PRESENT',
+              payable_status: 1.0,
+              is_regularized: true,
+              total_work_minutes: 540,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', rec.id);
+
+          if (!uErr) count++;
+        }
+        showToast(`✓ Successfully resolved ${count} missing punch exceptions for ${monthName} ${currentYear}!`, 'success');
+      }
+      loadData();
+    } catch (err: any) {
+      console.error('Failed to auto-resolve missing punches:', err);
+      showToast(`Failed to resolve exceptions: ${err.message || 'Unknown error'}`, 'error');
+    } finally {
+      setIsResolvingExceptions(false);
+    }
   };
 
   const handleToggleFinalize = async () => {
