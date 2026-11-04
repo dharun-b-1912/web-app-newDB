@@ -427,10 +427,69 @@
     })();
   </script>
   <script>
-    window.addEventListener('vite:preloadError', function () {
-      console.warn('[Vite] Dynamic chunk out of date after deployment. Reloading...');
-      window.location.reload();
-    });
+    (function () {
+      // 1. Vite dynamic preload error recovery
+      window.addEventListener('vite:preloadError', function () {
+        console.warn('[Vite] Dynamic chunk out of date after deployment or network transition. Reloading...');
+        window.location.reload();
+      });
+
+      // 2. Global Script & Module Network Error Recovery
+      // Catches net::ERR_NETWORK_CHANGED, net::ERR_INTERNET_DISCONNECTED, or module load aborts during DevTools throttling
+      var hasRecovered = false;
+      function scheduleNetworkRecovery(reason) {
+        if (hasRecovered || window.__joyAppMounted) return;
+        hasRecovered = true;
+
+        var retryCount = parseInt(sessionStorage.getItem('__joy_net_retry_count') || '0', 10);
+        var lastRetryTime = parseInt(sessionStorage.getItem('__joy_net_retry_time') || '0', 10);
+        var now = Date.now();
+
+        // Reset retry counter if last retry was more than 15s ago
+        if (now - lastRetryTime > 15000) {
+          retryCount = 0;
+        }
+
+        if (retryCount < 4) {
+          sessionStorage.setItem('__joy_net_retry_count', String(retryCount + 1));
+          sessionStorage.setItem('__joy_net_retry_time', String(now));
+
+          if (window.__joyBootStep) {
+            window.__joyBootStep(60, 'Network Reconnecting...', 'SaaS auto-recovery from network change');
+          }
+
+          var delay = Math.min(2000, 600 * (retryCount + 1));
+          console.warn('[Joy PeopleHR SaaS] Network fluctuation detected (' + reason + '). Auto-reconnecting in ' + delay + 'ms...');
+          setTimeout(function () {
+            window.location.reload();
+          }, delay);
+        } else {
+          console.warn('[Joy PeopleHR SaaS] High network latency or throttling detected. Retrying...');
+          setTimeout(function () {
+            sessionStorage.removeItem('__joy_net_retry_count');
+            window.location.reload();
+          }, 3000);
+        }
+      }
+
+      // Catch initial module resource load errors (capture phase)
+      window.addEventListener('error', function (event) {
+        var target = event.target || event.srcElement;
+        if (target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
+          var src = target.src || target.href || '';
+          if (src.indexOf('supabase') !== -1 || src.indexOf('main.tsx') !== -1 || src.indexOf('@react-refresh') !== -1 || src.indexOf('deps') !== -1 || src.indexOf('globalErrorInterceptor') !== -1) {
+            scheduleNetworkRecovery('Resource failed to load: ' + src);
+          }
+        }
+      }, true);
+
+      // Listen for network reconnect
+      window.addEventListener('online', function () {
+        if (!window.__joyAppMounted) {
+          scheduleNetworkRecovery('Network back online');
+        }
+      });
+    })();
   </script>
   <script type="module" src="/src/main.tsx"></script>
 </body>

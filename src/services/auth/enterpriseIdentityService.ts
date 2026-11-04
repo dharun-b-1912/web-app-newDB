@@ -264,7 +264,7 @@ export const enterpriseIdentityService = {
       await resendEmailService.sendOrganizationUserInvitationEmail({
         to: cleanEmail,
         recipientName: cleanName,
-        organizationName: 'JOY CORPORATE SOLUTIONS PVE LTD',
+        organizationName: 'JOY CORPORATE SOLUTIONS PVT LTD',
         roleDisplayName: roleTitle,
         roleKey: params.role_code,
         invitationUrl: activationUrl,

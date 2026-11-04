@@ -18,11 +18,13 @@ import {
   FileSpreadsheet,
   UserCheck,
   PlusCircle,
+  X,
+  Users,
 } from 'lucide-react';
 import { attendanceApi } from '../../../services/attendanceApi';
 import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
-import { formatMinutesToHoursStr, formatDeviationDuration } from '../../../lib/attendance/attendanceEngine';
+import { formatMinutesToHoursStr, formatDeviationDuration, timeStringToMinutes } from '../../../lib/attendance/attendanceEngine';
 import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
 import { AttendanceDaily } from '../../../types/attendance';
 import { cn } from '../../../lib/utils';
@@ -31,6 +33,10 @@ import { ManualAttendanceOverrideModal } from '../components/ManualAttendanceOve
 import { AttendanceBulkUploadModal } from '../components/AttendanceBulkUploadModal';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
+import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
+import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
+import { leaveApi } from '../../../services/leaveApi';
+import { Holiday } from '../../../types/leave';
 
 interface AttendanceHistoryViewProps {
   onOpenEmployeeProfile?: (employeeId: string, date?: string) => void;
@@ -54,6 +60,10 @@ interface DayAttendanceSummary {
   expected_out: string;
   isWeeklyOff: boolean;
   hasOvertime: boolean;
+  isHoliday?: boolean;
+  holiday_name?: string;
+  holiday_category?: string;
+  holiday_type?: string;
 }
 
 interface MatrixEmployeeRow {
@@ -69,6 +79,7 @@ interface MatrixEmployeeRow {
     absent: number;
     leave: number;
     halfDay: number;
+    holiday: number;
     wfh: number;
     late: number;
     early: number;
@@ -202,42 +213,88 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       }
     }).catch(() => {});
 
-    const loadedShifts = attendanceRosterService.getShifts();
-    setShifts(loadedShifts);
+    // Ensure shifts, rosters, and shift assignments are loaded in memory for accurate shift timings and weekly off calculations
+    attendanceRosterService.fetchShiftsFromDb().then(loadedShifts => {
+      if (loadedShifts && loadedShifts.length > 0) {
+        setShifts(loadedShifts);
+      } else {
+        setShifts(attendanceRosterService.getShifts());
+      }
+    }).catch(() => {
+      setShifts(attendanceRosterService.getShifts());
+    });
+    attendanceRosterService.fetchShiftAssignmentsFromDb().catch(() => {});
 
     const startDate = `${monthKey}-01`;
     const endDate = `${monthKey}-${String(daysInMonth).padStart(2, '0')}`;
+    const tenantId = getActiveOrgId();
 
-    if (isSupabaseEnabled && supabase) {
-      // 1. Authoritative Backend SQL Attendance Sync (No mock/localStorage fallback)
-      Promise.resolve(
-        supabase
-          .from('attendance_daily')
-          .select('*')
-          .gte('attendance_date', startDate)
-          .lte('attendance_date', endDate)
-      )
-        .then(({ data: dbRecords, error: dbErr }) => {
-          if (!dbErr && dbRecords) {
-            setDailyRecords(dbRecords.map(r => ({
-              ...r,
-              date: r.attendance_date,
-            })));
-          } else {
-            setDailyRecords([]);
+    attendanceRosterService.fetchRostersFromDb(startDate, endDate).catch(() => {});
+
+    // Authoritative Backend SQL Attendance Sync with punch synthesis and dynamic status resolution
+    attendanceApi.getDailyAttendanceForPeriodAsync(startDate, endDate)
+      .then(records => {
+        if (records && records.length > 0) {
+          setDailyRecords(records);
+        } else if (isSupabaseEnabled && supabase) {
+          let q = supabase
+            .from('attendance_daily')
+            .select('*')
+            .gte('attendance_date', startDate)
+            .lte('attendance_date', endDate);
+          if (tenantId && tenantId !== 'platform-root') {
+            q = q.eq('organization_id', tenantId);
           }
-        })
-        .catch(() => setDailyRecords([]));
+          Promise.resolve(q).then(({ data: dbRecords }) => {
+            if (dbRecords) {
+              setDailyRecords(dbRecords.map(r => ({
+                ...r,
+                date: r.attendance_date,
+              })));
+            } else {
+              setDailyRecords([]);
+            }
+          }).catch(() => setDailyRecords([]));
+        } else {
+          setDailyRecords([]);
+        }
+      })
+      .catch(() => {
+        if (isSupabaseEnabled && supabase) {
+          let q = supabase
+            .from('attendance_daily')
+            .select('*')
+            .gte('attendance_date', startDate)
+            .lte('attendance_date', endDate);
+          if (tenantId && tenantId !== 'platform-root') {
+            q = q.eq('organization_id', tenantId);
+          }
+          Promise.resolve(q).then(({ data: dbRecords }) => {
+            if (dbRecords) {
+              setDailyRecords(dbRecords.map(r => ({
+                ...r,
+                date: r.attendance_date,
+              })));
+            } else {
+              setDailyRecords([]);
+            }
+          }).catch(() => setDailyRecords([]));
+        } else {
+          setDailyRecords([]);
+        }
+      });
 
-      // 2. Authoritative Backend SQL Payroll Period Lock Status
-      Promise.resolve(
-        supabase
-          .from('payroll_periods')
-          .select('is_locked, status')
-          .eq('month', currentMonthIndex + 1)
-          .eq('year', currentYear)
-          .maybeSingle()
-      )
+    // Authoritative Backend SQL Payroll Period Lock Status
+    if (isSupabaseEnabled && supabase) {
+      let pq = supabase
+        .from('payroll_periods')
+        .select('is_locked, status')
+        .eq('month', currentMonthIndex + 1)
+        .eq('year', currentYear);
+      if (tenantId && tenantId !== 'platform-root') {
+        pq = pq.eq('organization_id', tenantId);
+      }
+      Promise.resolve(pq.maybeSingle())
         .then(({ data: periodData }) => {
           if (periodData) {
             setIsPayrollLocked(Boolean(periodData.is_locked || periodData.status === 'LOCKED' || periodData.status === 'FINALIZED'));
@@ -255,14 +312,47 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
   useEffect(() => {
     const unsub1 = hrEventBus.subscribe('attendance.*', () => {
+      attendanceApi.invalidateCache();
       loadData();
     });
     const unsub2 = hrEventBus.subscribe('regularization.*', () => {
+      attendanceApi.invalidateCache();
       loadData();
     });
+    const unsub3 = hrEventBus.subscribe('roster.*', () => {
+      attendanceApi.invalidateCache();
+      loadData();
+    });
+    const unsub4 = hrEventBus.subscribe('shift.*', () => {
+      attendanceApi.invalidateCache();
+      loadData();
+    });
+    const unsubLeave = hrEventBus.subscribe('leave.*', () => {
+      attendanceApi.invalidateCache();
+      loadData();
+    });
+
+    let unsubDaily = () => {};
+    let unsubPunches = () => {};
+    if (isSupabaseEnabled) {
+      unsubDaily = realtimeChannelManager.subscribeToTable('attendance_daily', () => {
+        attendanceApi.invalidateCache();
+        loadData();
+      });
+      unsubPunches = realtimeChannelManager.subscribeToTable('attendance_punches', () => {
+        attendanceApi.invalidateCache();
+        loadData();
+      });
+    }
+
     return () => {
       unsub1();
       unsub2();
+      unsub3();
+      unsub4();
+      unsubLeave();
+      unsubDaily();
+      unsubPunches();
     };
   }, [monthKey]);
 
@@ -334,6 +424,19 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
     });
   }, [employees, workforceSegment, deptFilter, locationFilter, vendorFilter, searchQuery]);
 
+  // Month holidays lookup map
+  const holidaysForMonth = useMemo(() => {
+    return leaveApi.getHolidaysForMonth(currentYear, currentMonthIndex);
+  }, [currentYear, currentMonthIndex]);
+
+  const holidayMap = useMemo<Record<string, Holiday>>(() => {
+    const map: Record<string, Holiday> = {};
+    holidaysForMonth.forEach(h => {
+      map[h.date] = h;
+    });
+    return map;
+  }, [holidaysForMonth]);
+
   // Compute day-by-day attendance for each employee across the entire month
   const matrixData = useMemo<MatrixEmployeeRow[]>(() => {
     return scopedEmployees.map(emp => {
@@ -348,6 +451,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       let totalAbsent = 0;
       let totalLeave = 0;
       let totalHalfDay = 0;
+      let totalHoliday = 0;
       let totalWfh = 0;
       let totalLate = 0;
       let totalEarly = 0;
@@ -358,7 +462,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       const dayMap: Record<number, DayAttendanceSummary> = {};
 
       daysArray.forEach(d => {
-        const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, d.dateStr);
+        const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, d.dateStr, undefined, emp);
         const shift = attendanceRosterService.getShiftById(roster.shift_id) || {
           shift_code: roster.shift_code || 'GEN-09',
           shift_name: roster.shift_name || 'General Shift',
@@ -367,53 +471,105 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
           grace_in_minutes: 15,
         };
 
-        const record = dailyRecords.find(r => 
-          (r.employee_id === emp.id || (r.employee_code && emp.employee_code && r.employee_code.toLowerCase() === emp.employee_code.toLowerCase())) && 
-          r.date === d.dateStr
-        );
+        const record = dailyRecords.find(r => {
+          const rDate = r.date || (r as any).attendance_date;
+          if (rDate !== d.dateStr) return false;
+          const rEmpId = (r.employee_id || '').toLowerCase();
+          const rEmpCode = (r.employee_code || '').toLowerCase();
+          const eId = (emp.id || '').toLowerCase();
+          const eCode = (emp.employee_code || '').toLowerCase();
+          return (rEmpId && (rEmpId === eId || rEmpId === eCode)) ||
+                 (rEmpCode && (rEmpCode === eCode || rEmpCode === eId));
+        });
 
-        let statusCode = 'P';
-        let statusLabel = 'Present';
+        let statusCode = '-';
+        let statusLabel = 'Scheduled';
 
-        if (roster.is_weekly_off) {
-          statusCode = 'WO';
-          statusLabel = 'Weekly Off';
-        } else if (record) {
-          if (record.status === 'On Leave') {
+        const normStatus = String(record?.status || '').trim().toUpperCase();
+        const hasCheckIn = Boolean(record?.first_check_in);
+        const hasCheckOut = Boolean(record?.last_check_out);
+        const hasWork = (record?.net_working_minutes || 0) > 0 || (record?.total_work_minutes || 0) > 0 || hasCheckIn;
+        const todayStr = getLocalDateString();
+        const isPastDate = d.dateStr < todayStr;
+        const hol = holidayMap[d.dateStr];
+        const isHol = Boolean(hol && (hol.type === 'Mandatory' || !hol.is_optional));
+
+        // Dynamic late detection using shift start time + grace period
+        let isLate = (record?.late_minutes && record.late_minutes > 0) || normStatus === 'LATE' || normStatus === 'LATE_PRESENT' || normStatus === 'LP';
+        if (!isLate && hasCheckIn && record?.first_check_in) {
+          const inMins = timeStringToMinutes(record.first_check_in);
+          const shiftStartMins = timeStringToMinutes(shift.start_time) || 540;
+          const grace = (shift as any).grace_in_minutes ?? 15;
+          if (inMins !== null && inMins > shiftStartMins + grace) {
+            isLate = true;
+          }
+        }
+
+        if (record) {
+          if (normStatus === 'HOLIDAY' || normStatus === 'H' || (isHol && !hasWork)) {
+            statusCode = 'H';
+            statusLabel = `Holiday: ${hol?.name || (record as any)?.holiday_name || 'Corporate Holiday'} (${hol?.category || (record as any)?.holiday_category || 'National Gazetted'}${hol?.type ? ' - ' + hol.type : ''})`;
+            totalHoliday++;
+          } else if (normStatus === 'ON_LEAVE' || normStatus === 'LEAVE' || normStatus === 'ON LEAVE' || normStatus === 'L') {
             statusCode = 'L';
             statusLabel = 'On Leave';
             totalLeave++;
-          } else if (record.status === 'WFH') {
+          } else if (normStatus === 'WFH' || normStatus === 'WORK_FROM_HOME' || normStatus === 'REMOTE') {
             statusCode = 'WFH';
             statusLabel = 'Work From Home';
             totalWfh++;
             totalPresent++;
-          } else if (record.status === 'Half Day') {
+          } else if (normStatus === 'HALF_DAY' || normStatus === 'HALF DAY' || normStatus === 'HD') {
             statusCode = 'HD';
             statusLabel = 'Half Day';
             totalHalfDay++;
+          } else if (normStatus === 'ON_DUTY' || normStatus === 'OD') {
+            statusCode = 'OD';
+            statusLabel = 'On Duty';
             totalPresent++;
-          } else if (record.status === 'Missing Punch' || (!d.isToday && record.first_check_in && !record.last_check_out)) {
+          } else if (normStatus === 'MISSING_PUNCH' || normStatus === 'MISSING PUNCH' || normStatus === 'MP' || (!d.isToday && hasCheckIn && !hasCheckOut)) {
             statusCode = 'MP';
             statusLabel = 'Missing Punch';
             totalMissingPunch++;
             totalPresent++;
-          } else if (record.status === 'Absent') {
+          } else if (normStatus === 'ABSENT' || normStatus === 'A') {
             statusCode = 'A';
             statusLabel = 'Absent';
             totalAbsent++;
-          } else if (record.late_minutes > 0 || record.status === 'Late') {
+          } else if (isLate) {
             statusCode = 'LP';
             statusLabel = 'Late Present';
             totalLate++;
             totalPresent++;
-          } else if (record.status === 'Present' || record.status === 'Checked Out' || (d.isToday && record.first_check_in)) {
+          } else if (normStatus === 'PRESENT' || normStatus === 'CHECKED_OUT' || normStatus === 'CHECKED OUT' || normStatus === 'P' || hasCheckIn || (d.isToday && hasCheckIn)) {
             statusCode = 'P';
-            statusLabel = 'Present';
+            statusLabel = isHol ? `Present (Holiday Work: ${hol?.name || 'Holiday'})` : 'Present';
             totalPresent++;
+          } else if (normStatus === 'WEEKLY_OFF' || normStatus === 'WEEK_OFF' || normStatus === 'REST_DAY' || normStatus === 'WO' || roster.is_weekly_off) {
+            if (hasWork) {
+              statusCode = isLate ? 'LP' : 'P';
+              statusLabel = 'Present (Punch on Off)';
+              totalPresent++;
+            } else {
+              statusCode = 'WO';
+              statusLabel = 'Weekly Off';
+            }
           } else {
-            statusCode = 'WO';
-            statusLabel = 'Rest Day';
+            if (hasWork) {
+              statusCode = isLate ? 'LP' : 'P';
+              statusLabel = 'Present';
+              totalPresent++;
+            } else if (roster.is_weekly_off) {
+              statusCode = 'WO';
+              statusLabel = 'Weekly Off';
+            } else if (isPastDate) {
+              statusCode = 'A';
+              statusLabel = 'Absent';
+              totalAbsent++;
+            } else {
+              statusCode = '-';
+              statusLabel = 'Scheduled';
+            }
           }
 
           if (record.early_checkout_minutes > 0) totalEarly++;
@@ -421,10 +577,14 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
           if (record.net_working_minutes > 0) totalWorkedMinutes += record.net_working_minutes;
         } else {
           // No record exists in database for this day
-          if (roster.is_weekly_off) {
+          if (isHol) {
+            statusCode = 'H';
+            statusLabel = `Holiday: ${hol.name} (${hol.category || 'National Gazetted'}${hol.type ? ' - ' + hol.type : ''})`;
+            totalHoliday++;
+          } else if (roster.is_weekly_off) {
             statusCode = 'WO';
             statusLabel = 'Weekly Off';
-          } else if (isCurrentMonth && d.dayNum < new Date().getDate()) {
+          } else if (isPastDate) {
             statusCode = 'A';
             statusLabel = 'Absent (No Punch)';
             totalAbsent++;
@@ -443,7 +603,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
           first_check_in: record?.first_check_in,
           last_check_out: record?.last_check_out,
           net_working_minutes: record?.net_working_minutes || 0,
-          late_minutes: record?.late_minutes || 0,
+          late_minutes: isLate ? (record?.late_minutes || 1) : 0,
           early_checkout_minutes: record?.early_checkout_minutes || 0,
           overtime_minutes: record?.overtime_minutes || 0,
           total_break_minutes: record?.total_break_minutes || 0,
@@ -453,7 +613,11 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
           expected_in: shift.start_time,
           expected_out: shift.end_time,
           isWeeklyOff: roster.is_weekly_off,
-          hasOvertime: (record?.overtime_minutes || 0) > 0,
+          hasOvertime: (record?.overtime_minutes || 0) > 0 || Boolean(hasWork && isHol),
+          isHoliday: isHol || statusCode === 'H',
+          holiday_name: hol?.name || (record as any)?.holiday_name,
+          holiday_category: hol?.category || (record as any)?.holiday_category,
+          holiday_type: hol?.type || (record as any)?.holiday_type,
         };
       });
 
@@ -463,17 +627,18 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
       daysArray.forEach(d => {
         const isOff = dayMap[d.dayNum]?.isWeeklyOff;
+        const sCode = dayMap[d.dayNum]?.statusCode;
         if (d.dayNum <= currentDayLimit) {
-          if (isOff) {
+          if (isOff && sCode === 'WO') {
             weeklyOffsElapsed++;
-          } else {
+          } else if (!isOff) {
             scheduledWorkDaysElapsed++;
           }
         }
       });
 
-      // Month-to-date Paid Days = Present + (HalfDay * 0.5) + Approved Leaves + Weekly Offs (Elapsed)
-      const mtdPaidDays = Math.max(0, totalPresent + (totalHalfDay * 0.5) + totalLeave + weeklyOffsElapsed);
+      // Month-to-date Paid Days = Present + (HalfDay * 0.5) + Approved Leaves + Statutory Paid Holidays + Weekly Offs (Elapsed)
+      const mtdPaidDays = Math.max(0, totalPresent + (totalHalfDay * 0.5) + totalLeave + totalHoliday + weeklyOffsElapsed);
       // Full Month Projected Paid Days (Standard monthly salary base if active and 0 LOP)
       const fullMonthPaidDays = Math.min(daysInMonth, Math.max(0, daysInMonth - totalAbsent - (totalHalfDay * 0.5)));
 
@@ -490,6 +655,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
           absent: totalAbsent,
           leave: totalLeave,
           halfDay: totalHalfDay,
+          holiday: totalHoliday,
           wfh: totalWfh,
           late: totalLate,
           early: totalEarly,
@@ -504,7 +670,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
         },
       };
     });
-  }, [scopedEmployees, dailyRecords, daysArray, currentYear, currentMonthIndex, daysInMonth, currentDayLimit]);
+  }, [scopedEmployees, dailyRecords, daysArray, currentYear, currentMonthIndex, daysInMonth, currentDayLimit, holidayMap]);
 
   // Group matrix rows by department
   const departmentGroups = useMemo<Record<string, MatrixEmployeeRow[]>>(() => {
@@ -522,6 +688,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
     const totalPresentDays = matrixData.reduce((acc, m) => acc + m.totals.present, 0);
     const totalAbsentDays = matrixData.reduce((acc, m) => acc + m.totals.absent, 0);
     const totalLeaveDays = matrixData.reduce((acc, m) => acc + m.totals.leave, 0);
+    const totalHolidayDays = matrixData.reduce((acc, m) => acc + (m.totals.holiday || 0), 0);
     const totalMissingPunches = matrixData.reduce((acc, m) => acc + m.totals.missingPunch, 0);
     const totalOtMins = matrixData.reduce((acc, m) => acc + m.totals.otMinutes, 0);
     const totalPaidDays = matrixData.reduce((acc, m) => acc + m.totals.paidDays, 0);
@@ -531,6 +698,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
     const avgPresentDays = (totalPresentDays / (totalEmployees || 1)).toFixed(1);
     const avgAbsentDays = (totalAbsentDays / (totalEmployees || 1)).toFixed(1);
+    const avgHolidayDays = (totalHolidayDays / (totalEmployees || 1)).toFixed(1);
     const avgPaidDays = (totalPaidDays / (totalEmployees || 1)).toFixed(1);
     const elapsedDays = currentDayLimit;
 
@@ -541,6 +709,8 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       totalAbsentDays,
       avgAbsentDays,
       totalLeaveDays,
+      totalHolidayDays,
+      avgHolidayDays,
       totalMissingPunches,
       totalOtMins,
       totalOtHours: formatMinutesToHoursStr(totalOtMins),
@@ -622,10 +792,16 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
         return <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-rose-800 bg-rose-50">A</span>;
       case 'HD':
         return <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-sky-800 bg-sky-50">HD</span>;
+      case 'H':
+        return <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-black text-purple-900 bg-purple-100 border border-purple-300 shadow-2xs">H</span>;
+      case 'HP':
+        return <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-black text-emerald-950 bg-emerald-100 border border-emerald-400 shadow-2xs">HP</span>;
       case 'L':
         return <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-purple-800 bg-purple-50">L</span>;
       case 'WFH':
         return <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-violet-800 bg-violet-50">WFH</span>;
+      case 'OD':
+        return <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold text-blue-800 bg-blue-50 border border-blue-200">OD</span>;
       case 'WO':
         return <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-medium text-gray-400">WO</span>;
       default:
@@ -866,8 +1042,17 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
             placeholder="Search employee..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="h-9 pl-8 pr-3 bg-white border border-gray-200 rounded-lg text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#07563D] w-52"
+            className="h-9 pl-8 pr-7 bg-white border border-gray-200 rounded-lg text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#07563D] w-56 shadow-2xs"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+              title="Clear search"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -892,83 +1077,178 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
         </div>
       )}
 
-      {/* 3. LIGHTWEIGHT METRIC STRIP + INLINE HORIZONTAL LEGEND */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 py-2 px-3 bg-gray-50/90 border border-gray-200/90 rounded-lg text-xs">
-        {/* Metric Strip */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-600">
-          <span className="flex items-center gap-1.5">
-            <span className="text-[10px] uppercase font-bold text-gray-400">Workforce:</span>
-            <strong className="text-gray-900 font-bold">{monthStats.totalEmployees} Staff</strong>
-          </span>
-          <span className="text-gray-300">|</span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-[10px] uppercase font-bold text-gray-400">Present:</span>
-            <strong className="text-emerald-700 font-bold">{monthStats.avgPresentDays}d avg</strong>
-            <span className="text-[11px] text-gray-400 font-mono">({monthStats.totalPresentDays.toLocaleString('en-IN')})</span>
-          </span>
-          <span className="text-gray-300">|</span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-[10px] uppercase font-bold text-gray-400">LOP:</span>
-            <strong className={cn("font-bold", monthStats.totalAbsentDays > 0 ? "text-rose-700" : "text-gray-900")}>
-              {monthStats.avgAbsentDays}d avg
-            </strong>
-            <span className="text-[11px] text-gray-400 font-mono">({monthStats.totalAbsentDays.toLocaleString('en-IN')})</span>
-          </span>
-          <span className="text-gray-300">|</span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-[10px] uppercase font-bold text-gray-400">Leave:</span>
-            <strong className="text-purple-700 font-bold">{monthStats.totalLeaveDays}d</strong>
-          </span>
-          <span className="text-gray-300">|</span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-[10px] uppercase font-bold text-gray-400">OT:</span>
-            <strong className="text-indigo-700 font-bold">{monthStats.totalOtHours}</strong>
-          </span>
-          <span className="text-gray-300">|</span>
-          <span
-            className="flex items-center gap-1.5 cursor-help"
-            title={`Month-to-Date Average: ${monthStats.avgPaidDays} paid days per employee out of ${monthStats.elapsedDays} elapsed days (Total ${monthStats.totalPaidDays.toLocaleString('en-IN')} workforce man-days credited).`}
-          >
-            <span className="text-[10px] uppercase font-bold text-gray-400">Paid:</span>
-            <strong className="text-gray-900 font-black text-xs text-[#07563D]">{monthStats.avgPaidDays} / {monthStats.elapsedDays}d avg</strong>
-            <span className="text-[11px] text-gray-400 font-mono">({monthStats.totalPaidDays.toLocaleString('en-IN')} total)</span>
-          </span>
-          <span className="text-gray-300">|</span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-[10px] uppercase font-bold text-gray-400">Rate:</span>
-            <strong className="text-gray-900 font-bold">{monthStats.attendanceRate}%</strong>
-          </span>
-
-          {monthStats.totalMissingPunches > 0 && (
-            <>
-              <span className="text-gray-300">|</span>
-              <button
-                onClick={() => onNavigateSubPath?.('regularization')}
-                className="flex items-center gap-1 text-rose-700 font-bold hover:underline"
-              >
-                <AlertTriangle className="w-3 h-3 text-rose-600" />
-                <span>{monthStats.totalMissingPunches} Exceptions</span>
-              </button>
-            </>
-          )}
+      {/* 3. EXECUTIVE MONTH ATTENDANCE STATS RIBBON */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+        {/* Workforce */}
+        <div className="bg-white border border-gray-200 rounded-lg p-2.5 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Workforce</div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-base font-bold text-gray-900">{monthStats.totalEmployees}</span>
+            <span className="text-[11px] text-gray-500 font-medium">Staff</span>
+          </div>
         </div>
 
-        {/* Inline Horizontal Legend */}
-        <div className="flex items-center gap-2 text-[11px] text-gray-500 font-medium overflow-x-auto whitespace-nowrap">
-          <span className="text-gray-400 text-[10px] font-bold uppercase">Legend:</span>
-          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-600" /><strong>P</strong> Present</span>
-          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-600" /><strong>LP</strong> Late</span>
-          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-600" /><strong>A</strong> Absent</span>
-          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-600" /><strong>L</strong> Leave</span>
-          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-sky-600" /><strong>HD</strong> Half</span>
-          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-violet-600" /><strong>WFH</strong> Remote</span>
-          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-600" /><strong>!</strong> Missing</span>
-          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gray-400" /><strong>WO</strong> Off</span>
-          <span className="text-gray-300">|</span>
-          <span className="text-[11px] text-emerald-800 font-semibold flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-            <span>Click any day cell to record manual attendance & override</span>
-          </span>
+        {/* Present Avg */}
+        <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg p-2.5 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Present Avg</div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-base font-bold text-emerald-900">{monthStats.avgPresentDays}d</span>
+            <span className="text-[11px] text-emerald-700 font-mono">({monthStats.totalPresentDays.toLocaleString('en-IN')})</span>
+          </div>
+        </div>
+
+        {/* Paid Statutory Holidays */}
+        <div className="bg-purple-50/70 border border-purple-200 rounded-lg p-2.5 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-purple-800 flex items-center justify-between">
+            <span>Holidays</span>
+            <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-purple-200 text-purple-900">Paid</span>
+          </div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-base font-bold text-purple-950">{monthStats.avgHolidayDays}d</span>
+            <span className="text-[11px] text-purple-700 font-mono">({monthStats.totalHolidayDays})</span>
+          </div>
+        </div>
+
+        {/* LOP / Absent */}
+        <div className="bg-rose-50/60 border border-rose-200 rounded-lg p-2.5 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-rose-800">LOP / Absent</div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-base font-bold text-rose-900">{monthStats.avgAbsentDays}d</span>
+            <span className="text-[11px] text-rose-700 font-mono">({monthStats.totalAbsentDays.toLocaleString('en-IN')})</span>
+          </div>
+        </div>
+
+        {/* Approved Leave */}
+        <div className="bg-violet-50/60 border border-violet-200 rounded-lg p-2.5 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-violet-800">Approved Leave</div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-base font-bold text-violet-900">{monthStats.totalLeaveDays}d</span>
+            <span className="text-[11px] text-violet-700 font-medium">Logged</span>
+          </div>
+        </div>
+
+        {/* Overtime with visual OT Dot indicator */}
+        <div className="bg-indigo-50/60 border border-indigo-200 rounded-lg p-2.5 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-800 flex items-center justify-between">
+            <span>Overtime</span>
+            <span className="w-2 h-2 rounded-full bg-indigo-600 ring-1.5 ring-white" title="Blue dot on matrix cells indicates overtime logged" />
+          </div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-base font-bold text-indigo-900">{monthStats.totalOtHours}</span>
+            <span className="text-[11px] text-indigo-700 font-medium">Logged</span>
+          </div>
+        </div>
+
+        {/* Paid Days Credit */}
+        <div className="bg-emerald-50/90 border border-emerald-300 rounded-lg p-2.5 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[#07563D]">Paid Days</div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-base font-black text-[#07563D]">{monthStats.avgPaidDays}</span>
+            <span className="text-[11px] text-emerald-800 font-semibold">/ {monthStats.elapsedDays}d</span>
+          </div>
+        </div>
+
+        {/* Attendance Rate */}
+        <div className="bg-white border border-gray-200 rounded-lg p-2.5 shadow-2xs">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 flex items-center justify-between">
+            <span>Att. Rate</span>
+            {monthStats.totalMissingPunches > 0 && (
+              <button
+                onClick={() => onNavigateSubPath?.('regularization')}
+                className="text-rose-600 font-bold hover:underline flex items-center gap-0.5"
+                title={`${monthStats.totalMissingPunches} missing punch exceptions need regularization`}
+              >
+                <AlertTriangle className="w-3 h-3 text-rose-500 animate-pulse" />
+                <span className="text-[10px]">{monthStats.totalMissingPunches}</span>
+              </button>
+            )}
+          </div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-base font-bold text-gray-900">{monthStats.attendanceRate}%</span>
+            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden self-center">
+              <div
+                className="h-full bg-emerald-600 rounded-full transition-all"
+                style={{ width: `${Math.min(100, monthStats.attendanceRate)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. DEDICATED ATTENDANCE MATRIX LEGEND & GUIDE STRIP */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 py-2 px-3 bg-white border border-gray-200 rounded-lg text-xs shadow-2xs">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-600">
+          <span className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Legend:</span>
+          
+          <div className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200">P</span>
+            <span className="text-[11px] text-gray-700">Present</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200">LP</span>
+            <span className="text-[11px] text-gray-700">Late</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-rose-800 bg-rose-50 border border-rose-200">A</span>
+            <span className="text-[11px] text-gray-700">Absent</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-purple-800 bg-purple-50 border border-purple-200">L</span>
+            <span className="text-[11px] text-gray-700">Leave</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-sky-800 bg-sky-50 border border-sky-200">HD</span>
+            <span className="text-[11px] text-gray-700">Half</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-black text-purple-900 bg-purple-100 border border-purple-300">H</span>
+            <span className="text-[11px] text-gray-700 font-medium">Holiday</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-violet-800 bg-violet-50 border border-violet-200">WFH</span>
+            <span className="text-[11px] text-gray-700">Remote</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold text-blue-800 bg-blue-50 border border-blue-200">OD</span>
+            <span className="text-[11px] text-gray-700">On Duty</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-black text-rose-700 bg-rose-50 border border-rose-300">!</span>
+            <span className="text-[11px] text-gray-700">Missing</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-medium text-gray-400 bg-gray-50 border border-gray-200">WO</span>
+            <span className="text-[11px] text-gray-700">Off</span>
+          </div>
+
+          <span className="text-gray-300 hidden sm:inline">|</span>
+
+          {/* OVERTIME EXPLANATION WITH VISUAL BADGE PREVIEW */}
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-indigo-50/80 border border-indigo-200" title="The blue dot on the top-right corner indicates the employee logged overtime hours on that day">
+            <div className="relative inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300">
+              P
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-indigo-600 ring-1.5 ring-white shadow-2xs" />
+            </div>
+            <span className="text-[11px] font-semibold text-indigo-950 flex items-center gap-1">
+              <span>Blue Dot</span>
+              <span className="text-indigo-600 font-bold">= Overtime (+OT)</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Quick Help Hint */}
+        <div className="text-[11px] text-emerald-800 font-medium flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+          <span>Click any cell to record manual attendance or override</span>
         </div>
       </div>
 
@@ -986,37 +1266,47 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                   </th>
 
                   {/* Day Columns 1..31 */}
-                  {daysArray.map(d => (
-                    <th
-                      key={d.dayNum}
-                      className={cn(
-                        "p-1 text-center font-mono border-r border-gray-200/60 min-w-[34px] transition-colors",
-                        d.isSunday && "bg-gray-100/50 text-gray-600",
-                        d.isSaturday && "bg-gray-50 text-gray-500",
-                        d.isToday && "bg-emerald-50 text-emerald-950 font-black border-t-2 border-t-[#07563D] shadow-2xs"
-                      )}
-                    >
-                      <div className="flex flex-col items-center justify-center">
-                        {d.isToday && (
-                          <span className="text-[7px] font-black uppercase tracking-tighter text-[#07563D] leading-none mb-0.5 bg-emerald-100/90 px-1 py-0.5 rounded">
-                            TODAY
-                          </span>
+                  {daysArray.map(d => {
+                    const colHol = holidayMap[d.dateStr];
+                    return (
+                      <th
+                        key={d.dayNum}
+                        title={colHol ? `🎉 Holiday: ${colHol.name} (${colHol.category || 'National Gazetted'}${colHol.type ? ' - ' + colHol.type : ''})` : undefined}
+                        className={cn(
+                          "p-1 text-center font-mono border-r border-gray-200/60 min-w-[34px] transition-colors",
+                          colHol && "bg-purple-50/90 border-t-2 border-t-purple-600 shadow-2xs",
+                          d.isSunday && !colHol && "bg-gray-100/50 text-gray-600",
+                          d.isSaturday && !colHol && "bg-gray-50 text-gray-500",
+                          d.isToday && !colHol && "bg-emerald-50 text-emerald-950 font-black border-t-2 border-t-[#07563D] shadow-2xs"
                         )}
-                        <div className={cn("text-[11px] font-bold leading-tight", d.isToday ? "text-[#07563D] font-black scale-105" : "text-gray-800")}>
-                          {d.dayNum}
+                      >
+                        <div className="flex flex-col items-center justify-center">
+                          {colHol ? (
+                            <span className="text-[7px] font-black uppercase tracking-tighter text-purple-700 leading-none mb-0.5 bg-purple-100/90 px-1 py-0.5 rounded shadow-2xs">
+                              HOL
+                            </span>
+                          ) : d.isToday ? (
+                            <span className="text-[7px] font-black uppercase tracking-tighter text-[#07563D] leading-none mb-0.5 bg-emerald-100/90 px-1 py-0.5 rounded">
+                              TODAY
+                            </span>
+                          ) : null}
+                          <div className={cn("text-[11px] font-bold leading-tight", colHol ? "text-purple-950 font-black" : d.isToday ? "text-[#07563D] font-black scale-105" : "text-gray-800")}>
+                            {d.dayNum}
+                          </div>
+                          <div className={cn("text-[9px] font-sans font-semibold uppercase", colHol ? "text-purple-600 font-bold" : d.isToday ? "text-[#07563D] font-bold" : "text-gray-400")}>
+                            {d.weekdayShort.slice(0, 2)}
+                          </div>
                         </div>
-                        <div className={cn("text-[9px] font-sans font-semibold uppercase", d.isToday ? "text-[#07563D] font-bold" : "text-gray-400")}>
-                          {d.weekdayShort.slice(0, 2)}
-                        </div>
-                      </div>
-                    </th>
-                  ))}
+                      </th>
+                    );
+                  })}
 
                   {/* Right Summary Headers */}
                   <th className="p-1.5 text-center bg-gray-50 text-gray-800 font-bold border-r border-gray-200 min-w-[34px]" title="Present Days">P</th>
                   <th className="p-1.5 text-center bg-gray-50 text-gray-800 font-bold border-r border-gray-200 min-w-[34px]" title="Absent Days">A</th>
                   <th className="p-1.5 text-center bg-gray-50 text-gray-800 font-bold border-r border-gray-200 min-w-[34px]" title="Leave Days">L</th>
                   <th className="p-1.5 text-center bg-gray-50 text-gray-800 font-bold border-r border-gray-200 min-w-[34px]" title="Half Days">HD</th>
+                  <th className="p-1.5 text-center bg-purple-50 text-purple-900 font-bold border-r border-purple-200 min-w-[34px]" title="Statutory Paid Holidays">H</th>
                   <th className="p-1.5 text-center bg-gray-50 text-gray-800 font-bold border-r border-gray-200 min-w-[36px]" title="Late Marks">Late</th>
                   <th className="p-1.5 text-center bg-gray-50 text-gray-800 font-bold border-r border-gray-200 min-w-[48px]" title="Overtime Hours">OT</th>
                   <th className="p-1.5 text-center bg-gray-100 text-gray-900 font-black border-l border-gray-300 min-w-[44px]" title="Paid Days for Payroll">Paid</th>
@@ -1027,7 +1317,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
               <tbody className="divide-y divide-gray-100">
                 {Object.keys(departmentGroups).length === 0 ? (
                   <tr>
-                    <td colSpan={daysArray.length + 8} className="text-center py-12 text-gray-400">
+                    <td colSpan={daysArray.length + 9} className="text-center py-12 text-gray-400">
                       <p className="font-semibold text-gray-600">No employees match your filters.</p>
                       <p className="text-xs text-gray-400 mt-0.5">Try selecting another department or clearing filters.</p>
                       <button onClick={handleResetFilters} className="mt-2 text-xs text-emerald-700 font-semibold hover:underline">
@@ -1046,7 +1336,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                         {/* Lightweight Department Group Row */}
                         <tr className="bg-gray-50/70 font-semibold text-gray-700 text-xs hover:bg-gray-100/70 transition-colors">
                           <td
-                            colSpan={daysArray.length + 8}
+                            colSpan={daysArray.length + 9}
                             onClick={() => toggleDeptCollapse(deptName)}
                             className="p-2 pl-3 cursor-pointer select-none border-y border-gray-200/60"
                           >
@@ -1115,7 +1405,9 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                                         existingRecord: matchingDaily || daySummary,
                                       });
                                     }}
-                                    title={`${row.empName} (${d.dateStr})\nClick to record manual attendance or override status\nStatus: ${daySummary.statusLabel}\nShift: ${daySummary.shift_code} (${daySummary.expected_in} - ${daySummary.expected_out})\nIn: ${daySummary.first_check_in || '—'} | Out: ${daySummary.last_check_out || '—'}\nNet: ${formatMinutesToHoursStr(daySummary.net_working_minutes)}${daySummary.late_minutes > 0 ? `\nLate: +${formatDeviationDuration(daySummary.late_minutes, { showBoth: daySummary.late_minutes >= 60 })}` : ''}${daySummary.overtime_minutes > 0 ? `\nOT: +${formatDeviationDuration(daySummary.overtime_minutes, { showBoth: daySummary.overtime_minutes >= 60 })}` : ''}`}
+                                    title={daySummary.statusCode === 'H'
+                                      ? `🎉 HOLIDAY: ${daySummary.holiday_name || 'Corporate Holiday'}\nCategory: ${daySummary.holiday_category || 'National Gazetted'}\nType: ${daySummary.holiday_type || 'Public / Mandatory'}\nPayable Status: 1.0 Day Paid Credit (No LOP)`
+                                      : `${row.empName} (${d.dateStr})\nClick to record manual attendance or override status\nStatus: ${daySummary.statusLabel}\nShift: ${daySummary.shift_code} (${daySummary.expected_in} - ${daySummary.expected_out})\nIn: ${daySummary.first_check_in || '—'} | Out: ${daySummary.last_check_out || '—'}\nNet: ${formatMinutesToHoursStr(daySummary.net_working_minutes)}${daySummary.late_minutes > 0 ? `\nLate: +${formatDeviationDuration(daySummary.late_minutes, { showBoth: daySummary.late_minutes >= 60 })}` : ''}${daySummary.overtime_minutes > 0 ? `\nOT: +${formatDeviationDuration(daySummary.overtime_minutes, { showBoth: daySummary.overtime_minutes >= 60 })}` : ''}`}
                                     className={cn(
                                       "p-0.5 text-center border-r border-gray-100 cursor-pointer hover:bg-emerald-50 hover:ring-1 hover:ring-emerald-400 select-none transition-all",
                                       d.isSunday && "bg-gray-50/40",
@@ -1125,7 +1417,10 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                                     <div className="relative inline-flex items-center justify-center">
                                       {getStatusBadge(daySummary.statusCode, daySummary.statusCode === 'MP')}
                                       {daySummary.hasOvertime && (
-                                        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-indigo-600" />
+                                        <span
+                                          title={`Overtime: +${formatDeviationDuration(daySummary.overtime_minutes, { showBoth: true })}`}
+                                          className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-indigo-600 ring-1.5 ring-white shadow-2xs"
+                                        />
                                       )}
                                     </div>
                                   </td>
@@ -1145,6 +1440,9 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                               <td className="p-1.5 text-center font-mono font-semibold text-sky-800 border-r border-gray-200">
                                 {row.totals.halfDay}
                               </td>
+                              <td className="p-1.5 text-center font-mono font-bold text-purple-900 bg-purple-50/50 border-r border-purple-200">
+                                {row.totals.holiday}
+                              </td>
                               <td className="p-1.5 text-center font-mono font-semibold text-amber-800 border-r border-gray-200">
                                 {row.totals.late}
                               </td>
@@ -1153,7 +1451,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                               </td>
                               <td
                                 className="p-1.5 text-center font-mono font-bold text-gray-900 bg-gray-50 border-l border-gray-300 cursor-help"
-                                title={`Month-to-Date Paid Days: ${row.totals.paidDays} (Present: ${row.totals.present} + Approved Leaves: ${row.totals.leave} + Weekly Offs Elapsed: ${row.totals.weeklyOffsElapsed || 6} - LOP: ${row.totals.absent}) | Full Month Projected: ${row.totals.fullMonthPaidDays || 31} Days`}
+                                title={`Month-to-Date Paid Days: ${row.totals.paidDays} (Present: ${row.totals.present} + Approved Leaves: ${row.totals.leave} + Paid Holidays: ${row.totals.holiday} + Weekly Offs Elapsed: ${row.totals.weeklyOffsElapsed || 6} - LOP: ${row.totals.absent}) | Full Month Projected: ${row.totals.fullMonthPaidDays || 31} Days`}
                               >
                                 {row.totals.paidDays}
                               </td>
@@ -1189,7 +1487,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {matrixData.flatMap(row =>
-                  daysArray.slice(0, 15).map(d => {
+                  daysArray.slice(0, Math.min(daysInMonth, Math.max(15, currentDayLimit))).map(d => {
                     const daySummary = row.dayMap[d.dayNum];
                     return (
                       <tr key={`${row.emp.id}-${d.dayNum}`} className="hover:bg-gray-50 text-xs">

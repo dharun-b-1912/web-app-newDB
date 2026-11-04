@@ -736,8 +736,8 @@ export const api = {
           const mapped: Company[] = data.map((d: any) => ({
             id: d.id,
             organization_id: d.organization_id,
-            legal_name: d.legal_name,
-            trade_name: d.trade_name || d.legal_name,
+            legal_name: (d.legal_name || '').replace(/\bPVE\b/gi, 'PVT'),
+            trade_name: (d.trade_name || d.legal_name || '').replace(/\bPVE\b/gi, 'PVT'),
             statutory_registration_no: d.cin_number || d.statutory_registration_no || '',
             tax_id: d.pan_number || d.gstin || d.tax_id || '',
             country: d.country || 'India',

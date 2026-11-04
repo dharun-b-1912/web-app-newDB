@@ -97,5 +97,12 @@ if (!rootElement) {
       <App />
     </StrictMode>,
   );
+  if (typeof window !== 'undefined') {
+    (window as any).__joyAppMounted = true;
+    try {
+      sessionStorage.removeItem('__joy_net_retry_count');
+      sessionStorage.removeItem('__joy_net_retry_time');
+    } catch {}
+  }
   console.log('[BOOT] root_mounted: React root created and render scheduled');
 }

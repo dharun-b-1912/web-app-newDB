@@ -31,7 +31,9 @@ import {
   FileText,
   FileSpreadsheet,
   Loader2,
+  PartyPopper,
 } from 'lucide-react';
+import { leaveApi } from '../../../services/leaveApi';
 import { AttendanceDaily, PunchSource } from '../../../types/attendance';
 import { attendanceApi } from '../../../services/attendanceApi';
 import { api } from '../../../services/api';
@@ -172,6 +174,11 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   const searchQuery = filterState?.searchQuery || '';
   const drilldownTileKey = filterState?.drilldownTileKey;
   const drilldownTileLabel = filterState?.drilldownTileLabel;
+
+  const currentHoliday = useMemo(() => {
+    return leaveApi.getHolidayForDate(selectedDate);
+  }, [selectedDate]);
+  const isHolidayDate = Boolean(currentHoliday && (currentHoliday.type === 'Mandatory' || !currentHoliday.is_optional));
 
   const [employees, setEmployees] = useState<any[]>(() => {
     try {
@@ -540,15 +547,17 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       const expOut = timeStringToMinutes(shift.end_time) || 1080;
       const isShiftCrossMidnight = Boolean(shift.cross_midnight || expOut < expIn);
 
+      const isLeave = (resolvedRecord?.status as any) === 'ON_LEAVE' || (resolvedRecord?.status as any) === 'HALF_DAY' || resolvedRecord?.status === 'On Leave' || resolvedRecord?.status === 'Half Day';
+      const isWfh = resolvedRecord?.status === 'WFH';
       const calc = processAttendanceStatus(
         inMins,
         outMins,
         expIn,
         expOut,
         DEFAULT_ATTENDANCE_POLICY,
-        false,
-        false,
-        false,
+        isLeave,
+        isWfh,
+        isHolidayDate,
         selectedDate
       );
 
@@ -567,6 +576,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         effectiveStatus = 'Missing Punch';
       } else if (isWorking) {
         effectiveStatus = 'Present';
+      } else if (isHolidayDate && !firstIn && !lastOut) {
+        effectiveStatus = 'Holiday';
       } else if (isOff && !firstIn && !lastOut) {
         effectiveStatus = 'Weekly Off';
       }
@@ -679,6 +690,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           matchStatus = record.status === 'Absent';
         } else if (statusFilter === 'On Leave') {
           matchStatus = record.status === 'On Leave';
+        } else if (statusFilter === 'Holiday') {
+          matchStatus = record.status === 'Holiday' || (record.status as any) === 'HOLIDAY' || (isHolidayDate && !record.first_check_in);
         } else if (statusFilter === 'WFH') {
           matchStatus = record.status === 'WFH';
         } else if (statusFilter === 'Weekly Off') {
@@ -780,6 +793,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   const halfDayCount = filteredData.filter(d => d.record.status === 'Half Day').length;
   const absentCount = filteredData.filter(d => d.record.status === 'Absent').length;
   const onLeaveCount = filteredData.filter(d => d.record.status === 'On Leave').length;
+  const holidayCount = filteredData.filter(
+    d => d.record.status === 'Holiday' || (d.record.status as any) === 'HOLIDAY' || (isHolidayDate && !d.record.first_check_in)
+  ).length;
   const missingPunchCount = filteredData.filter(d => d.isMissingPunch || d.record.status === 'Missing Punch').length;
 
   const hasActiveFilters =
@@ -1187,6 +1203,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
               <option value="Half Day">Half Day</option>
               <option value="Absent">Absent</option>
               <option value="On Leave">On Leave</option>
+              <option value="Holiday">Holiday</option>
               <option value="WFH">WFH Remote</option>
               <option value="Missing Punch">Missing Punch</option>
               <option value="Overtime">Overtime</option>
@@ -1250,6 +1267,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             <span>Absent: <strong className="text-rose-700">{absentCount}</strong></span>
             <span>•</span>
             <span>Leave: <strong className="text-purple-700">{onLeaveCount}</strong></span>
+            {(holidayCount > 0 || isHolidayDate) && (
+              <>
+                <span>•</span>
+                <span>Holiday: <strong className="text-purple-700 font-bold">{holidayCount}</strong></span>
+              </>
+            )}
             <span>•</span>
             <span>Missing: <strong className="text-rose-700">{missingPunchCount}</strong></span>
           </div>
@@ -1267,6 +1290,39 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           )}
         </div>
       </Card>
+
+      {/* FESTIVE CORPORATE HOLIDAY BANNER */}
+      {isHolidayDate && currentHoliday && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-gradient-to-r from-purple-50 via-purple-100/70 to-indigo-50 border border-purple-200 rounded-2xl shadow-xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-purple-600 text-white shadow-xs shrink-0">
+              <PartyPopper className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-black text-purple-950">
+                  Corporate Holiday: {currentHoliday.name}
+                </h4>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-200 text-purple-900 border border-purple-300">
+                  {currentHoliday.category || 'National Gazetted'}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white text-purple-800 border border-purple-200">
+                  {currentHoliday.type || 'Public / Mandatory'}
+                </span>
+              </div>
+              <p className="text-xs text-purple-800/90 mt-0.5">
+                {currentHoliday.description || 'Statutory paid holiday for Coimbatore & Chennai branches. Offices are closed; all employees receive 1.0 paid day credit.'} Any check-ins logged today qualify for holiday overtime (2.0x multiplier).
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+            <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white text-purple-950 border border-purple-200 shadow-2xs flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Full Pay Credit (1.0d)</span>
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* 4. ENTERPRISE EMPLOYEE ATTENDANCE TABLE (100% RESPONSIVE - ZERO BLEED & PERFECT SPACING) */}
       <div className="bg-white rounded-2xl border border-gray-200/90 shadow-xs overflow-hidden">
@@ -1588,10 +1644,33 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
                             Working
                           </span>
+                        ) : record.status === 'Holiday' || (record.status as any) === 'HOLIDAY' || (isHolidayDate && !record.first_check_in) ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-900 border border-purple-300 shadow-2xs whitespace-nowrap" title={`${currentHoliday?.name || 'Statutory Holiday'} (${currentHoliday?.category || 'National Gazetted'})`}>
+                              🎉 Holiday
+                            </span>
+                            {currentHoliday && (
+                              <span className="text-[9px] font-bold text-purple-700 max-w-[120px] truncate" title={currentHoliday.name}>
+                                {currentHoliday.name}
+                              </span>
+                            )}
+                          </div>
                         ) : record.status === 'Present' || record.status === 'Checked Out' ? (
-                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
-                            Present
-                          </span>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className={cn(
+                              "inline-block px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold whitespace-nowrap",
+                              isHolidayDate
+                                ? "bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold"
+                                : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            )}>
+                              {isHolidayDate ? 'Present (Holiday Work)' : 'Present'}
+                            </span>
+                            {isHolidayDate && (
+                              <span className="text-[9px] font-black text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                                2.0x Holiday OT
+                              </span>
+                            )}
+                          </div>
                         ) : record.status === 'Late' ? (
                           <span className="inline-block px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
                             Late

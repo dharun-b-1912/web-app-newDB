@@ -48,6 +48,8 @@ export const ROUTE_ALIASES: Record<string, string> = {
   // Core HRMS Slugs — People & Core HR
   '/people': 'people',
   '/employees': 'people',
+  '/id-cards': 'id-cards',
+  '/people/id-cards': 'id-cards',
   '/organization': 'organization',
   '/departments': 'departments',
   '/designations': 'designations',
@@ -438,6 +440,12 @@ export const ROUTE_ALIASES: Record<string, string> = {
   '/platform-staff': 'platform-staff',
   '/platform/notifications': 'platform-notifications',
   '/platform-notifications': 'platform-notifications',
+  '/platform/communication': 'platform-communication',
+  '/platform-communication': 'platform-communication',
+  '/platform/biometrics': 'platform-biometrics',
+  '/platform-biometrics': 'platform-biometrics',
+  '/platform/biometric-hub': 'platform-biometrics',
+  '/platform-devices': 'platform-biometrics',
 };
 
 // Canonical URL Path corresponding to each internal route ID
@@ -448,6 +456,7 @@ export const ROUTE_TO_PATH: Record<string, string> = {
   'workforce-overview': '/workforce-overview',
   'executive-overview': '/executive-overview',
   'people': '/people',
+  'id-cards': '/id-cards',
   'organization': '/organization',
   'departments': '/departments',
   'designations': '/designations',
@@ -698,6 +707,8 @@ export const ROUTE_TO_PATH: Record<string, string> = {
   'platform-settings': '/platform/settings',
   'platform-staff': '/platform/staff',
   'platform-notifications': '/platform/notifications',
+  'platform-communication': '/platform/communication',
+  'platform-biometrics': '/platform/biometrics',
   'platform-account': '/platform/account',
 };
 

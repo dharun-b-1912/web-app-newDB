@@ -48,6 +48,15 @@ const isValidUUID = (id?: string | null): boolean => {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 };
 
+export const resolveAuthoritativeLeaveTypeId = (idOrCode?: string | null): string => {
+  if (!idOrCode) return '0f2240de-0ac5-4178-8f1d-20a68114f48d';
+  if (isValidUUID(idOrCode)) return idOrCode;
+  const upper = String(idOrCode).trim().toUpperCase();
+  if (upper.includes('SL') || upper.includes('SICK')) return '0f2240de-0ac5-4178-8f1d-20a68114f48e';
+  if (upper.includes('PL') || upper.includes('EL') || upper.includes('EARNED') || upper.includes('PRIVILEGE')) return '0f2240de-0ac5-4178-8f1d-20a68114f48f';
+  return '0f2240de-0ac5-4178-8f1d-20a68114f48d'; // Default CL
+};
+
 const ensureUUID = (id?: string | null): string => {
   if (id && isValidUUID(id)) return id;
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -104,7 +113,7 @@ try {
 // Default seed data
 const initialLeaveTypes: LeaveType[] = [
   {
-    id: 'lt-cl',
+    id: '0f2240de-0ac5-4178-8f1d-20a68114f48d',
     code: 'CL',
     name: 'Casual Leave',
     description: 'For short-notice personal or urgent emergency matters.',
@@ -141,7 +150,7 @@ const initialLeaveTypes: LeaveType[] = [
     updated_at: '2026-01-01T00:00:00Z',
   },
   {
-    id: 'lt-sl',
+    id: '0f2240de-0ac5-4178-8f1d-20a68114f48e',
     code: 'SL',
     name: 'Sick Leave / Medical',
     description: 'For illness, medical checkups, or surgical recovery.',
@@ -179,7 +188,7 @@ const initialLeaveTypes: LeaveType[] = [
     updated_at: '2026-01-01T00:00:00Z',
   },
   {
-    id: 'lt-pl',
+    id: '0f2240de-0ac5-4178-8f1d-20a68114f48f',
     code: 'PL',
     name: 'Privilege / Earned Leave',
     description: 'Annual planned vacation leave accrued monthly.',
@@ -639,6 +648,277 @@ function persistLedgerTransactionToSupabase(entry: LeaveLedgerTransaction, compa
   }
 }
 
+/**
+ * Synchronize approved leave dates into attendance_daily table and local storage mirror.
+ * Marks the employee as ON_LEAVE (or HALF_DAY) with payable_status and is_regularized.
+ */
+export async function syncAttendanceForApprovedLeave(req: LeaveRequest): Promise<void> {
+  const fromDate = req.from_date || (req as any).start_date;
+  const toDate = req.to_date || (req as any).end_date;
+  if (!fromDate || !toDate || !req.employee_id) return;
+
+  const [y1, m1, d1] = fromDate.split('-').map(Number);
+  const [y2, m2, d2] = toDate.split('-').map(Number);
+  const start = new Date(y1, m1 - 1, d1, 12, 0, 0);
+  const end = new Date(y2, m2 - 1, d2, 12, 0, 0);
+
+  const orgId = req.company_id || getActiveOrgId();
+  const effectiveOrgId = isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19';
+  const isPaid = req.leave_category !== 'Unpaid' && !req.is_lop;
+  const isHalf = Boolean(req.is_half_day);
+  const status = isHalf ? 'HALF_DAY' : 'ON_LEAVE';
+  const payableStatus = isPaid ? (isHalf ? 0.5 : 1.0) : 0.0;
+  const now = new Date().toISOString();
+
+  const curr = new Date(start);
+  while (curr <= end) {
+    const y = curr.getFullYear();
+    const m = String(curr.getMonth() + 1).padStart(2, '0');
+    const d = String(curr.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
+
+    // 1. Authoritative Supabase mutation
+    if (isSupabaseEnabled && isValidUUID(req.employee_id)) {
+      try {
+        await supabase
+          .from('attendance_daily')
+          .upsert({
+            organization_id: effectiveOrgId,
+            employee_id: req.employee_id,
+            attendance_date: dateStr,
+            status: status,
+            payable_status: payableStatus,
+            is_regularized: true,
+            total_work_minutes: isHalf ? 240 : 480,
+            updated_at: now,
+          }, { onConflict: 'employee_id,attendance_date' });
+      } catch (err) {
+        console.warn(`[leaveApi] syncAttendanceForApprovedLeave notice for ${dateStr}:`, err);
+      }
+    }
+
+    // 2. Update local storage cache mirror for instant UI reactivity
+    try {
+      const storageKey = 'workforce_attendance_daily_v2';
+      const localRows = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const rowIdx = localRows.findIndex((r: any) => 
+        (r.employee_id === req.employee_id || r.employee_code === req.employee_code) &&
+        (r.attendance_date === dateStr || r.date === dateStr)
+      );
+      if (rowIdx >= 0) {
+        localRows[rowIdx] = {
+          ...localRows[rowIdx],
+          status: isHalf ? 'Half Day' : 'On Leave',
+          payable_status: payableStatus,
+          is_regularized: true,
+          updated_at: now,
+        };
+      } else {
+        localRows.push({
+          id: `att-leave-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          organization_id: effectiveOrgId,
+          employee_id: req.employee_id,
+          employee_code: req.employee_code,
+          employee_name: req.employee_name,
+          department: req.department_name,
+          attendance_date: dateStr,
+          date: dateStr,
+          status: isHalf ? 'Half Day' : 'On Leave',
+          payable_status: payableStatus,
+          is_regularized: true,
+          source: 'SYSTEM',
+          gross_working_minutes: isHalf ? 240 : 480,
+          net_working_minutes: isHalf ? 240 : 480,
+          created_at: now,
+          updated_at: now,
+        });
+      }
+      localStorage.setItem(storageKey, JSON.stringify(localRows));
+    } catch {}
+
+    // 3. Notify attendance components
+    hrEventBus.publish('attendance.updated', {
+      employee_id: req.employee_id,
+      date: dateStr,
+      status: isHalf ? 'Half Day' : 'On Leave',
+    });
+
+    curr.setDate(curr.getDate() + 1);
+  }
+}
+
+/**
+ * Revert attendance_daily when an approved leave request is cancelled or rejected.
+ */
+export async function revertAttendanceForLeave(req: LeaveRequest): Promise<void> {
+  const fromDate = req.from_date || (req as any).start_date;
+  const toDate = req.to_date || (req as any).end_date;
+  if (!fromDate || !toDate || !req.employee_id) return;
+
+  const [y1, m1, d1] = fromDate.split('-').map(Number);
+  const [y2, m2, d2] = toDate.split('-').map(Number);
+  const start = new Date(y1, m1 - 1, d1, 12, 0, 0);
+  const end = new Date(y2, m2 - 1, d2, 12, 0, 0);
+
+  const curr = new Date(start);
+  while (curr <= end) {
+    const y = curr.getFullYear();
+    const m = String(curr.getMonth() + 1).padStart(2, '0');
+    const d = String(curr.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
+
+    if (isSupabaseEnabled && isValidUUID(req.employee_id)) {
+      try {
+        const { data: existing } = await supabase
+          .from('attendance_daily')
+          .select('id, first_check_in, last_check_out, status')
+          .eq('employee_id', req.employee_id)
+          .eq('attendance_date', dateStr)
+          .maybeSingle();
+
+        if (existing && (existing.status === 'ON_LEAVE' || existing.status === 'HALF_DAY') && !existing.first_check_in) {
+          await supabase
+            .from('attendance_daily')
+            .update({
+              status: 'ABSENT',
+              payable_status: 0.0,
+              is_regularized: false,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id);
+        }
+      } catch (err) {
+        console.warn(`[leaveApi] revertAttendanceForLeave notice for ${dateStr}:`, err);
+      }
+    }
+
+    hrEventBus.publish('attendance.updated', {
+      employee_id: req.employee_id,
+      date: dateStr,
+      status: 'Absent',
+    });
+
+    curr.setDate(curr.getDate() + 1);
+  }
+}
+
+/**
+ * Authoritative Synchronization of Company Holidays with attendance_daily and Supabase
+ * Ensures all employees receive 1.0 paid day credit for statutory/company holidays,
+ * preserving existing punch records for employees who worked with holiday overtime.
+ */
+export async function syncHolidayCalendarToAttendanceAsync(calendarId?: string): Promise<{ syncedCount: number; dates: string[] }> {
+  const cals = leaveApi.getHolidayCalendars();
+  const targetCal = calendarId ? cals.find(c => c.id === calendarId) : (cals.find(c => c.is_default) || cals[0]);
+  if (!targetCal || !targetCal.holidays || targetCal.holidays.length === 0) {
+    return { syncedCount: 0, dates: [] };
+  }
+
+  const mandatoryHols = targetCal.holidays.filter(h => h.type === 'Mandatory' || !h.is_optional);
+  if (mandatoryHols.length === 0) return { syncedCount: 0, dates: [] };
+
+  const client = supabase as any;
+  let syncedCount = 0;
+  const processedDates: string[] = [];
+
+  try {
+    if (client && isSupabaseEnabled) {
+      // 1. Fetch active employees
+      const { data: emps } = await client
+        .from('employees')
+        .select('id, employee_code, organization_id, employment_status')
+        .not('employee_code', 'is', null);
+
+      const activeEmps = (emps || []).filter((e: any) =>
+        !String(e.employee_code || '').toUpperCase().startsWith('CE0') &&
+        e.employment_status !== 'INACTIVE' &&
+        e.employment_status !== 'SUSPENDED' &&
+        e.employment_status !== 'TERMINATED'
+      );
+
+      // 2. Also ensure holidays are stored in public.holidays table
+      for (const h of targetCal.holidays) {
+        try {
+          const { data: existingH } = await client
+            .from('holidays')
+            .select('id')
+            .eq('holiday_date', h.date)
+            .limit(1);
+
+          if (!existingH || existingH.length === 0) {
+            await client.from('holidays').insert([{
+              name: h.name,
+              holiday_date: h.date,
+              is_restricted: Boolean(h.is_optional || h.type === 'Restricted' || h.type === 'Optional'),
+              organization_id: activeEmps[0]?.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+            }]);
+          }
+        } catch (hErr) {
+          console.warn('[leaveApi] public.holidays sync notice:', hErr);
+        }
+      }
+
+      // 3. Sync to attendance_daily
+      for (const hol of mandatoryHols) {
+        processedDates.push(hol.date);
+        const { data: existingRows } = await client
+          .from('attendance_daily')
+          .select('id, employee_id, status, first_check_in, payable_status')
+          .eq('attendance_date', hol.date);
+
+        const existingMap = new Map((existingRows || []).map((r: any) => [r.employee_id, r]));
+        const upsertBatch: any[] = [];
+
+        for (const emp of activeEmps) {
+          const existing: any = existingMap.get(emp.id);
+
+          // If employee worked (punched in), preserve punch with 1.0 payable status
+          if (existing && existing.first_check_in) {
+            continue;
+          }
+
+          if (existing && existing.status === 'HOLIDAY' && existing.payable_status === 1.0) {
+            continue;
+          }
+
+          upsertBatch.push({
+            employee_id: emp.id,
+            attendance_date: hol.date,
+            organization_id: emp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+            status: 'HOLIDAY',
+            payable_status: 1.0,
+            total_work_minutes: 480,
+            break_minutes: 0,
+            late_entry_minutes: 0,
+            early_exit_minutes: 0,
+            overtime_minutes: 0,
+            is_regularized: true,
+          });
+        }
+
+        if (upsertBatch.length > 0) {
+          const { data, error } = await client
+            .from('attendance_daily')
+            .upsert(upsertBatch, { onConflict: 'employee_id,attendance_date' })
+            .select('id');
+
+          if (!error && data) {
+            syncedCount += data.length;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[leaveApi] syncHolidayCalendarToAttendanceAsync notice:', err);
+  }
+
+  // Publish event so Attendance Ledger & Employee Attendance refresh
+  hrEventBus.publish('leave.holiday_updated', { calendarId: targetCal.id, syncedCount });
+  hrEventBus.publish('attendance.updated', { dates: processedDates });
+
+  return { syncedCount, dates: processedDates };
+}
+
 export const leaveApi = {
   // --- Leave Types ---
   async getLeaveTypesAsync(): Promise<LeaveType[]> {
@@ -926,6 +1206,26 @@ export const leaveApi = {
     return getStored(STORAGE_KEYS.HOLIDAY_CALENDARS, initialHolidayCalendars);
   },
 
+  getHolidayForDate: (dateStr: string, calendarId?: string): Holiday | null => {
+    const cals = leaveApi.getHolidayCalendars();
+    const targetCal = calendarId ? cals.find(c => c.id === calendarId) : (cals.find(c => c.is_default) || cals[0]);
+    if (!targetCal || !targetCal.holidays) return null;
+    return targetCal.holidays.find(h => h.date === dateStr) || null;
+  },
+
+  getHolidaysForMonth: (year: number, monthIndex: number, calendarId?: string): Holiday[] => {
+    const cals = leaveApi.getHolidayCalendars();
+    const targetCal = calendarId ? cals.find(c => c.id === calendarId) : (cals.find(c => c.is_default) || cals[0]);
+    if (!targetCal || !targetCal.holidays) return [];
+    const mStr = String(monthIndex + 1).padStart(2, '0');
+    const prefix = `${year}-${mStr}`;
+    return targetCal.holidays.filter(h => h.date.startsWith(prefix));
+  },
+
+  syncHolidayCalendarToAttendanceAsync: async (calendarId?: string) => {
+    return syncHolidayCalendarToAttendanceAsync(calendarId);
+  },
+
   saveHolidayCalendar: (calendar: HolidayCalendar): HolidayCalendar => {
     const cals = leaveApi.getHolidayCalendars();
     const idx = cals.findIndex(c => c.id === calendar.id);
@@ -951,6 +1251,7 @@ export const leaveApi = {
 
     hrEventBus.publish('leave.holiday_updated', { calendar: updatedCal });
     hrEventBus.publish('leave.calendar_updated', { calendarId: updatedCal.id });
+    syncHolidayCalendarToAttendanceAsync(updatedCal.id).catch(() => {});
     return updatedCal;
   },
 
@@ -1008,6 +1309,7 @@ export const leaveApi = {
 
     hrEventBus.publish('leave.holiday_updated', { calendarId, holiday: newHoliday });
     hrEventBus.publish('leave.calendar_updated', { calendarId });
+    syncHolidayCalendarToAttendanceAsync(calendarId).catch(() => {});
     return newHoliday;
   },
 
@@ -1042,6 +1344,7 @@ export const leaveApi = {
 
     hrEventBus.publish('leave.holiday_updated', { calendarId, holiday });
     hrEventBus.publish('leave.calendar_updated', { calendarId });
+    syncHolidayCalendarToAttendanceAsync(calendarId).catch(() => {});
     return holiday;
   },
 
@@ -1073,6 +1376,7 @@ export const leaveApi = {
 
     hrEventBus.publish('leave.holiday_updated', { calendarId, deletedHolidayId: holidayId });
     hrEventBus.publish('leave.calendar_updated', { calendarId });
+    syncHolidayCalendarToAttendanceAsync(calendarId).catch(() => {});
   },
 
   duplicateHolidayCalendar: (sourceCalId: string, targetYear: number, newName: string): HolidayCalendar => {
@@ -1246,15 +1550,17 @@ export const leaveApi = {
       isHalfDay: req.is_half_day,
     });
 
+    const targetLeaveTypeId = resolveAuthoritativeLeaveTypeId(req.leave_type_id || req.leave_type_code);
+
     const newReq: LeaveRequest = {
       id: `lr-${Date.now()}`,
       request_code: `LR-2026-${Math.floor(100 + Math.random() * 900)}`,
       employee_id: req.employee_id || 'emp-101',
-      employee_name: req.employee_name || 'Rajesh Kumar',
+      employee_name: req.employee_name || 'Staff',
       department_name: req.department_name || 'Engineering',
       company_id: req.company_id || 'comp-01',
       avatar_url: req.avatar_url,
-      leave_type_id: req.leave_type_id || 'lt-cl',
+      leave_type_id: targetLeaveTypeId,
       leave_type_name: req.leave_type_name || 'Casual Leave',
       leave_type_code: req.leave_type_code || 'CL',
       leave_category: req.leave_category || 'Paid',
@@ -1272,11 +1578,11 @@ export const leaveApi = {
       attachment_url: req.attachment_url,
       contact_number: req.contact_number,
       manager_id: req.manager_id || 'emp-100',
-      manager_name: req.manager_name || 'Anand Viswanathan',
+      manager_name: req.manager_name || 'Reporting Manager',
       status: 'Pending',
       submitted_at: new Date().toISOString(),
       daily_breakdown: req.daily_breakdown || (calculatedDays.dailyBreakdown as any) || [],
-      current_approver_name: req.manager_name || 'Anand Viswanathan',
+      current_approver_name: req.manager_name || 'Reporting Manager',
       is_lop: req.is_lop || false,
       created_at: new Date().toISOString(),
     };
@@ -1300,7 +1606,7 @@ export const leaveApi = {
             id: leaveId,
             organization_id: effectiveOrgId,
             employee_id: newReq.employee_id,
-            leave_type_id: newReq.leave_type_id,
+            leave_type_id: targetLeaveTypeId,
             start_date: newReq.from_date || (newReq as any).start_date,
             end_date: newReq.to_date || (newReq as any).end_date,
             total_days: newReq.total_calendar_days || newReq.working_days || 1,
@@ -1369,7 +1675,15 @@ export const leaveApi = {
       setStored(STORAGE_KEYS.REQUESTS, requests);
     }
 
-    // 2. Post consumption transaction to Ledger
+    // 2. Authoritative Attendance Synchronization:
+    // Mark dates as ON_LEAVE / HALF_DAY in attendance_daily and attendance ledger
+    try {
+      await syncAttendanceForApprovedLeave(req);
+    } catch (syncErr) {
+      console.warn('[leaveApi] Error synchronizing attendance on leave approval:', syncErr);
+    }
+
+    // 3. Post consumption transaction to Ledger
     const ledger = leaveApi.getLedger();
     const prevBalance = ledger.filter(l => l.employee_id === req.employee_id && l.leave_type_id === req.leave_type_id)
       .reduce((acc, curr) => acc + curr.amount, 0);
@@ -1431,7 +1745,7 @@ export const leaveApi = {
     hrEventBus.publish('leave.approved', req, { actorId: approverName });
     hrEventBus.publish('leave.updated', req, { actorId: approverName });
 
-    // 3. Emit in-app notification to employee
+    // 4. Emit in-app notification to employee
     if (req.employee_id) {
       notificationService.emitEmployeeNotification({
         employeeId: req.employee_id,
@@ -1482,6 +1796,11 @@ export const leaveApi = {
       setStored(STORAGE_KEYS.REQUESTS, requests);
     }
 
+    // If request was previously approved, revert attendance records back from ON_LEAVE
+    try {
+      await revertAttendanceForLeave(req);
+    } catch (_) {}
+
     leaveApi.addAuditLog({
       actor_id: 'rejector',
       actor_name: rejectorName,
@@ -1513,8 +1832,12 @@ export const leaveApi = {
     const req = idx >= 0 ? requests[idx] : null;
     const wasApproved = req ? (req.status === 'Approved' || (req.status as any) === 'APPROVED') : false;
 
-    // 1. If previously approved, reverse consumed balance in ledger
+    // 1. If previously approved, reverse consumed balance in ledger and revert attendance
     if (wasApproved && req) {
+      try {
+        await revertAttendanceForLeave(req);
+      } catch (_) {}
+
       const ledger = leaveApi.getLedger();
       const prevBalance = ledger
         .filter(l => l.employee_id === req.employee_id && l.leave_type_id === req.leave_type_id)
@@ -1637,8 +1960,12 @@ export const leaveApi = {
       });
     }
 
-    // If request was previously approved, issue a reversal transaction to restore balance
+    // If request was previously approved, issue a reversal transaction to restore balance and revert attendance
     if (wasApproved) {
+      try {
+        revertAttendanceForLeave(req);
+      } catch (_) {}
+
       const ledger = leaveApi.getLedger();
       const prevBalance = ledger
         .filter(l => l.employee_id === req.employee_id && l.leave_type_id === req.leave_type_id)
@@ -1697,6 +2024,56 @@ export const leaveApi = {
     });
 
     return req;
+  },
+
+  /**
+   * Reconciles all APPROVED leave requests in Supabase into attendance_daily,
+   * guaranteeing that every approved leave day has a matching ON_LEAVE row in attendance_daily.
+   */
+  async syncAllApprovedLeavesToAttendanceAsync(): Promise<number> {
+    if (!isSupabaseEnabled) return 0;
+    try {
+      const { data: approvedList, error } = await supabase
+        .from('leave_requests')
+        .select(`
+          id,
+          employee_id,
+          organization_id,
+          leave_type_id,
+          start_date,
+          end_date,
+          total_days,
+          is_half_day,
+          status,
+          leave_types (id, name, code, is_paid)
+        `)
+        .eq('status', 'APPROVED');
+
+      if (error || !approvedList || approvedList.length === 0) return 0;
+
+      let count = 0;
+      for (const r of approvedList as any[]) {
+        const leaveReq: LeaveRequest = {
+          id: r.id,
+          employee_id: r.employee_id,
+          company_id: r.organization_id,
+          leave_type_id: r.leave_type_id,
+          leave_type_name: r.leave_types?.name || 'Leave',
+          leave_type_code: r.leave_types?.code || 'LV',
+          from_date: r.start_date,
+          to_date: r.end_date,
+          is_half_day: Boolean(r.is_half_day),
+          leave_category: r.leave_types?.is_paid !== false ? 'Paid' : 'Unpaid',
+          status: 'Approved',
+        } as any;
+        await syncAttendanceForApprovedLeave(leaveReq);
+        count++;
+      }
+      return count;
+    } catch (err) {
+      console.warn('[leaveApi] syncAllApprovedLeavesToAttendanceAsync notice:', err);
+      return 0;
+    }
   },
 
   // --- Entitlements & Ledger ---

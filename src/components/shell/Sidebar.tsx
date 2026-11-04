@@ -38,6 +38,7 @@ import {
   Scale,
   Megaphone,
   Send,
+  Radio,
   BarChart3,
   PieChart,
   Activity,
@@ -72,6 +73,7 @@ import {
   Share2,
   Zap,
   ScanFace,
+  Fingerprint,
   Camera,
   MonitorDot,
   Crosshair,
@@ -218,6 +220,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
 
   // People & Org mappings
   if (itemId === 'people' && (currentNav === 'people' || currentNav === 'workforce' || currentNav === 'employees')) return true;
+  if (itemId === 'id-cards' && (currentNav === 'id-cards' || currentNav === 'idcard' || currentNav === 'id-card-press' || currentNav === 'people/id-cards')) return true;
   if (itemId === 'organization' && (currentNav === 'organization' || currentNav === 'departments' || currentNav === 'designations')) return true;
   if (itemId === 'storage-admin' && (currentNav === 'storage-admin' || currentNav === 'storage' || currentNav === 'storage/vault' || currentNav === 'vendor-storage' || currentNav === 'vendor/storage')) return true;
   if (itemId === 'documents' && (currentNav === 'documents')) return true;
@@ -277,6 +280,8 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'platform-support' && (currentNav === 'platform-support')) return true;
   if (itemId === 'platform-jobs' && (currentNav === 'platform-jobs')) return true;
   if (itemId === 'platform-incidents' && (currentNav === 'platform-incidents' || currentNav === 'platform-operations')) return true;
+  if (itemId === 'platform-communication' && (currentNav === 'platform-communication' || currentNav === 'communication-hub' || currentNav === 'platform-messaging')) return true;
+  if (itemId === 'platform-biometrics' && (currentNav === 'platform-biometrics' || currentNav === 'biometric-hub' || currentNav === 'platform-devices')) return true;
   if (itemId === 'platform-webhooks' && (currentNav === 'platform-webhooks')) return true;
   if (itemId === 'platform-notifications' && (currentNav === 'platform-notifications' || currentNav === 'platform-dlq' || currentNav === 'platform-events')) return true;
   if (itemId === 'platform-settings' && (currentNav === 'platform-settings' || currentNav === 'platform-account' || currentNav === 'platform-profile' || currentNav.startsWith('platform-account-'))) return true;
@@ -536,6 +541,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'OPERATIONS',
       items: [
+        { id: 'platform-communication', label: 'Communication Hub', icon: Radio, badge: 'Live' },
+        { id: 'platform-biometrics', label: 'Biometric Device Hub', icon: Fingerprint, badge: 'Fleet' },
         { id: 'platform-support', label: 'Support Center', icon: HelpCircle },
         { id: 'platform-jobs', label: 'Background Jobs', icon: Workflow, badge: failedJobsCount > 0 ? failedJobsCount : undefined, badgeVariant: 'danger' },
         { id: 'platform-webhooks', label: 'Webhooks & Mesh', icon: Send },
@@ -571,6 +578,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
         { id: 'people', label: 'Employee Management', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'id-cards', label: 'ID Card Press', icon: CreditCard, badge: 'CMYK' },
         { id: 'organization', label: 'Organization Architecture', icon: Building2 },
         { id: 'storage-admin', label: 'Document Vault & Storage', icon: Lock, badge: 'Vault' },
         { id: 'documents', label: 'Documents & E-Sign', icon: FileText },
@@ -865,6 +873,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
         { id: 'people', label: 'Employee Management', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'id-cards', label: 'ID Card Press', icon: CreditCard, badge: 'CMYK' },
         { id: 'organization', label: 'Organization Architecture', icon: Building2 },
         { id: 'documents', label: 'Documents & E-Sign', icon: FileText },
         { id: 'assets', label: 'Asset Management', icon: Package },

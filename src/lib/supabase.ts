@@ -64,34 +64,111 @@ export const tripSupabaseCircuitBreaker = (durationMs = 90_000): void => {
 };
 
 export const resetSupabaseCircuitBreaker = (): void => {
-  _circuitBreakerUntil = 0;
+  if (_circuitBreakerUntil !== 0) {
+    _circuitBreakerUntil = 0;
+    console.log('[Supabase] Circuit breaker reset. Network connection re-established.');
+  }
 };
 
-const resilientSupabaseFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  // Generous 15000ms timeout so real queries and auth handshakes complete reliably without stalling indefinitely
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+// Auto-reset circuit breaker when browser transitions back online
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', resetSupabaseCircuitBreaker);
+}
 
-  if (init?.signal) {
-    init.signal.addEventListener('abort', () => controller.abort(), { once: true });
-  }
-
+/**
+ * Dynamic timeout calibrated for enterprise SaaS & throttled networks (Fast 3G, Slow 3G, Mobile)
+ */
+const getResilientTimeoutMs = (): number => {
   try {
-    const res = await fetch(input, { ...init, signal: controller.signal });
-    clearTimeout(timeoutId);
-    if (res.ok || (res.status >= 200 && res.status < 500)) {
-      _circuitBreakerUntil = 0;
+    const conn = (typeof navigator !== 'undefined' ? (navigator as any).connection : null);
+    if (conn) {
+      if (conn.effectiveType === 'slow-2g' || conn.effectiveType === '2g') return 45000;
+      if (conn.effectiveType === '3g') return 35000;
     }
-    return res;
-  } catch (err: any) {
-    clearTimeout(timeoutId);
-    console.warn('[Supabase Fetch] Network request failed or aborted:', err?.message || err);
-    return new Response(JSON.stringify({ error: 'Supabase network error' }), {
-      status: 504,
-      statusText: 'Gateway Timeout',
-      headers: { 'Content-Type': 'application/json' },
-    });
+  } catch {}
+  return 30000; // 30s base timeout for reliable enterprise SaaS operations
+};
+
+const isTransientNetworkError = (err: any, status?: number): boolean => {
+  if (status && (status === 502 || status === 503 || status === 504)) return true;
+  const msg = (err?.message || String(err || '')).toLowerCase();
+  return (
+    msg.includes('network') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('err_network_changed') ||
+    msg.includes('err_internet_disconnected') ||
+    msg.includes('err_connection_reset') ||
+    msg.includes('aborted') ||
+    msg.includes('timeout')
+  );
+};
+
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Resilient Supabase Fetch Gateway with Automatic Exponential Backoff & Jitter
+ * Handles network throttling, transient socket resets, and ERR_NETWORK_CHANGED gracefully.
+ */
+const resilientSupabaseFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const maxRetries = 3;
+  let lastError: any = null;
+  let lastStatus: number | undefined;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const timeoutMs = getResilientTimeoutMs();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    if (init?.signal) {
+      init.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+
+    try {
+      const res = await fetch(input, { ...init, signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      // Reset circuit breaker on successful HTTP response
+      if (res.ok || (res.status >= 200 && res.status < 500)) {
+        _circuitBreakerUntil = 0;
+        return res;
+      }
+
+      // Check if response is a transient server error that can be retried
+      if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < maxRetries) {
+        lastStatus = res.status;
+        const backoffMs = Math.min(3500, 400 * Math.pow(2, attempt)) + Math.floor(Math.random() * 250);
+        console.warn(`[Supabase Fetch] HTTP ${res.status} on attempt ${attempt + 1}/${maxRetries + 1}. Retrying in ${backoffMs}ms...`);
+        await delay(backoffMs);
+        continue;
+      }
+
+      return res;
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      lastError = err;
+
+      const isRetryable = isTransientNetworkError(err);
+      if (isRetryable && attempt < maxRetries) {
+        // If offline, wait briefly for connection stabilization
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          await delay(1000);
+        }
+        const backoffMs = Math.min(3500, 450 * Math.pow(2, attempt)) + Math.floor(Math.random() * 300);
+        console.warn(`[Supabase Fetch] Network fluctuation (${err?.message || 'ERR_NETWORK_CHANGED'}) on attempt ${attempt + 1}/${maxRetries + 1}. Retrying in ${backoffMs}ms...`);
+        await delay(backoffMs);
+        continue;
+      }
+
+      break;
+    }
   }
+
+  console.warn('[Supabase Fetch] Network request exhausted retries:', lastError?.message || lastStatus);
+  return new Response(JSON.stringify({ error: 'Supabase network error', details: lastError?.message || lastStatus }), {
+    status: 504,
+    statusText: 'Gateway Timeout',
+    headers: { 'Content-Type': 'application/json' },
+  });
 };
 
 /** Supabase JS client — always created, only used when isSupabaseEnabled */

@@ -26,7 +26,7 @@ export const WorkspaceApplyLeaveModal: React.FC<Props> = ({
   onSubmitted,
 }) => {
   const { showToast } = useToast();
-  const [selectedTypeId, setSelectedTypeId] = useState<string>('lt-cl');
+  const [selectedTypeId, setSelectedTypeId] = useState<string>('0f2240de-0ac5-4178-8f1d-20a68114f48d');
   const [fromDate, setFromDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [toDate, setToDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [reason, setReason] = useState<string>('');
@@ -112,9 +112,9 @@ export const WorkspaceApplyLeaveModal: React.FC<Props> = ({
               onChange={(e) => setSelectedTypeId(e.target.value)}
               className="w-full p-2.5 rounded-xl border border-gray-200 bg-white font-medium text-gray-800 focus:outline-none focus:border-[#07563D]"
             >
-              <option value="lt-cl">Casual Leave (CL)</option>
-              <option value="lt-sl">Sick / Medical Leave (SL)</option>
-              <option value="lt-pl">Privilege / Annual Earned Leave (PL)</option>
+              <option value="0f2240de-0ac5-4178-8f1d-20a68114f48d">Casual Leave (CL)</option>
+              <option value="0f2240de-0ac5-4178-8f1d-20a68114f48e">Sick / Medical Leave (SL)</option>
+              <option value="0f2240de-0ac5-4178-8f1d-20a68114f48f">Privilege / Annual Earned Leave (PL)</option>
             </select>
           </div>
 

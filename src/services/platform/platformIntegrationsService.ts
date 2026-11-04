@@ -423,7 +423,7 @@ export const platformIntegrationsService = {
         cachedBiometricDevices = bioDevices.map((d: any) => ({
           id: d.id,
           tenant_id: d.organization_id || '',
-          tenant_name: 'JOY CORPORATE SOLUTIONS PVE LTD',
+          tenant_name: 'JOY CORPORATE SOLUTIONS PVT LTD',
           device_name: d.device_name || 'Biometric Terminal',
           provider: (d.device_name?.includes('Mantra') ? 'Mantra' : d.device_name?.includes('eSSL') ? 'eSSL' : 'ZKTeco') as any,
           device_type: 'Fingerprint' as const,

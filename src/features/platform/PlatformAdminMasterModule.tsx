@@ -36,6 +36,8 @@ import { PlatformSettingsView } from './subviews/PlatformSettingsView';
 import { WebhooksAndMeshView } from './subviews/WebhooksAndMeshView';
 import { IntegrationsControlCenterView } from './subviews/IntegrationsControlCenterView';
 import { WhatsAppControlCenterView } from './subviews/WhatsAppControlCenterView';
+import { CommunicationHubMasterView } from './subviews/CommunicationHubMasterView';
+import { BiometricHubMasterView } from './subviews/BiometricHubMasterView';
 import { PlatformAccountMasterView } from './subviews/PlatformAccountMasterView';
 import { PlatformStaffView } from './subviews/PlatformStaffView';
 import { NotificationDeliveryMonitorView } from './subviews/NotificationDeliveryMonitorView';
@@ -96,6 +98,11 @@ const TAB_TITLES: Record<string, string> = {
   'platform-keys': 'API Keys & Secrets',
   'platform-settings': 'Platform System Settings',
   'platform-staff': 'Platform Staff & Delegated IAM',
+  'platform-communication': 'Communication Hub',
+  'communication-hub': 'Communication Hub',
+  'platform-biometrics': 'Biometric Device Hub',
+  'biometric-hub': 'Biometric Device Hub',
+  'platform-devices': 'Biometric Device Hub',
   'platform-notifications': 'Notification Delivery & DLQ Monitor',
   'platform-account': 'Identity & Account Center',
   'platform-observability': 'Observability & Live Telemetry',
@@ -185,6 +192,8 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       'platform-tenants': 'Joy PeopleHR — Organizations',
       'platform-clients': 'Joy PeopleHR — Clients',
       'platform-usage': 'Joy PeopleHR — Usage & Metering',
+      'platform-biometrics': 'Joy PeopleHR — Biometric Device Hub',
+      'biometric-hub': 'Joy PeopleHR — Biometric Device Hub',
     };
     if (titles[currentTab]) {
       document.title = titles[currentTab];
@@ -381,6 +390,16 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       case 'platform-api':
       case 'platform-keys':
         return <IntegrationsControlCenterView />;
+      case 'platform-communication':
+      case 'communication-hub':
+      case 'platform-messaging':
+      case 'platform-email':
+      case 'platform-sms':
+        return <CommunicationHubMasterView />;
+      case 'platform-biometrics':
+      case 'biometric-hub':
+      case 'platform-devices':
+        return <BiometricHubMasterView />;
       case 'platform-whatsapp':
         return <WhatsAppControlCenterView />;
       case 'platform-settings':

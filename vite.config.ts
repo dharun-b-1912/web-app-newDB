@@ -521,6 +521,15 @@ export default defineConfig(({ mode }) => {
       exclude: ['**/node_modules/**', '**/Essl Support files/**', '**/scratch/**', '**/.agents/**'],
     },
     server: {
+      host: '0.0.0.0',
+      port: 3000,
+      strictPort: false,
+      cors: true,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Connection': 'keep-alive',
+        'Keep-Alive': 'timeout=120, max=1000',
+      },
       proxy: {
         '/api/connector': {
           target: 'http://127.0.0.1:11108',
@@ -529,8 +538,11 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api\/connector/, ''),
         },
       },
-      // HMR configuration
-      hmr: process.env.DISABLE_HMR === 'true' ? false : true,
+      // HMR configuration with explicit clientPort to stabilize socket during network throttling
+      hmr: process.env.DISABLE_HMR === 'true' ? false : {
+        clientPort: 3000,
+        overlay: true,
+      },
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {
         ignored: [

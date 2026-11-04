@@ -22,7 +22,9 @@ import {
   Filter,
   ShieldCheck,
   ArrowRight,
+  CreditCard,
 } from 'lucide-react';
+import { IdCardPressView } from './idcard/IdCardPressView';
 import { EmployeeList, SortField, SortDir } from './EmployeeList';
 import { EmployeeCreateWizardModal } from './EmployeeCreateWizardModal';
 import { EmployeeProfileDrawer } from './EmployeeProfileDrawer';
@@ -66,6 +68,7 @@ export const PeopleView: React.FC = () => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [drawerInitialTab, setDrawerInitialTab] = useState<string>('overview');
   const [attendanceModalEmployeeId, setAttendanceModalEmployeeId] = useState<string | null>(null);
+  const [isIdCardStudioOpen, setIsIdCardStudioOpen] = useState(false);
 
   // Sort state
   const [sortField, setSortField] = useState<SortField>('none');
@@ -392,6 +395,10 @@ export const PeopleView: React.FC = () => {
     setCurrentPage(1);
   };
 
+  if (isIdCardStudioOpen) {
+    return <IdCardPressView onBackToPeople={() => setIsIdCardStudioOpen(false)} />;
+  }
+
   return (
     <div className="space-y-6 pb-12">
       <Breadcrumb items={[{ label: 'People & Core HR' }, { label: 'Employee Management 2.0' }]} />
@@ -440,6 +447,16 @@ export const PeopleView: React.FC = () => {
             title="Export complete workforce records with clean onboarding headers for bulk editing"
           >
             Export Workforce
+          </Button>
+
+          <Button
+            onClick={() => setIsIdCardStudioOpen(true)}
+            variant="outline"
+            leftIcon={<CreditCard className="w-4 h-4 text-purple-700" />}
+            className="text-xs font-bold border-gray-300 hover:bg-purple-50 text-gray-700 hover:text-purple-700 shadow-2xs cursor-pointer"
+            title="Design, customize, and export print-ready CMYK ID Cards for employees"
+          >
+            ID Card Studio
           </Button>
 
           {hasPermission('people', 'create') && (

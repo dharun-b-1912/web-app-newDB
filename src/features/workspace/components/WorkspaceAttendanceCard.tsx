@@ -108,7 +108,7 @@ export const WorkspaceAttendanceCard: React.FC<Props> = ({
             { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
           );
         },
-        { enableHighAccuracy: true, timeout: 6000, maximumAge: 15000 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 }
       );
     };
 
@@ -158,7 +158,44 @@ export const WorkspaceAttendanceCard: React.FC<Props> = ({
   }, [attendanceState, todayAttendance?.first_check_in]);
 
   const handleCheckInClick = () => {
-    onCheckIn(currentCoords || undefined);
+    if (currentCoords) {
+      onCheckIn(currentCoords);
+      return;
+    }
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          };
+          setCurrentCoords(coords);
+          onCheckIn(coords);
+        },
+        () => {
+          navigator.geolocation.getCurrentPosition(
+            (pos2) => {
+              const coords2 = {
+                latitude: pos2.coords.latitude,
+                longitude: pos2.coords.longitude,
+                accuracy: pos2.coords.accuracy,
+              };
+              setCurrentCoords(coords2);
+              onCheckIn(coords2);
+            },
+            () => {
+              onCheckIn(undefined);
+            },
+            { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
+          );
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+      );
+    } else {
+      onCheckIn(undefined);
+    }
   };
 
   const handleCheckOutClick = () => {

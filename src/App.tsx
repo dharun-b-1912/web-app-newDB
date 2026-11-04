@@ -38,6 +38,7 @@ const RecruitmentView = lazy(() => import('./features/talent/RecruitmentView').t
 const OnboardingView = lazy(() => import('./features/onboarding/OnboardingView').then(m => ({ default: m.OnboardingView })));
 const OffboardingView = lazy(() => import('./features/offboarding/OffboardingView').then(m => ({ default: m.OffboardingView })));
 const TalentManagementView = lazy(() => import('./features/talent/TalentManagementView').then(m => ({ default: m.TalentManagementView })));
+const IdCardPressView = lazy(() => import('./features/people/idcard/IdCardPressView').then(m => ({ default: m.IdCardPressView })));
 const LmsMasterModule = lazy(() => import('./features/lms/LmsMasterModule').then(m => ({ default: m.LmsMasterModule })));
 const PerformanceMasterModule = lazy(() => import('./features/performance/PerformanceMasterModule').then(m => ({ default: m.PerformanceMasterModule })));
 const WorkOvertimeMasterModule = lazy(() => import('./features/work/WorkOvertimeMasterModule').then(m => ({ default: m.WorkOvertimeMasterModule })));
@@ -116,6 +117,26 @@ const AppContent: React.FC = () => {
 
     realtimeSyncEngine.initialize();
     return () => realtimeSyncEngine.destroy();
+  }, []);
+
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      console.log('[App] SaaS Network Mesh: Network reconnected.');
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      console.warn('[App] SaaS Network Mesh: Network disconnected or throttled.');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   const getDefaultRouteForUser = (targetUser?: any) => {
@@ -526,6 +547,10 @@ const AppContent: React.FC = () => {
         return <WorkforceWorkspace initialTab="people" onNavigate={handleNavigate} />;
       case 'people':
         return <WorkforceWorkspace initialTab="people" onNavigate={handleNavigate} />;
+      case 'id-cards':
+      case 'idcard':
+      case 'id-card-press':
+        return <IdCardPressView onBackToPeople={() => handleNavigate('people')} />;
       case 'organization':
         return <WorkforceWorkspace initialTab="organization" onNavigate={handleNavigate} />;
       case 'departments':
@@ -940,6 +965,12 @@ const AppContent: React.FC = () => {
       case 'platform-support':
       case 'platform-audit':
       case 'platform-notifications':
+      case 'platform-communication':
+      case 'communication-hub':
+      case 'platform-messaging':
+      case 'platform-biometrics':
+      case 'biometric-hub':
+      case 'platform-devices':
       case 'platform-dlq':
       case 'platform-events':
       case 'platform-outbox':
@@ -1109,6 +1140,12 @@ const AppContent: React.FC = () => {
 
   return (
     <ErrorBoundary>
+      {!isOnline && (
+        <div className="bg-amber-600 text-white text-[11px] font-bold py-1.5 px-4 text-center sticky top-0 z-[100] flex items-center justify-center gap-2 shadow-sm animate-in fade-in duration-150">
+          <span className="w-2 h-2 rounded-full bg-amber-200 animate-ping" />
+          <span>SaaS Network Mesh: Connection Unstable or Throttled. Offline actions will auto-reconnect and sync upon stabilization.</span>
+        </div>
+      )}
       <AppShell
         activeRoute={currentRoute}
         onNavigate={handleNavigate}

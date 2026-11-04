@@ -37,10 +37,12 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
 
   // Apply Leave Modal State
   const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
   const [selectedTypeId, setSelectedTypeId] = useState<string>('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [isHalfDay, setIsHalfDay] = useState(false);
+  const [halfDaySession, setHalfDaySession] = useState<'FirstHalf' | 'SecondHalf'>('FirstHalf');
   const [reason, setReason] = useState('');
   const [contactNumber, setContactNumber] = useState('');
   const [attachmentName, setAttachmentName] = useState('');
@@ -114,7 +116,10 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
   const currentUser = api.getCurrentUser();
   const { employees } = useEmployees();
   const currentEmp = employees.find(e => e.id === currentUser?.employee_id || e.work_email === currentUser?.email) || employees[0];
-  const targetEmpId = currentEmp?.id || currentUser?.employee_id || 'WF-1001';
+  const chosenEmp = employees.find(e => e.id === (selectedEmployeeId || currentEmp?.id)) || currentEmp || employees[0];
+  const targetEmpId = chosenEmp?.id || 'WF-1001';
+  const targetEmpName = chosenEmp ? (chosenEmp.display_name || `${chosenEmp.first_name} ${chosenEmp.last_name}`.trim()) : (currentUser?.name || 'Staff');
+  const targetDeptName = chosenEmp?.department_name || (chosenEmp as any)?.department || 'Enterprise Operations';
 
   const currentAvailableBalance = 6.0; // Current CL balance for test user
   const validationResult = selectedLeaveType
@@ -144,19 +149,19 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
 
     leaveApi.submitLeaveRequest({
       employee_id: targetEmpId,
-      employee_name: currentEmp ? (currentEmp.display_name || `${currentEmp.first_name} ${currentEmp.last_name}`.trim()) : (currentUser?.name || 'Authorized Staff'),
-      department_name: currentEmp?.department_name || 'Enterprise Operations',
-      company_id: currentEmp?.company_id || 'comp-01',
+      employee_name: targetEmpName,
+      department_name: targetDeptName,
+      company_id: chosenEmp?.company_id || 'comp-01',
       leave_type_id: selectedLeaveType.id,
       leave_type_name: selectedLeaveType.name,
       leave_type_code: selectedLeaveType.code,
       leave_category: selectedLeaveType.category,
       from_date: fromDate,
-      to_date: toDate,
+      to_date: isHalfDay ? fromDate : toDate,
       is_half_day: isHalfDay,
-      half_day_session: isHalfDay ? 'FirstHalf' : undefined,
-      total_calendar_days: durationResult.totalCalendarDays,
-      leave_days_deducted: durationResult.leaveDaysDeducted,
+      half_day_session: isHalfDay ? halfDaySession : undefined,
+      total_calendar_days: isHalfDay ? 1 : durationResult.totalCalendarDays,
+      leave_days_deducted: isHalfDay ? 0.5 : durationResult.leaveDaysDeducted,
       reason: reason,
       emergency_contact: contactNumber,
       attachment_url: attachmentName || undefined,
@@ -368,6 +373,21 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
             </div>
 
             <form onSubmit={handleApplySubmit} className="p-6 overflow-y-auto space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">Employee *</label>
+                <select
+                  value={selectedEmployeeId || currentEmp?.id || ''}
+                  onChange={e => setSelectedEmployeeId(e.target.value)}
+                  className="w-full p-2.5 border border-gray-300 rounded-xl font-bold bg-white"
+                >
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.employee_code} — {emp.first_name} {emp.last_name} ({emp.department_name || (emp as any).department || 'General'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-bold text-gray-700 mb-1">Select Leave Type *</label>
@@ -390,6 +410,7 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
                     type="text"
                     value={contactNumber}
                     onChange={e => setContactNumber(e.target.value)}
+                    placeholder="+91 98765 43210"
                     className="w-full p-2.5 border border-gray-300 rounded-xl font-bold bg-white font-mono"
                   />
                 </div>
@@ -402,7 +423,12 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
                     type="date"
                     required
                     value={fromDate}
-                    onChange={e => setFromDate(e.target.value)}
+                    onChange={e => {
+                      setFromDate(e.target.value);
+                      if (isHalfDay || !toDate) {
+                        setToDate(e.target.value);
+                      }
+                    }}
                     className="w-full p-2.5 border border-gray-300 rounded-xl font-bold font-mono bg-white"
                   />
                 </div>
@@ -411,23 +437,45 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
                   <input
                     type="date"
                     required
-                    value={toDate}
+                    disabled={isHalfDay}
+                    value={isHalfDay ? fromDate : toDate}
                     onChange={e => setToDate(e.target.value)}
-                    className="w-full p-2.5 border border-gray-300 rounded-xl font-bold font-mono bg-white"
+                    className="w-full p-2.5 border border-gray-300 rounded-xl font-bold font-mono bg-white disabled:bg-gray-100 disabled:text-gray-500"
                   />
                 </div>
               </div>
 
               {selectedLeaveType?.allow_half_day && (
-                <label className="flex items-center gap-2 font-bold text-gray-800 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isHalfDay}
-                    onChange={e => setIsHalfDay(e.target.checked)}
-                    className="rounded text-[#07563D] w-4 h-4"
-                  />
-                  <span>Apply as Half-Day Leave</span>
-                </label>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
+                  <label className="flex items-center gap-2 font-bold text-gray-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isHalfDay}
+                      onChange={e => {
+                        setIsHalfDay(e.target.checked);
+                        if (e.target.checked && fromDate) {
+                          setToDate(fromDate);
+                        }
+                      }}
+                      className="rounded text-[#07563D] w-4 h-4"
+                    />
+                    <span>Apply as Half-Day Leave</span>
+                  </label>
+
+                  {isHalfDay && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-gray-600">Session:</span>
+                      <select
+                        value={halfDaySession}
+                        onChange={e => setHalfDaySession(e.target.value as any)}
+                        className="p-1.5 border border-gray-300 rounded-lg text-xs font-bold bg-white"
+                      >
+                        <option value="FirstHalf">First Half (Morning)</option>
+                        <option value="SecondHalf">Second Half (Afternoon)</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Interactive Engine Duration & Balance Breakdown */}

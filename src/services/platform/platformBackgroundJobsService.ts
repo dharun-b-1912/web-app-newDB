@@ -214,7 +214,7 @@ export const platformBackgroundJobsService = {
               queue,
               task_name: j.job_type || 'SYSTEM_JOB',
               tenant_id: j.organization_id || '',
-              tenant_name: 'JOY CORPORATE SOLUTIONS PVE LTD',
+              tenant_name: 'JOY CORPORATE SOLUTIONS PVT LTD',
               environment: 'Production',
               status,
               priority: (payload.priority || 'Normal') as any,

@@ -27,16 +27,20 @@ import {
   CalendarRange,
   PartyPopper,
   Flame,
+  RefreshCw,
 } from 'lucide-react';
+import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
 
 export const HolidayCalendarView: React.FC = () => {
+  const { showToast } = useToast();
   const [calendars, setCalendars] = useState<HolidayCalendar[]>([]);
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>('hol-tn-2026');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<'All' | 'Mandatory' | 'Restricted' | 'HalfDay'>('All');
   const [viewMode, setViewMode] = useState<'agenda' | 'grid'>('agenda');
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Modals state
   const [isAddHolidayModalOpen, setIsAddHolidayModalOpen] = useState(false);
@@ -291,6 +295,20 @@ export const HolidayCalendarView: React.FC = () => {
     setIsDuplicateModalOpen(false);
   };
 
+  // Handle On-Demand Sync to Attendance Daily & Ledger
+  const handleSyncAttendance = async () => {
+    if (!activeCal) return;
+    setIsSyncing(true);
+    try {
+      const res = await leaveApi.syncHolidayCalendarToAttendanceAsync(activeCal.id);
+      showToast(`✓ Synced ${res.dates.length} holidays with Attendance Daily & Monthly Ledger (${res.syncedCount} employee records refreshed)!`);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to sync holidays to attendance', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Handle Export to CSV / iCal
   const exportToICS = () => {
     if (!activeCal) return;
@@ -430,6 +448,17 @@ export const HolidayCalendarView: React.FC = () => {
           >
             <Sparkles className="w-3.5 h-3.5 text-purple-600" />
             <span>Preset Templates</span>
+          </button>
+
+          {/* Sync to Attendance & Payroll Ledger */}
+          <button
+            onClick={handleSyncAttendance}
+            disabled={isSyncing}
+            className="px-3.5 py-2 rounded-xl border border-purple-200 bg-purple-100 hover:bg-purple-200 text-purple-900 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
+            title="Sync all calendar holidays to Employee Attendance & Monthly Ledger"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5 text-purple-700", isSyncing && "animate-spin")} />
+            <span>{isSyncing ? "Syncing..." : "Sync to Attendance Ledger"}</span>
           </button>
 
           {/* Export Menu */}

@@ -243,7 +243,7 @@ export const adminApi = {
         email: inv.email,
         employee_name: inv.full_name,
         role_name: inv.metadata?.display_role || inv.role_code || 'Employee',
-        company_name: activeComp?.legal_name || 'JOY CORPORATE SOLUTIONS PVE LTD',
+        company_name: activeComp?.legal_name || 'JOY CORPORATE SOLUTIONS PVT LTD',
         department_name: inv.metadata?.department || 'People Operations',
         invited_by: inv.metadata?.invited_by_name || 'Company Administrator',
         status: inv.status === 'INVITED' ? 'Pending' : inv.status,
@@ -269,7 +269,7 @@ export const adminApi = {
     const activeComp = api.getActiveCompany();
     const currentUser = api.getCurrentUser();
     const orgId = params.organization_id || activeComp?.organization_id || currentUser?.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
-    const orgName = params.company_name || activeComp?.legal_name || activeComp?.name || 'JOY CORPORATE SOLUTIONS PVE LTD';
+    const orgName = params.company_name || activeComp?.legal_name || activeComp?.name || 'JOY CORPORATE SOLUTIONS PVT LTD';
 
     const roleMapping: Record<string, any> = {
       'Company Admin': 'Company Admin',

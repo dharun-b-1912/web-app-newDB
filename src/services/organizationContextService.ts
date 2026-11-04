@@ -29,20 +29,51 @@ if (typeof localStorage !== 'undefined') {
     if (cachedEntityId === STALE_COMPANY_ID) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, CORRECT_COMPANY_ID);
     }
-    // Also migrate the cached COMPANIES list in api.ts KEYS.COMPANIES
+    // Also migrate the cached COMPANIES list in api.ts KEYS.COMPANIES and sanitize PVE -> PVT
     const cachedCompanies = localStorage.getItem('workforce_companies');
     if (cachedCompanies) {
       const parsed = JSON.parse(cachedCompanies);
-      if (Array.isArray(parsed) && parsed.some((c: any) => c.id === STALE_COMPANY_ID)) {
-        const migrated = parsed.map((c: any) => c.id === STALE_COMPANY_ID ? { ...c, id: CORRECT_COMPANY_ID } : c);
-        localStorage.setItem('workforce_companies', JSON.stringify(migrated));
+      if (Array.isArray(parsed)) {
+        let changed = false;
+        const migrated = parsed.map((c: any) => {
+          let updated = { ...c };
+          if (updated.id === STALE_COMPANY_ID) {
+            updated.id = CORRECT_COMPANY_ID;
+            changed = true;
+          }
+          if (updated.legal_name && /\bPVE\b/i.test(updated.legal_name)) {
+            updated.legal_name = updated.legal_name.replace(/\bPVE\b/gi, 'PVT');
+            changed = true;
+          }
+          if (updated.trade_name && /\bPVE\b/i.test(updated.trade_name)) {
+            updated.trade_name = updated.trade_name.replace(/\bPVE\b/gi, 'PVT');
+            changed = true;
+          }
+          return updated;
+        });
+        if (changed) {
+          localStorage.setItem('workforce_companies', JSON.stringify(migrated));
+        }
       }
     }
     const cachedActiveCompany = localStorage.getItem('workforce_active_company');
     if (cachedActiveCompany) {
       const parsed = JSON.parse(cachedActiveCompany);
+      let changed = false;
       if (parsed?.id === STALE_COMPANY_ID) {
-        localStorage.setItem('workforce_active_company', JSON.stringify({ ...parsed, id: CORRECT_COMPANY_ID }));
+        parsed.id = CORRECT_COMPANY_ID;
+        changed = true;
+      }
+      if (parsed?.legal_name && /\bPVE\b/i.test(parsed.legal_name)) {
+        parsed.legal_name = parsed.legal_name.replace(/\bPVE\b/gi, 'PVT');
+        changed = true;
+      }
+      if (parsed?.trade_name && /\bPVE\b/i.test(parsed.trade_name)) {
+        parsed.trade_name = parsed.trade_name.replace(/\bPVE\b/gi, 'PVT');
+        changed = true;
+      }
+      if (changed) {
+        localStorage.setItem('workforce_active_company', JSON.stringify(parsed));
       }
     }
   } catch (_) {}
@@ -254,15 +285,15 @@ class OrganizationContextService {
             if (orgRes.data && orgRes.data.length > 0) {
               allOrgs = orgRes.data.map((o: any) => ({
                 ...o,
-                name: o.display_name || o.legal_name || o.name || 'Joy Corporate Solutions',
+                name: (o.display_name || o.legal_name || o.name || 'Joy Corporate Solutions').replace(/\bPVE\b/gi, 'PVT'),
                 status: o.status === 'ACTIVE' ? 'Active' : (o.status || 'Active'),
               })) as Organization[];
             }
             if (compRes.data && compRes.data.length > 0) {
               allEntities = compRes.data.map((c: any) => ({
                 ...c,
-                legal_name: c.legal_name || c.trade_name,
-                trade_name: c.trade_name || c.legal_name,
+                legal_name: (c.legal_name || c.trade_name || '').replace(/\bPVE\b/gi, 'PVT'),
+                trade_name: (c.trade_name || c.legal_name || '').replace(/\bPVE\b/gi, 'PVT'),
                 address: c.registered_address || c.address || '',
                 status: c.is_active === false ? 'Inactive' : 'Active',
               })) as Company[];

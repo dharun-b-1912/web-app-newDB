@@ -33,6 +33,7 @@ export const CompanySelector: React.FC<CompanySelectorProps> = ({ onOpenLocation
 
   if (primaryRole === 'Super Admin' || !activeLegalEntity) return null;
 
+  const normalizeLegalName = (name?: string) => (name || '').replace(/\bPVE\b/gi, 'PVT');
   const isCompanyAdmin = primaryRole === 'Company Admin';
   const isHRHead = primaryRole === 'HR Head';
   const canSwitchEntities = legalEntities.length > 1;
@@ -44,11 +45,11 @@ export const CompanySelector: React.FC<CompanySelectorProps> = ({ onOpenLocation
         className="flex items-center gap-2.5 px-3 h-10 rounded-xl border border-gray-200/80 bg-white hover:bg-gray-50/80 transition-all text-left cursor-pointer shadow-2xs shrink-0 focus:outline-none focus:ring-2 focus:ring-emerald-600/30"
       >
         <div className="w-7 h-7 rounded-lg bg-emerald-50 text-[#07563D] flex items-center justify-center shrink-0 border border-emerald-100 font-black text-xs">
-          {activeLegalEntity.legal_name.slice(0, 2).toUpperCase()}
+          {normalizeLegalName(activeLegalEntity.legal_name).slice(0, 2).toUpperCase()}
         </div>
         <div className="hidden sm:block shrink-0">
           <div className="text-xs font-bold text-gray-900 truncate max-w-[220px] xl:max-w-[270px] whitespace-nowrap">
-            {activeLegalEntity.legal_name}
+            {normalizeLegalName(activeLegalEntity.legal_name)}
           </div>
           <div className="text-[10px] text-gray-500 font-medium truncate max-w-[220px] xl:max-w-[270px] whitespace-nowrap flex items-center gap-1.5">
             <span>{(activeLegalEntity.city || 'Coimbatore').trim()}, {(activeLegalEntity.country || 'India').trim()}</span>
@@ -134,7 +135,7 @@ export const CompanySelector: React.FC<CompanySelectorProps> = ({ onOpenLocation
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-xs truncate leading-tight">
-                          {entity.legal_name}
+                          {normalizeLegalName(entity.legal_name)}
                         </div>
                         <div className="text-[10px] text-gray-400 font-normal flex items-center gap-1 mt-0.5">
                           <span>{entity.country}</span>

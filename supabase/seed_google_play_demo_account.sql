@@ -2,7 +2,7 @@
   -- JOY PEOPLEHR — GOOGLE PLAY STORE REVIEWER DEMO ACCOUNT SEED (IDEMPOTENT SQL)
   -- Target Auth User : fcad9143-0e98-4366-a303-dc7663976242 (demo.employee@joypeoplehr.com)
   -- Organization     : 0c621892-e938-4707-9957-13534ea32c19 (Joy Corporate Solutions)
-  -- Company          : 2030277f-a6a1-427f-beaf-4fc677a3bae2 (JOY CORPORATE SOLUTIONS PVE LTD)
+  -- Company          : 2030277f-a6a1-427f-beaf-4fc677a3bae2 (JOY CORPORATE SOLUTIONS PVT LTD)
   --
   -- NOTE: This script preserves the existing password in auth.users for demo.employee@joypeoplehr.com
   --       and populates complete, realistic HRMS data across all Flutter app modules:

@@ -19,6 +19,7 @@ import { attendanceTimeService } from './attendance/attendanceTimeService';
 import { attendanceIngestionService } from './attendance/attendanceIngestionService';
 import { getActiveOrgId } from './attendance/biometricCommandService';
 import { api } from './api';
+import { leaveApi } from './leaveApi';
 
 const STORAGE_KEY_DAILY = 'workforceos_attendance_daily_v2';
 const STORAGE_KEY_EVENTS = 'workforceos_attendance_events_v2';
@@ -227,6 +228,120 @@ export const attendanceApi = {
           }
         }
 
+        // Synthesize and reconcile daily rows from approved LEAVE requests for targetDateStr
+        try {
+          let leaveQ = client
+            .from('leave_requests')
+            .select('id, employee_id, leave_type_id, start_date, end_date, total_days, is_half_day, status, leave_types (name, code, is_paid)')
+            .eq('status', 'APPROVED')
+            .lte('start_date', targetDateStr)
+            .gte('end_date', targetDateStr);
+          if (tenantId && tenantId !== 'platform-root') {
+            leaveQ = leaveQ.eq('organization_id', tenantId);
+          }
+          const { data: approvedLeaves } = await leaveQ;
+
+          if (approvedLeaves && approvedLeaves.length > 0) {
+            for (const lr of approvedLeaves as any[]) {
+              const isPaid = lr.leave_types?.is_paid !== false;
+              const leaveStatus = lr.is_half_day ? 'HALF_DAY' : 'ON_LEAVE';
+              const leavePayable = isPaid ? (lr.is_half_day ? 0.5 : 1.0) : 0.0;
+
+              if (!dailyEmpIds.has(lr.employee_id)) {
+                dailyEmpIds.add(lr.employee_id);
+                dailyRows.push({
+                  id: `att-leave-${lr.employee_id}-${targetDateStr}`,
+                  employee_id: lr.employee_id,
+                  organization_id: tenantId,
+                  attendance_date: targetDateStr,
+                  status: leaveStatus,
+                  payable_status: leavePayable,
+                  is_regularized: true,
+                  first_check_in: null,
+                  last_check_out: null,
+                  total_work_minutes: lr.is_half_day ? 240 : 480,
+                  break_minutes: 0,
+                  late_entry_minutes: 0,
+                  early_exit_minutes: 0,
+                  overtime_minutes: 0,
+                  remarks: `Approved Leave: ${lr.leave_types?.name || 'Leave'}`,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                });
+              } else {
+                const existingIdx = dailyRows.findIndex((r: any) => r.employee_id === lr.employee_id);
+                if (existingIdx >= 0) {
+                  const existingRow = dailyRows[existingIdx];
+                  const normStatus = String(existingRow.status || '').toUpperCase();
+                  if (!existingRow.first_check_in && (normStatus === 'ABSENT' || normStatus === '')) {
+                    dailyRows[existingIdx] = {
+                      ...existingRow,
+                      status: leaveStatus,
+                      payable_status: leavePayable,
+                      is_regularized: true,
+                      remarks: `Approved Leave: ${lr.leave_types?.name || 'Leave'}`,
+                    };
+                  }
+                }
+              }
+            }
+          }
+        } catch (leaveErr) {
+          console.warn('[attendanceApi] error reconciling approved leaves for date:', leaveErr);
+        }
+
+        // Synthesize and reconcile daily rows for Company / Statutory HOLIDAYS for targetDateStr
+        try {
+          const hol = leaveApi.getHolidayForDate(targetDateStr);
+          if (hol && (hol.type === 'Mandatory' || !hol.is_optional)) {
+            for (const [empId, emp] of empMap.entries()) {
+              if (dailyEmpIds.has(empId)) {
+                const existingIdx = dailyRows.findIndex((r: any) => r.employee_id === empId);
+                if (existingIdx >= 0) {
+                  const existingRow = dailyRows[existingIdx];
+                  const normStatus = String(existingRow.status || '').toUpperCase();
+                  if (!existingRow.first_check_in && (normStatus === 'ABSENT' || normStatus === 'HOLIDAY' || normStatus === '')) {
+                    dailyRows[existingIdx] = {
+                      ...existingRow,
+                      status: 'HOLIDAY',
+                      payable_status: 1.0,
+                      is_regularized: true,
+                      holiday_name: hol.name,
+                      holiday_category: hol.category,
+                      holiday_type: hol.type,
+                    };
+                  }
+                }
+              } else {
+                dailyEmpIds.add(empId);
+                dailyRows.push({
+                  id: `att-hol-${empId}-${targetDateStr}`,
+                  employee_id: empId,
+                  organization_id: tenantId,
+                  attendance_date: targetDateStr,
+                  status: 'HOLIDAY',
+                  payable_status: 1.0,
+                  is_regularized: true,
+                  first_check_in: null,
+                  last_check_out: null,
+                  total_work_minutes: 480,
+                  break_minutes: 0,
+                  late_entry_minutes: 0,
+                  early_exit_minutes: 0,
+                  overtime_minutes: 0,
+                  holiday_name: hol.name,
+                  holiday_category: hol.category,
+                  holiday_type: hol.type,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                });
+              }
+            }
+          }
+        } catch (holErr) {
+          console.warn('[attendanceApi] error reconciling holidays for date:', holErr);
+        }
+
         const mapped: AttendanceDaily[] = dailyRows.map((d: any) => {
           const emp = empMap.get(d.employee_id);
           const empName = emp ? (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee') : 'Employee';
@@ -371,6 +486,10 @@ export const attendanceApi = {
           .gte('attendance_date', startDate)
           .lte('attendance_date', endDate);
 
+        if (tenantId && tenantId !== 'platform-root') {
+          q = q.eq('organization_id', tenantId);
+        }
+
         if (employeeId) {
           q = q.eq('employee_id', employeeId);
         }
@@ -383,9 +502,13 @@ export const attendanceApi = {
         // Fetch employee details
         let empMap = new Map<string, any>();
         try {
-          const { data: empList } = await client
+          let empQ = client
             .from('employees')
-            .select('id, employee_code, first_name, last_name, display_name, avatar_url');
+            .select('id, employee_code, first_name, last_name, display_name, avatar_url, department_id, designation_id, department, designation');
+          if (tenantId && tenantId !== 'platform-root') {
+            empQ = empQ.eq('organization_id', tenantId);
+          }
+          const { data: empList } = await empQ;
           if (empList) {
             empMap = new Map(empList.map((e: any) => [e.id, e]));
           }
@@ -503,6 +626,163 @@ export const attendanceApi = {
           }
         }
 
+        // Synthesize and reconcile daily rows from approved LEAVE requests for this period
+        try {
+          let leaveQ = client
+            .from('leave_requests')
+            .select('id, employee_id, leave_type_id, start_date, end_date, total_days, is_half_day, status, leave_types (name, code, is_paid)')
+            .eq('status', 'APPROVED')
+            .lte('start_date', endDate)
+            .gte('end_date', startDate);
+          if (tenantId && tenantId !== 'platform-root') {
+            leaveQ = leaveQ.eq('organization_id', tenantId);
+          }
+          if (employeeId) {
+            leaveQ = leaveQ.eq('employee_id', employeeId);
+          }
+          const { data: approvedLeaves } = await leaveQ;
+
+          if (approvedLeaves && approvedLeaves.length > 0) {
+            for (const lr of approvedLeaves as any[]) {
+              const lStart = lr.start_date < startDate ? startDate : lr.start_date;
+              const lEnd = lr.end_date > endDate ? endDate : lr.end_date;
+              const [y1, m1, d1] = lStart.split('-').map(Number);
+              const [y2, m2, d2] = lEnd.split('-').map(Number);
+              const curL = new Date(y1, m1 - 1, d1, 12, 0, 0);
+              const endL = new Date(y2, m2 - 1, d2, 12, 0, 0);
+
+              const isPaid = lr.leave_types?.is_paid !== false;
+              const leaveStatus = lr.is_half_day ? 'HALF_DAY' : 'ON_LEAVE';
+              const leavePayable = isPaid ? (lr.is_half_day ? 0.5 : 1.0) : 0.0;
+
+              while (curL <= endL) {
+                const y = curL.getFullYear();
+                const m = String(curL.getMonth() + 1).padStart(2, '0');
+                const d = String(curL.getDate()).padStart(2, '0');
+                const lDateStr = `${y}-${m}-${d}`;
+                const key = `${lr.employee_id}_${lDateStr}`;
+
+                if (!existingKeys.has(key)) {
+                  existingKeys.add(key);
+                  dailyRows.push({
+                    id: `att-leave-${lr.employee_id}-${lDateStr}`,
+                    employee_id: lr.employee_id,
+                    organization_id: tenantId,
+                    attendance_date: lDateStr,
+                    status: leaveStatus,
+                    payable_status: leavePayable,
+                    is_regularized: true,
+                    first_check_in: null,
+                    last_check_out: null,
+                    total_work_minutes: lr.is_half_day ? 240 : 480,
+                    break_minutes: 0,
+                    late_entry_minutes: 0,
+                    early_exit_minutes: 0,
+                    overtime_minutes: 0,
+                    remarks: `Approved Leave: ${lr.leave_types?.name || 'Leave'}`,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  });
+                } else {
+                  // If row exists without punches and marked ABSENT or empty, upgrade to ON_LEAVE
+                  const existingIdx = dailyRows.findIndex((r: any) => `${r.employee_id}_${r.attendance_date}` === key);
+                  if (existingIdx >= 0) {
+                    const existingRow = dailyRows[existingIdx];
+                    const normStatus = String(existingRow.status || '').toUpperCase();
+                    if (!existingRow.first_check_in && (normStatus === 'ABSENT' || normStatus === '')) {
+                      dailyRows[existingIdx] = {
+                        ...existingRow,
+                        status: leaveStatus,
+                        payable_status: leavePayable,
+                        is_regularized: true,
+                        remarks: `Approved Leave: ${lr.leave_types?.name || 'Leave'}`,
+                      };
+                    }
+                  }
+                }
+
+                curL.setDate(curL.getDate() + 1);
+              }
+            }
+          }
+        } catch (leaveErr) {
+          console.warn('[attendanceApi] error reconciling approved leaves for period:', leaveErr);
+        }
+
+        // Synthesize and reconcile daily rows for Company / Statutory HOLIDAYS for period
+        try {
+          const cals = leaveApi.getHolidayCalendars();
+          const targetCal = cals.find(c => c.is_default) || cals[0];
+          const periodHolidays = (targetCal?.holidays || []).filter(h =>
+            (h.type === 'Mandatory' || !h.is_optional) &&
+            h.date >= startDate &&
+            h.date <= endDate
+          );
+
+          if (periodHolidays.length > 0) {
+            const empList = employeeId
+              ? (empMap.has(employeeId) ? [empMap.get(employeeId)!] : [])
+              : Array.from(empMap.values());
+
+            for (const hol of periodHolidays) {
+              for (const emp of empList) {
+                const key = `${emp.id}_${hol.date}`;
+                if (!existingKeys.has(key)) {
+                  existingKeys.add(key);
+                  dailyRows.push({
+                    id: `att-hol-${emp.id}-${hol.date}`,
+                    employee_id: emp.id,
+                    organization_id: tenantId,
+                    attendance_date: hol.date,
+                    status: 'HOLIDAY',
+                    payable_status: 1.0,
+                    is_regularized: true,
+                    first_check_in: null,
+                    last_check_out: null,
+                    total_work_minutes: 480,
+                    break_minutes: 0,
+                    late_entry_minutes: 0,
+                    early_exit_minutes: 0,
+                    overtime_minutes: 0,
+                    holiday_name: hol.name,
+                    holiday_category: hol.category,
+                    holiday_type: hol.type,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  });
+                } else {
+                  const existingIdx = dailyRows.findIndex((r: any) => `${r.employee_id}_${r.attendance_date}` === key);
+                  if (existingIdx >= 0) {
+                    const existingRow = dailyRows[existingIdx];
+                    const normStatus = String(existingRow.status || '').toUpperCase();
+                    if (!existingRow.first_check_in && (normStatus === 'ABSENT' || normStatus === 'HOLIDAY' || normStatus === '')) {
+                      dailyRows[existingIdx] = {
+                        ...existingRow,
+                        status: 'HOLIDAY',
+                        payable_status: 1.0,
+                        is_regularized: true,
+                        holiday_name: hol.name,
+                        holiday_category: hol.category,
+                        holiday_type: hol.type,
+                      };
+                    } else if (existingRow.first_check_in) {
+                      // Employee worked on holiday
+                      dailyRows[existingIdx] = {
+                        ...existingRow,
+                        is_holiday_work: true,
+                        holiday_name: hol.name,
+                        holiday_multiplier: 2.0,
+                      };
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (holErr) {
+          console.warn('[attendanceApi] error reconciling holidays for period:', holErr);
+        }
+
         const mapped: AttendanceDaily[] = dailyRows.map((d: any) => {
           const emp = empMap.get(d.employee_id);
           const empName = emp ? (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee') : 'Employee';
@@ -559,20 +839,28 @@ export const attendanceApi = {
           const lateMins = (d.late_entry_minutes && d.late_entry_minutes > 0) ? d.late_entry_minutes : calc.lateMinutes;
 
           let resolvedStatus = calc.status;
-          if (isLeaveStatus) {
+          const dbStatusUpper = String(d.status || '').trim().toUpperCase();
+          if (isLeaveStatus || dbStatusUpper === 'ON_LEAVE' || dbStatusUpper === 'LEAVE') {
             resolvedStatus = 'On Leave';
-          } else if (isHolidayStatus) {
+          } else if (isHolidayStatus || dbStatusUpper === 'HOLIDAY') {
             resolvedStatus = 'Holiday';
-          } else if (d.status === 'WEEKLY_OFF' || d.status === 'Weekly Off') {
-            resolvedStatus = 'Weekly Off';
+          } else if (dbStatusUpper === 'WEEKLY_OFF' || dbStatusUpper === 'WEEK_OFF' || dbStatusUpper === 'REST_DAY') {
+            resolvedStatus = rawFirstIn ? (calc.status === 'Absent' ? 'Present' : calc.status) : 'Weekly Off';
           } else if (d.is_regularized || d.check_in_source === 'MANUAL' || d.source === 'MANUAL') {
-            resolvedStatus = (d.status === 'ABSENT' || d.status === 'Absent') ? 'Absent' :
-                             (d.status === 'HALF_DAY' || d.status === 'Half Day') ? 'Half Day' :
-                             (d.status === 'ON_LEAVE' || d.status === 'On Leave') ? 'On Leave' :
-                             (d.status === 'WORK_FROM_HOME' || d.status === 'WFH') ? 'WFH' : 'Present';
-          } else if (d.status === 'PRESENT' || rawFirstIn) {
-            resolvedStatus = (calc.status === 'Absent' && d.status === 'PRESENT') ? 'Present' : (calc.status || 'Present');
-          } else if (d.status === 'ABSENT') {
+            resolvedStatus = (dbStatusUpper === 'ABSENT') ? 'Absent' :
+                             (dbStatusUpper === 'HALF_DAY') ? 'Half Day' :
+                             (dbStatusUpper === 'ON_LEAVE' || dbStatusUpper === 'LEAVE') ? 'On Leave' :
+                             (dbStatusUpper === 'WORK_FROM_HOME' || dbStatusUpper === 'WFH') ? 'WFH' :
+                             (dbStatusUpper === 'LATE') ? 'Late' : 'Present';
+          } else if (dbStatusUpper === 'LATE' || calc.status === 'Late') {
+            resolvedStatus = 'Late';
+          } else if (dbStatusUpper === 'MISSING_PUNCH' || calc.status === 'Missing Punch') {
+            resolvedStatus = 'Missing Punch';
+          } else if (dbStatusUpper === 'HALF_DAY' || calc.status === 'Half Day') {
+            resolvedStatus = 'Half Day';
+          } else if (dbStatusUpper === 'PRESENT' || rawFirstIn) {
+            resolvedStatus = (calc.status === 'Absent' && dbStatusUpper === 'PRESENT') ? 'Present' : (calc.status || 'Present');
+          } else if (dbStatusUpper === 'ABSENT' || calc.status === 'Absent') {
             if (netMins >= 120 && netMins < 240) {
               resolvedStatus = 'Half Day';
             } else {
@@ -585,11 +873,11 @@ export const attendanceApi = {
             employee_id: d.employee_id,
             employee_code: empCode,
             employee_name: empName,
-            department: 'Operations',
-            designation: 'Staff',
+            department: emp?.department || emp?.department_name || 'Operations',
+            designation: emp?.designation || emp?.designation_title || 'Staff',
             avatar_url: emp?.avatar_url,
             organization_id: d.organization_id,
-            company_id: 'cmp-01',
+            company_id: emp?.company_id || 'cmp-01',
             date: d.attendance_date,
             shift_id: d.shift_id || (isOvernightRow ? '5f36464f-1920-45b4-b692-0d49294a76fa' : 'shift-gen'),
             shift_name: shiftNameResolved,
