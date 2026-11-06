@@ -2029,7 +2029,10 @@ export async function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
 // 4. SUPABASE RELATIONAL WORKFORCE FETCHER
 // ============================================================================
 
-export async function fetchEmployeesForIdCards(organizationId?: string): Promise<IdCardPersonRecord[]> {
+export async function fetchEmployeesForIdCards(
+  organizationId?: string,
+  options?: { includeInactive?: boolean }
+): Promise<IdCardPersonRecord[]> {
   try {
     let query = supabase
       .from('employees')
@@ -2060,6 +2063,11 @@ export async function fetchEmployeesForIdCards(organizationId?: string): Promise
 
     if (organizationId && organizationId !== 'platform-root') {
       query = query.eq('organization_id', organizationId);
+    }
+
+    // Default to active workforce (matches Sidebar Employee Management count: 19)
+    if (!options?.includeInactive) {
+      query = query.eq('employment_status', 'ACTIVE');
     }
 
     const { data, error } = await query;
@@ -2336,18 +2344,37 @@ export function runPreflightChecks(
     const side = sides[sideKey];
     const sideName = sideKey.toUpperCase();
 
+    const getEffectiveBox = (item: CardElement) => {
+      const rot = ((item.rotation || 0) % 360 + 360) % 360;
+      const isQuarterTurn = Math.abs(rot - 90) < 5 || Math.abs(rot - 270) < 5;
+      if (!isQuarterTurn) {
+        return { x: item.x, y: item.y, w: item.w, h: item.h, isRotatedDisplay: false };
+      }
+      const cx = item.x + item.w / 2;
+      const cy = item.y + item.h / 2;
+      return {
+        x: cx - item.h / 2,
+        y: cy - item.w / 2,
+        w: item.h,
+        h: item.w,
+        isRotatedDisplay: true,
+      };
+    };
+
     // Check individual elements
     side.els.forEach((el, idx) => {
       if (el.hidden) return;
 
       // Safe margin check for text
       if (el.type === 'text') {
-        const outLeft = el.x < geometry.safe - 0.5;
-        const outRight = el.x + el.w > geometry.w - geometry.safe + 0.5;
-        const outTop = el.y < geometry.safe - 0.5;
-        const outBottom = el.y + el.h > geometry.h - geometry.safe + 0.5;
+        const box = getEffectiveBox(el);
+        const isIntentionalDisplay = box.isRotatedDisplay || Boolean(el.strokeWidth) || el.size >= 20;
+        const outLeft = box.x < geometry.safe - 0.5;
+        const outRight = box.x + box.w > geometry.w - geometry.safe + 0.5;
+        const outTop = box.y < geometry.safe - 0.5;
+        const outBottom = box.y + box.h > geometry.h - geometry.safe + 0.5;
 
-        if (outLeft || outRight || outTop || outBottom) {
+        if (!isIntentionalDisplay && (outLeft || outRight || outTop || outBottom)) {
           add(
             'check',
             `[${sideName}] Text "${el.text.slice(0, 18)}" extends past the ${geometry.safe}mm safe margin area.`,
@@ -2378,24 +2405,30 @@ export function runPreflightChecks(
 
       // Check for overlap against subsequent non-rect elements
       if (el.type === 'text') {
-        for (let j = idx + 1; j < side.els.length; j++) {
-          const other = side.els[j];
-          if (other.hidden || other.type === 'rect') continue;
+        const boxA = getEffectiveBox(el);
+        if (!boxA.isRotatedDisplay) {
+          for (let j = idx + 1; j < side.els.length; j++) {
+            const other = side.els[j];
+            if (other.hidden || other.type === 'rect') continue;
 
-          // Check AABB collision
-          const overlapX = el.x < other.x + other.w && el.x + el.w > other.x;
-          const overlapY = el.y < other.y + other.h && el.y + el.h > other.y;
+            const boxB = getEffectiveBox(other);
+            if (boxB.isRotatedDisplay) continue;
 
-          if (overlapX && overlapY) {
-            const overlapHeight = Math.min(el.y + el.h, other.y + other.h) - Math.max(el.y, other.y);
-            if (overlapHeight > 1.2) {
-              const otherName = other.type === 'text' ? `"${(other as TextElement).text.slice(0, 15)}"` : other.type;
-              add(
-                'check',
-                `[${sideName}] Potential overlap between "${el.text.slice(0, 15)}" and ${otherName}.`,
-                el.id,
-                'collision'
-              );
+            // Check AABB collision
+            const overlapX = boxA.x < boxB.x + boxB.w && boxA.x + boxA.w > boxB.x;
+            const overlapY = boxA.y < boxB.y + boxB.h && boxA.y + boxA.h > boxB.y;
+
+            if (overlapX && overlapY) {
+              const overlapHeight = Math.min(boxA.y + boxA.h, boxB.y + boxB.h) - Math.max(boxA.y, boxB.y);
+              if (overlapHeight > 1.2) {
+                const otherName = other.type === 'text' ? `"${(other as TextElement).text.slice(0, 15)}"` : other.type;
+                add(
+                  'check',
+                  `[${sideName}] Potential overlap between "${el.text.slice(0, 15)}" and ${otherName}.`,
+                  el.id,
+                  'collision'
+                );
+              }
             }
           }
         }
@@ -2435,8 +2468,12 @@ export function runPreflightChecks(
   Object.values(sides).forEach(s => {
     s.els.forEach(el => {
       if (el.type === 'text') {
-        if (el.text.includes('{name}')) foundName = true;
+        if (el.text.includes('{name}') || el.text.includes('{first_name}')) foundName = true;
         if (el.text.includes('{idno}')) foundId = true;
+      } else if (el.type === 'qr') {
+        if (el.qrData?.includes('{idno}') || el.caption?.includes('{idno}')) {
+          foundId = true;
+        }
       }
     });
   });

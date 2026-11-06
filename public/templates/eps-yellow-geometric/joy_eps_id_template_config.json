@@ -1,0 +1,215 @@
+{
+  "schemaVersion": "1.0.0",
+  "templateId": "joy-eps-yellow-geometric-portrait",
+  "name": "Yellow Geometric Corporate ID - EPS Import",
+  "description": "Optimised front/back backgrounds extracted from the supplied EPS. The source contains sample artwork elements; overlay or mask placeholder areas before production.",
+  "source": {
+    "format": "EPS",
+    "originalFilename": "vecteezy_trendy-colorfull-id-card-background-template-vector_.eps",
+    "originalSizeBytes": 11534336,
+    "convertedFrom": "Ghostscript EPS render",
+    "sourceColourSpace": "RGB preview; confirm original print colour profile with designer/printer"
+  },
+  "assets": {
+    "frontBackground": "front_background.webp",
+    "backBackground": "back_background.webp",
+    "backgroundFormat": "image/webp",
+    "renderedPixels": {
+      "width": 720,
+      "height": 1250
+    },
+    "fit": "contain",
+    "position": "center"
+  },
+  "card": {
+    "standard": "CR80 / ID-1",
+    "widthMm": 85.6,
+    "heightMm": 53.98,
+    "portrait": {
+      "widthMm": 53.98,
+      "heightMm": 85.6
+    },
+    "landscape": {
+      "widthMm": 85.6,
+      "heightMm": 53.98
+    },
+    "sourceArtworkAspectRatio": 0.576,
+    "note": "Source artwork aspect ratio differs from CR80 portrait. Do not stretch. Fit proportionally and extend/rebuild side background or use a custom card size."
+  },
+  "editor": {
+    "units": "percent",
+    "origin": "top-left",
+    "backgroundLayerLocked": true,
+    "allowBackgroundReplace": true,
+    "allowBackgroundOpacity": true,
+    "sides": [
+      "front",
+      "back"
+    ],
+    "dynamicLayers": true
+  },
+  "front": {
+    "background": "front_background.webp",
+    "layers": [
+      {
+        "id": "employee-photo",
+        "type": "image",
+        "binding": "candidate.photoUrl",
+        "x": 15.0,
+        "y": 30.0,
+        "width": 70.0,
+        "height": 42.0,
+        "fit": "cover",
+        "mask": "circle",
+        "zIndex": 20,
+        "note": "Overlay inside the gold circular photo frame; tune inset to preserve frame."
+      },
+      {
+        "id": "employee-name-mask",
+        "type": "shape",
+        "shape": "rect",
+        "x": 27.0,
+        "y": 74.0,
+        "width": 46.0,
+        "height": 9.0,
+        "fill": "#FFFFFF",
+        "zIndex": 25,
+        "locked": true,
+        "note": "Covers static YOUR NAME/POSITION sample text. Adjust after preview."
+      },
+      {
+        "id": "employee-name",
+        "type": "text",
+        "binding": "candidate.fullName",
+        "x": 10.0,
+        "y": 75.5,
+        "width": 80.0,
+        "height": 4.0,
+        "fontFamily": "Inter",
+        "fontSizePt": 11,
+        "fontWeight": 700,
+        "color": "#171717",
+        "align": "center",
+        "zIndex": 30
+      },
+      {
+        "id": "employee-designation",
+        "type": "text",
+        "binding": "candidate.designation",
+        "x": 10.0,
+        "y": 80.0,
+        "width": 80.0,
+        "height": 3.0,
+        "fontFamily": "Inter",
+        "fontSizePt": 7,
+        "fontWeight": 600,
+        "color": "#171717",
+        "align": "center",
+        "zIndex": 31
+      }
+    ]
+  },
+  "back": {
+    "background": "back_background.webp",
+    "layers": [
+      {
+        "id": "qr-white-mask",
+        "type": "shape",
+        "shape": "rect",
+        "x": 23.0,
+        "y": 36.0,
+        "width": 54.0,
+        "height": 29.0,
+        "fill": "#FFFFFF",
+        "zIndex": 20,
+        "locked": true,
+        "note": "White quiet-zone mask over sample QR. Preserve gold frame; adjust based on actual render."
+      },
+      {
+        "id": "verification-qr",
+        "type": "qr",
+        "binding": "candidate.verificationUrl",
+        "x": 26.0,
+        "y": 37.5,
+        "width": 48.0,
+        "height": 26.0,
+        "errorCorrection": "H",
+        "quietZoneModules": 4,
+        "zIndex": 25
+      },
+      {
+        "id": "terms-mask",
+        "type": "shape",
+        "shape": "rect",
+        "x": 12.0,
+        "y": 72.0,
+        "width": 76.0,
+        "height": 9.0,
+        "fill": "#FFFFFF",
+        "zIndex": 26,
+        "locked": true,
+        "note": "Covers static lorem ipsum copy."
+      },
+      {
+        "id": "back-note",
+        "type": "text",
+        "binding": "organization.cardBackText",
+        "fallback": "If found, please return this card to the issuing organisation.",
+        "x": 12.0,
+        "y": 73.0,
+        "width": 76.0,
+        "height": 7.0,
+        "fontFamily": "Inter",
+        "fontSizePt": 5.5,
+        "color": "#333333",
+        "align": "center",
+        "zIndex": 30
+      }
+    ]
+  },
+  "bulk": {
+    "supported": true,
+    "formats": [
+      "csv",
+      "xlsx"
+    ],
+    "photoMatchKey": "employeeCode",
+    "requiredBindings": [
+      "candidate.fullName",
+      "candidate.designation",
+      "candidate.photoUrl",
+      "candidate.verificationUrl"
+    ],
+    "batchSizeDefault": 250,
+    "processAsBackgroundJob": true
+  },
+  "print": {
+    "previewDpi": 150,
+    "targetRasterDpi": 300,
+    "colourMode": "CMYK",
+    "iccProfile": "Require printer-supplied ICC profile; do not assume generic CMYK profile",
+    "pdfStandard": "PDF/X-4 when requested by commercial printer",
+    "bleedMm": 3,
+    "safeMarginMm": 2.5,
+    "includeCropMarks": false,
+    "embedFonts": true,
+    "preserveVectorTextAndQr": true,
+    "preflight": [
+      "verify page size",
+      "verify bleed and trim boxes",
+      "verify embedded fonts",
+      "verify effective image resolution",
+      "verify QR quiet zone and scanability",
+      "convert RGB assets using selected ICC profile",
+      "check front/back orientation and alignment"
+    ],
+    "warning": "WebP backgrounds are sRGB editor assets, not CMYK print masters. Convert during final PDF export using the selected ICC profile and validate with a PDF preflight tool."
+  },
+  "integration": {
+    "recommendedUse": "Load the two WebP files as locked background layers, then add editable dynamic fields and masks from this configuration.",
+    "doNotSendOriginalEPSToBrowser": true,
+    "maxBackgroundAssetBytes": 1500000,
+    "adapterRequired": true,
+    "adapterNote": "Map this neutral JSON schema to the ID Card Studio's internal template schema; no application import schema was supplied."
+  }
+}

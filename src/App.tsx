@@ -39,6 +39,7 @@ const OnboardingView = lazy(() => import('./features/onboarding/OnboardingView')
 const OffboardingView = lazy(() => import('./features/offboarding/OffboardingView').then(m => ({ default: m.OffboardingView })));
 const TalentManagementView = lazy(() => import('./features/talent/TalentManagementView').then(m => ({ default: m.TalentManagementView })));
 const IdCardPressView = lazy(() => import('./features/people/idcard/IdCardPressView').then(m => ({ default: m.IdCardPressView })));
+const IdCardStudioV2 = lazy(() => import('./features/people/idcard/v2/IdCardStudioV2').then(m => ({ default: m.IdCardStudioV2 })));
 const IdCardVerificationView = lazy(() => import('./features/people/idcard/IdCardVerificationView').then(m => ({ default: m.IdCardVerificationView })));
 const LmsMasterModule = lazy(() => import('./features/lms/LmsMasterModule').then(m => ({ default: m.LmsMasterModule })));
 const PerformanceMasterModule = lazy(() => import('./features/performance/PerformanceMasterModule').then(m => ({ default: m.PerformanceMasterModule })));
@@ -163,7 +164,12 @@ const AppContent: React.FC = () => {
   // Compute the correct starting route: URL first -> localStorage saved route -> role default
   const [currentRoute, setCurrentRoute] = useState<string>(() => {
     const urlState = parseRouteFromUrl();
-    if (urlState.route === 'accept-invite' || urlState.route === 'reset-password') {
+    if (
+      urlState.route === 'accept-invite' ||
+      urlState.route === 'reset-password' ||
+      urlState.route === 'verify-id-card' ||
+      urlState.route === 'verify'
+    ) {
       return urlState.route;
     }
 
@@ -478,6 +484,23 @@ const AppContent: React.FC = () => {
     );
   }
 
+  // Dedicated Public QR ID Card Verification Portal (Accessible without login when scanning physical ID cards)
+  const isPublicIdVerificationRoute =
+    currentRoute === 'verify-id-card' ||
+    currentRoute === 'verify' ||
+    (typeof window !== 'undefined' && (
+      window.location.pathname.toLowerCase() === '/verify-id-card' ||
+      window.location.pathname.toLowerCase() === '/verify'
+    ));
+
+  if (isPublicIdVerificationRoute) {
+    return (
+      <Suspense fallback={null}>
+        <IdCardVerificationView onBackToApp={() => handleNavigate(user ? 'id-cards' : 'login')} />
+      </Suspense>
+    );
+  }
+
   // Dedicated External Vendor Login Screen
   const isVendorLoginRoute =
     currentRoute === 'vendor-login' ||
@@ -550,8 +573,21 @@ const AppContent: React.FC = () => {
         return <WorkforceWorkspace initialTab="people" onNavigate={handleNavigate} />;
       case 'id-cards':
       case 'idcard':
-      case 'id-card-press':
+      case 'id-card-press': {
+        const isV2 = typeof localStorage !== 'undefined' ? localStorage.getItem('joy_id_card_studio_v2') !== 'false' : true;
+        if (isV2) {
+          return (
+            <IdCardStudioV2
+              onBackToPeople={() => handleNavigate('people')}
+              onToggleV1V2={() => {
+                localStorage.setItem('joy_id_card_studio_v2', 'false');
+                window.location.reload();
+              }}
+            />
+          );
+        }
         return <IdCardPressView onBackToPeople={() => handleNavigate('people')} />;
+      }
       case 'verify-id-card':
       case 'verify':
         return <IdCardVerificationView onBackToApp={() => handleNavigate('people')} />;

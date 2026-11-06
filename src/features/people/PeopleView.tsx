@@ -25,6 +25,7 @@ import {
   CreditCard,
 } from 'lucide-react';
 import { IdCardPressView } from './idcard/IdCardPressView';
+import { IdCardStudioV2 } from './idcard/v2/IdCardStudioV2';
 import { EmployeeList, SortField, SortDir } from './EmployeeList';
 import { EmployeeCreateWizardModal } from './EmployeeCreateWizardModal';
 import { EmployeeProfileDrawer } from './EmployeeProfileDrawer';
@@ -396,6 +397,18 @@ export const PeopleView: React.FC = () => {
   };
 
   if (isIdCardStudioOpen) {
+    const isV2 = typeof localStorage !== 'undefined' ? localStorage.getItem('joy_id_card_studio_v2') !== 'false' : true;
+    if (isV2) {
+      return (
+        <IdCardStudioV2
+          onBackToPeople={() => setIsIdCardStudioOpen(false)}
+          onToggleV1V2={() => {
+            localStorage.setItem('joy_id_card_studio_v2', 'false');
+            window.location.reload();
+          }}
+        />
+      );
+    }
     return <IdCardPressView onBackToPeople={() => setIsIdCardStudioOpen(false)} />;
   }
 

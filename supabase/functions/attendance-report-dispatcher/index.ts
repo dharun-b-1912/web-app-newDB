@@ -122,38 +122,58 @@ serve(async (req: Request) => {
     const isWeekly = slot === "WEEKLY";
     const isMonthly = slot === "MONTHLY";
 
-    // Deduplication Guard: If this is an automated schedule run and already ran today or is currently IN_PROGRESS, skip immediately
-    if (body.mode === "AUTOMATED_SCHEDULE" && scheduleRow && (isMorning || slot === "EVENING")) {
-      const isEvening = slot === "EVENING";
+    // Deduplication Guard:
+    // 1. For AUTOMATED_SCHEDULE runs, skip if already ran today (in IST) or currently IN_PROGRESS
+    // 2. For ANY mode (including MANUAL_DISPATCH), prevent rapid duplicate triggers within 60 seconds for the same org + slot + date
+    if (scheduleRow && (isMorning || slot === "EVENING")) {
       const lastRunAt = isMorning ? scheduleRow.last_morning_run_at : scheduleRow.last_evening_run_at;
       const lastStatus = isMorning ? scheduleRow.last_morning_status : scheduleRow.last_evening_status;
 
-      let alreadyRan = false;
-      if (lastRunAt && lastStatus === "SUCCESS") {
-        if (isMorning) {
-          alreadyRan = lastRunAt.startsWith(todayStr);
-        } else {
-          const runDate = new Date(lastRunAt);
-          const runIstHour = new Date(runDate.getTime() + istOffset).getUTCHours();
-          alreadyRan = lastRunAt.startsWith(todayStr) && runIstHour >= 16;
-        }
-      }
+      // Rapid duplicate cooldown (60 seconds) across ALL modes (prevents 3x duplicate emails & WhatsApp on rapid triggers)
+      const isRapidDuplicate = lastRunAt &&
+        (nowUtc.getTime() - new Date(lastRunAt).getTime()) < 60 * 1000 &&
+        (lastStatus === "IN_PROGRESS" || lastStatus === "SUCCESS");
 
-      // Concurrency Lock Guard: if already claimed and running in the last 5 minutes, reject parallel duplicate trigger
-      const isCurrentlyRunning = lastStatus === "IN_PROGRESS" &&
-        lastRunAt &&
-        (nowUtc.getTime() - new Date(lastRunAt).getTime()) < 5 * 60 * 1000;
-
-      if (alreadyRan || isCurrentlyRunning) {
-        console.log(`[Deduplication] Automated ${slot} report for ${todayStr} already ${lastStatus}. Aborting parallel execution.`);
+      if (isRapidDuplicate && !body.force) {
+        console.log(`[Deduplication] Rapid duplicate ${slot} trigger within 60s for ${orgId} (${todayStr}). Skipping duplicate dispatch.`);
         return new Response(
           JSON.stringify({
             success: true,
             skipped: true,
-            message: `Automated ${slot} report for ${todayStr} already ${lastStatus === "IN_PROGRESS" ? "in-progress" : "dispatched"}. Skipping duplicate run.`,
+            message: `${slot} report for ${todayStr} was just dispatched less than 60 seconds ago. Skipping duplicate send.`,
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
+      }
+
+      if (body.mode === "AUTOMATED_SCHEDULE") {
+        let alreadyRan = false;
+        if (lastRunAt && lastStatus === "SUCCESS") {
+          const runDate = new Date(lastRunAt);
+          const runIstDateStr = new Date(runDate.getTime() + istOffset).toISOString().split("T")[0];
+          const [targetH, targetM] = (isMorning ? (scheduleRow.morning_time || "10:30") : (scheduleRow.evening_time || "19:00")).split(":").map(Number);
+          const targetTotalMin = (targetH || 0) * 60 + (targetM || 0);
+          const runIst = new Date(runDate.getTime() + istOffset);
+          const runTotalMin = runIst.getUTCHours() * 60 + runIst.getUTCMinutes();
+          alreadyRan = runIstDateStr === todayStr && runTotalMin >= targetTotalMin - 5;
+        }
+
+        // Concurrency Lock Guard: if already claimed and running in the last 5 minutes, reject parallel duplicate trigger
+        const isCurrentlyRunning = lastStatus === "IN_PROGRESS" &&
+          lastRunAt &&
+          (nowUtc.getTime() - new Date(lastRunAt).getTime()) < 5 * 60 * 1000;
+
+        if (alreadyRan || isCurrentlyRunning) {
+          console.log(`[Deduplication] Automated ${slot} report for ${todayStr} already ${lastStatus}. Aborting parallel execution.`);
+          return new Response(
+            JSON.stringify({
+              success: true,
+              skipped: true,
+              message: `Automated ${slot} report for ${todayStr} already ${lastStatus === "IN_PROGRESS" ? "in-progress" : "dispatched"}. Skipping duplicate run.`,
+            }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
 
       // ATOMIC CLAIM LOCK: Mark slot IN_PROGRESS immediately before doing any PDF/Excel generation or network calls
@@ -171,7 +191,7 @@ serve(async (req: Request) => {
       await supabase
         .from("attendance_report_schedules")
         .update(claimUpdate)
-        .eq("id", scheduleRow.id);
+        .eq("organization_id", orgId);
     }
 
     // 2. Dynamically Resolve Tenant Authentic Company Name (Multi-Tenant SaaS)
@@ -1464,25 +1484,26 @@ serve(async (req: Request) => {
 
     const nowIso = new Date().toISOString();
 
-    // 21. Update Supabase Schedule State (ONLY for automated schedule runs)
-    if (scheduleRow?.id && body.mode === "AUTOMATED_SCHEDULE") {
+    // 21. Update Supabase Schedule State (for both automated & manual runs so last_*_status never stays stuck in IN_PROGRESS)
+    if (scheduleRow?.id && (isMorning || slot === "EVENING")) {
       const scheduleUpdate: any = {
         updated_at: nowIso,
       };
+      const anySuccess = emailDispatchResult.success || whatsAppSuccessCount > 0;
       if (isMorning) {
         scheduleUpdate.last_morning_run_at = nowIso;
-        scheduleUpdate.last_morning_status = emailDispatchResult.success ? "SUCCESS" : "ERROR";
+        scheduleUpdate.last_morning_status = anySuccess ? "SUCCESS" : "ERROR";
         scheduleUpdate.last_morning_message = `Morning MIS delivered (Email: ${emailDispatchResult.provider || "none"}, WA: ${whatsAppSuccessCount} sent, PDF: ${emailPdfFilename})`;
       } else {
         scheduleUpdate.last_evening_run_at = nowIso;
-        scheduleUpdate.last_evening_status = emailDispatchResult.success ? "SUCCESS" : "ERROR";
+        scheduleUpdate.last_evening_status = anySuccess ? "SUCCESS" : "ERROR";
         scheduleUpdate.last_evening_message = `Evening MIS delivered (Email: ${emailDispatchResult.provider || "none"}, WA: ${whatsAppSuccessCount} sent, PDF: ${emailPdfFilename})`;
       }
 
       await supabase
         .from("attendance_report_schedules")
         .update(scheduleUpdate)
-        .eq("id", scheduleRow.id);
+        .eq("organization_id", orgId);
     }
 
     // 22. Record Detailed Channel-Specific Delivery Audit Logs in mis_delivery_audit_logs

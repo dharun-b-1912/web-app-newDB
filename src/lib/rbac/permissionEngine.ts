@@ -56,6 +56,9 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'assets',
   'onboarding',
   'offboarding',
+  'id-cards',
+  'idcard',
+  'verify-id-card',
   // Attendance & Time - Core
   'attendance',
   'attendance-dashboard',
@@ -711,6 +714,11 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
     if (profile.hierarchyLevel <= 2 || profile.allowedModules.includes('attendance' as ModuleId) || profile.allowedModules.includes('biometric' as ModuleId) || profile.allowedModules.includes('shifts' as ModuleId)) {
       return true;
     }
+  }
+
+  // ── ID Card Studio & Verification ──────────────────────────────────────────
+  if (module.startsWith('id-card') || module.startsWith('idcard') || module === 'verify-id-card' || module === 'verify') {
+    if (profile.hierarchyLevel <= 2 || profile.allowedModules.includes('people')) return true;
   }
 
   // ── All other roles/modules: check explicit allowedModules list ──────────────

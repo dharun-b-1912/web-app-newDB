@@ -218,7 +218,7 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
             </div>
           </div>
 
-          {/* Rotation & Opacity */}
+          {/* Rotation & Opacity + 1-Click Vertical Orientation */}
           <div className="grid grid-cols-2 gap-2 mt-2.5 pt-2.5 border-t border-[#252d37]">
             <div>
               <label className="text-[10px] text-gray-400 block mb-1">Rotation (°)</label>
@@ -243,6 +243,27 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
                 className="w-full bg-[#111418] border border-[#2d3744] rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-1 mt-2">
+            {[
+              { deg: 0, label: '0° Horiz' },
+              { deg: 270, label: '-90° Vert Up' },
+              { deg: 90, label: '+90° Vert Dn' },
+            ].map(preset => (
+              <button
+                key={preset.deg}
+                type="button"
+                onClick={() => onUpdateElement(el.id, { rotation: preset.deg })}
+                className={`py-1 rounded text-[10px] font-bold border cursor-pointer transition-colors ${
+                  (el.rotation || 0) === preset.deg
+                    ? 'bg-emerald-950 border-emerald-500 text-emerald-300'
+                    : 'bg-[#111418] border-[#252d37] text-gray-400 hover:text-white'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -430,6 +451,63 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
                 <span className="text-[11px]">Auto-Shrink</span>
               </label>
             </div>
+
+            {/* Canva Hollow / Outlined Display Text & Uppercase */}
+            <div className="pt-2 border-t border-[#252d37] space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1.5 cursor-pointer text-cyan-300 font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={Boolean((el as TextElement).hollow)}
+                    onChange={e =>
+                      onUpdateElement(el.id, {
+                        hollow: e.target.checked,
+                        strokeColor: (el as TextElement).strokeColor || (el as TextElement).color || '#0a0a0a',
+                        strokeWidth: (el as TextElement).strokeWidth || 1.15,
+                      })
+                    }
+                    className="rounded border-[#2d3744] text-cyan-500 focus:ring-0"
+                  />
+                  <span className="text-[11px]">Hollow Outline Text</span>
+                </label>
+
+                <label className="flex items-center gap-1.5 cursor-pointer text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={Boolean((el as TextElement).uppercase)}
+                    onChange={e => onUpdateElement(el.id, { uppercase: e.target.checked })}
+                    className="rounded border-[#2d3744] text-blue-600 focus:ring-0"
+                  />
+                  <span className="text-[11px]">UPPERCASE</span>
+                </label>
+              </div>
+
+              {((el as TextElement).hollow || ((el as TextElement).strokeWidth ?? 0) > 0) && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-gray-400 block mb-1">Outline Stroke</label>
+                    <input
+                      type="color"
+                      value={(el as TextElement).strokeColor || (el as TextElement).color || '#0a0a0a'}
+                      onChange={e => onUpdateElement(el.id, { strokeColor: e.target.value })}
+                      className="w-full h-6 rounded cursor-pointer border border-[#2d3744] bg-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-400 block mb-1">Stroke Width (pt)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="4"
+                      value={(el as TextElement).strokeWidth ?? 1.1}
+                      onChange={e => onUpdateElement(el.id, { strokeWidth: parseFloat(e.target.value) || 0 })}
+                      className="w-full bg-[#111418] border border-[#2d3744] rounded px-2 py-1 text-xs font-mono text-white"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -438,6 +516,79 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
           <div className="bg-[#181d24] border border-[#27313d] rounded-xl p-3 space-y-3">
             <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
               Image & Frame Settings
+            </div>
+
+            {/* 1-Click Photo Frame Presets */}
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-1">1-Click Photo Frame Presets</label>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateElement(el.id, {
+                      shape: 'rounded',
+                      w: 22.0,
+                      h: 27.0,
+                      x: Number(((geometry.w - 22.0) / 2).toFixed(1)),
+                      y: 23.5,
+                      radius: 3.5,
+                    })
+                  }
+                  className="py-1 px-2 rounded bg-[#111418] hover:bg-emerald-950/60 border border-[#252d37] hover:border-emerald-500 text-[10px] font-bold text-gray-300 hover:text-emerald-300 cursor-pointer text-left transition-colors"
+                >
+                  Artwork Frame (22×27)
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateElement(el.id, {
+                      shape: 'rounded',
+                      w: 26.0,
+                      h: 30.0,
+                      x: Number(((geometry.w - 26.0) / 2).toFixed(1)),
+                      y: 21.0,
+                      radius: 2.5,
+                    })
+                  }
+                  className="py-1 px-2 rounded bg-[#111418] hover:bg-emerald-950/60 border border-[#252d37] hover:border-emerald-500 text-[10px] font-bold text-gray-300 hover:text-emerald-300 cursor-pointer text-left transition-colors"
+                >
+                  Standard ID (26×30)
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateElement(el.id, {
+                      shape: 'circle',
+                      w: 26.0,
+                      h: 26.0,
+                      x: Number(((geometry.w - 26.0) / 2).toFixed(1)),
+                      y: 21.0,
+                      radius: 13.0,
+                    })
+                  }
+                  className="py-1 px-2 rounded bg-[#111418] hover:bg-emerald-950/60 border border-[#252d37] hover:border-emerald-500 text-[10px] font-bold text-gray-300 hover:text-emerald-300 cursor-pointer text-left transition-colors"
+                >
+                  Circle Halo (26×26)
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateElement(el.id, {
+                      shape: 'arch',
+                      w: 38.5,
+                      h: 58.0,
+                      x: 13.5,
+                      y: 27.6,
+                      radius: 18.0,
+                      border: 1.35,
+                      borderColor: '#ffffff',
+                    })
+                  }
+                  className="py-1 px-2 rounded bg-[#111418] hover:bg-emerald-950/60 border border-[#252d37] hover:border-emerald-500 text-[10px] font-bold text-gray-300 hover:text-emerald-300 cursor-pointer text-left transition-colors"
+                >
+                  Canva Arch Cutout
+                </button>
+              </div>
             </div>
 
             <div>
@@ -449,8 +600,39 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
               >
                 <option value="photo">Employee Photo (from Workforce)</option>
                 <option value="logo">Company Logo</option>
-                <option value="custom">Custom Graphic</option>
+                <option value="custom">Custom Uploaded Graphic</option>
               </select>
+            </div>
+
+            {/* Direct Custom Graphic / Test Photo Upload */}
+            <div>
+              <label className="w-full py-1.5 px-2.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/70 border border-emerald-700/60 text-emerald-300 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors">
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span>Upload Custom Image / Photo</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                      const dataUrl = ev.target?.result as string;
+                      const img = new Image();
+                      img.onload = () => {
+                        onUpdateElement(el.id, {
+                          src: 'custom',
+                          img,
+                          srcName: file.name,
+                        });
+                      };
+                      img.src = dataUrl;
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -461,21 +643,25 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
                   onChange={e => onUpdateElement(el.id, { shape: e.target.value as any })}
                   className="w-full bg-[#111418] border border-[#2d3744] rounded px-2 py-1 text-xs text-white focus:outline-none"
                 >
-                  <option value="rect">Rectangle</option>
-                  <option value="rounded">Rounded Box</option>
+                  <option value="arch">Arch Cutout (Canva)</option>
                   <option value="circle">Circle / Halo</option>
+                  <option value="rounded">Rounded Box</option>
+                  <option value="hexagon">Hexagon Frame</option>
+                  <option value="rect">Rectangle</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-[10px] text-gray-400 block mb-1">Fit Mode</label>
+                <label className="text-[10px] text-gray-400 block mb-1">Photo Filter</label>
                 <select
-                  value={(el as ImageElement).fit}
-                  onChange={e => onUpdateElement(el.id, { fit: e.target.value as any })}
+                  value={(el as ImageElement).filter || 'none'}
+                  onChange={e => onUpdateElement(el.id, { filter: e.target.value as any })}
                   className="w-full bg-[#111418] border border-[#2d3744] rounded px-2 py-1 text-xs text-white focus:outline-none"
                 >
-                  <option value="cover">Cover (Fill & Crop)</option>
-                  <option value="contain">Contain (Preserve Aspect)</option>
+                  <option value="none">Original Color</option>
+                  <option value="contrast_bw">High-Contrast B&W</option>
+                  <option value="grayscale">Studio Grayscale</option>
+                  <option value="warm">Warm Editorial</option>
                 </select>
               </div>
             </div>
@@ -538,22 +724,51 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
         {el.type === 'rect' && (
           <div className="bg-[#181d24] border border-[#27313d] rounded-xl p-3 space-y-3">
             <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
-              Shape & Fill Color
+              Canva Vector Shape & Sticker
             </div>
 
             <div>
-              <label className="text-[10px] text-gray-400 block mb-1">Fill Color</label>
+              <label className="text-[10px] text-gray-400 block mb-1">Vector Graphic Kind</label>
+              <select
+                value={(el as RectElement).graphicKind || 'rect'}
+                onChange={e => onUpdateElement(el.id, { graphicKind: e.target.value as any })}
+                className="w-full bg-[#111418] border border-[#2d3744] rounded px-2 py-1 text-xs text-white focus:outline-none"
+              >
+                <option value="rect">Rectangle / Rule Bar</option>
+                <option value="doodle_arrow">Looped Dashed Doodle Arrow</option>
+                <option value="wave_header">Curved Wave Header</option>
+                <option value="halftone_dots">Halftone Dot Matrix</option>
+                <option value="diagonal_accent">Diagonal Spine Block</option>
+                <option value="circle">Circle Badge</option>
+                <option value="icon_phone">Contact Icon — Phone</option>
+                <option value="icon_mail">Contact Icon — Email</option>
+                <option value="icon_pin">Contact Icon — Location Pin</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-1">Fill / Stroke Color</label>
               <div className="flex items-center gap-2">
                 <input
                   type="color"
-                  value={(el as RectElement).fill}
-                  onChange={e => onUpdateElement(el.id, { fill: e.target.value })}
+                  value={(el as RectElement).fill || '#ffe600'}
+                  onChange={e =>
+                    onUpdateElement(el.id, {
+                      fill: e.target.value,
+                      stroke: e.target.value,
+                    })
+                  }
                   className="w-8 h-8 rounded cursor-pointer border border-[#2d3744] bg-transparent"
                 />
                 <input
                   type="text"
                   value={(el as RectElement).fill}
-                  onChange={e => onUpdateElement(el.id, { fill: e.target.value })}
+                  onChange={e =>
+                    onUpdateElement(el.id, {
+                      fill: e.target.value,
+                      stroke: e.target.value,
+                    })
+                  }
                   className="flex-1 bg-[#111418] border border-[#2d3744] rounded px-2 py-1.5 text-xs font-mono text-white focus:outline-none"
                 />
               </div>
@@ -581,7 +796,7 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
         {el.type === 'qr' && (
           <div className="bg-[#181d24] border border-[#27313d] rounded-xl p-3 space-y-3">
             <div className="text-[10px] font-bold uppercase tracking-wider text-purple-400">
-              Verification QR Code
+              Framed Verification QR Card
             </div>
 
             <div>
@@ -591,6 +806,17 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
                 value={(el as QrElement).qrData}
                 onChange={e => onUpdateElement(el.id, { qrData: e.target.value })}
                 className="w-full bg-[#111418] border border-[#2d3744] rounded p-2 text-xs font-mono text-white focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-1">Card Handle / Caption (e.g. _{'{idno}'}_)</label>
+              <input
+                type="text"
+                value={(el as QrElement).caption || ''}
+                onChange={e => onUpdateElement(el.id, { caption: e.target.value })}
+                placeholder="_{idno}_"
+                className="w-full bg-[#111418] border border-[#2d3744] rounded px-2 py-1 text-xs font-mono text-white focus:outline-none"
               />
             </div>
 

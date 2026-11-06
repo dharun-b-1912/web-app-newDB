@@ -12,9 +12,20 @@ export type CardOrientation = 'landscape' | 'portrait' | 'custom';
 export type CardSide = 'front' | 'back';
 
 export type ElementType = 'text' | 'image' | 'rect' | 'qr';
-export type ImageShape = 'rect' | 'rounded' | 'circle';
+export type ImageShape = 'rect' | 'rounded' | 'circle' | 'arch' | 'hexagon';
+export type ImageFilter = 'none' | 'grayscale' | 'contrast_bw' | 'warm';
 export type ImageFit = 'cover' | 'contain' | 'fill';
 export type TextAlign = 'left' | 'center' | 'right';
+export type GraphicKind =
+  | 'rect'
+  | 'circle'
+  | 'doodle_arrow'
+  | 'wave_header'
+  | 'halftone_dots'
+  | 'icon_phone'
+  | 'icon_mail'
+  | 'icon_pin'
+  | 'diagonal_accent';
 
 export interface BaseElement {
   id: string;
@@ -49,6 +60,14 @@ export interface TextElement extends BaseElement {
   maxLines?: number;
   minSize?: number; // in pt (e.g. 5pt)
   verticalAlign?: TextVerticalAlign;
+  bgPill?: boolean; // Soft semi-transparent backing pill for contrast over busy artwork
+  bgPillColor?: string; // hex or rgba e.g. 'rgba(255,255,255,0.9)'
+  bgPillRadius?: number; // in mm
+  strokeColor?: string; // Outline stroke hex for hollow/outlined Canva display text
+  strokeWidth?: number; // Outline width in pt (e.g. 1.2)
+  hollow?: boolean; // If true, renders transparent interior with strokeColor outline
+  shadowColor?: string; // Optional drop shadow hex/rgba
+  shadowBlur?: number; // Shadow blur radius in mm
 }
 
 export interface ImageElement extends BaseElement {
@@ -59,6 +78,8 @@ export interface ImageElement extends BaseElement {
   radius: number; // in mm (for rounded corners)
   border: number; // in mm
   borderColor: string;
+  filter?: ImageFilter; // B&W, high-contrast B&W, warm, or none
+  shadow?: boolean; // Soft portrait drop shadow
   img?: HTMLImageElement | null;
   srcName?: string;
   customDataUrl?: string;
@@ -76,6 +97,7 @@ export interface RectElement extends BaseElement {
   stroke?: string;
   strokeWidth?: number; // in mm
   radius: number; // in mm
+  graphicKind?: GraphicKind; // Vector sticker/icon/shape kind for Canva elements
 }
 
 export interface QrElement extends BaseElement {
@@ -84,6 +106,8 @@ export interface QrElement extends BaseElement {
   color: string; // Foreground hex
   bgColor: string; // Background hex
   errorCorrectionLevel?: 'L' | 'M' | 'Q' | 'H';
+  frameRadius?: number; // Rounded white card container radius in mm
+  caption?: string; // Optional handle/ID caption inside the QR card frame (e.g. "_{idno}_")
 }
 
 export type CardElement = TextElement | ImageElement | RectElement | QrElement;
@@ -126,10 +150,24 @@ export interface BackgroundArtworkSettings {
   storageUrl?: string;
 }
 
+export interface KeepOutZone {
+  id: string;
+  type: 'punch_slot' | 'chip_nfc' | 'magstripe' | 'signature';
+  x: number; // in mm
+  y: number; // in mm
+  w: number; // in mm
+  h: number; // in mm
+  label: string;
+  bufferMm?: number; // safety buffer in mm (default 1.0)
+}
+
 export interface CardSideData {
   bg: string; // fallback solid hex background
   bgImg: HTMLImageElement | null;
   bgName: string;
+  overlayImg?: HTMLImageElement | null;
+  overlayName?: string;
+  keepOutZones?: KeepOutZone[];
   artwork?: BackgroundArtworkSettings;
   els: CardElement[];
 }
@@ -241,7 +279,8 @@ export const ID_CARD_FONTS = [
 
 // Available Dynamic HR Fields & Chips
 export const DYNAMIC_FIELD_CHIPS = [
-  { field: '{name}', label: 'Full Name', example: 'Muthu Kumar P' },
+  { field: '{name}', label: 'Full Name', example: 'Jagruthi Nagaraj' },
+  { field: '{first_name}', label: 'First Name', example: 'Jagruthi' },
   { field: '{idno}', label: 'Employee ID', example: 'JCS-012' },
   { field: '{designation}', label: 'Designation', example: 'Lead Developer' },
   { field: '{department}', label: 'Department', example: 'Product Engineering' },

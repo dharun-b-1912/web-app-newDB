@@ -276,15 +276,27 @@ async function pollRecentPunches() {
 // Guarantees zero missed reports via Email (Hostinger SMTP) and WhatsApp (Meta Cloud API)
 // ============================================================================
 let isReportSchedulerRunning = false;
+const dispatchedOrgSlotsToday = new Set(); // Format: `${orgId}_${istDateStr}_${slot}`
 
 export async function checkAndRunScheduledReports() {
   if (isReportSchedulerRunning) return;
   isReportSchedulerRunning = true;
 
   try {
-    const res = await sbFetch('attendance_report_schedules?enabled=eq.true&order=updated_at.desc&limit=5');
-    const schedules = Array.isArray(res.data) ? res.data : [];
-    if (schedules.length === 0) return;
+    const res = await sbFetch('attendance_report_schedules?enabled=eq.true&order=updated_at.desc&limit=10');
+    const rawSchedules = Array.isArray(res.data) ? res.data : [];
+    if (rawSchedules.length === 0) return;
+
+    // Deduplicate schedule rows by organization_id (only evaluate the most recently updated schedule per tenant)
+    const seenOrgs = new Set();
+    const schedules = [];
+    for (const row of rawSchedules) {
+      const orgKey = row.organization_id || 'default-org';
+      if (!seenOrgs.has(orgKey)) {
+        seenOrgs.add(orgKey);
+        schedules.push(row);
+      }
+    }
 
     const now = new Date();
     const istOffset = 5.5 * 60 * 60 * 1000;
@@ -295,38 +307,36 @@ export async function checkAndRunScheduledReports() {
     const curTotalMin = istHour * 60 + istMin;
 
     for (const sched of schedules) {
+      const orgId = sched.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
+
       if (sched.frequency === 'WEEKDAYS') {
         const istDay = istNow.getUTCDay();
         if (istDay === 0 || istDay === 6) continue;
       }
 
-      // ── Morning Slot (10:30 AM default) ───────────────────────────────────
+      // ── Morning Slot (10:30 AM default, no restrictive hour gatekeeper) ───
       if (sched.morning_enabled !== false) {
         const [mH, mM] = (sched.morning_time || '10:30').split(':').map(Number);
         const mTargetMin = mH * 60 + mM;
+        const morningKey = `${orgId}_${istDateStr}_MORNING_${sched.morning_time || '10:30'}`;
 
-        let alreadyDoneMorning = false;
-        if (sched.last_morning_run_at && (sched.last_morning_status === 'SUCCESS' || sched.last_morning_status === 'IN_PROGRESS')) {
+        let alreadyDoneMorning = dispatchedOrgSlotsToday.has(morningKey);
+        if (!alreadyDoneMorning && sched.last_morning_run_at && (sched.last_morning_status === 'SUCCESS' || sched.last_morning_status === 'IN_PROGRESS')) {
           const runDate = new Date(sched.last_morning_run_at);
           const runIst = new Date(runDate.getTime() + istOffset);
           const runDateStr = runIst.toISOString().split('T')[0];
-          const runHour = runIst.getUTCHours();
-          if (runDateStr === istDateStr && runHour >= 8 && runHour < 15) {
+          const runTotalMin = runIst.getUTCHours() * 60 + runIst.getUTCMinutes();
+          // Marked done if it already ran today on or after the configured morning_time (or is currently IN_PROGRESS within 5 mins)
+          if (runDateStr === istDateStr && (runTotalMin >= mTargetMin - 5 || sched.last_morning_status === 'IN_PROGRESS')) {
             alreadyDoneMorning = true;
+            dispatchedOrgSlotsToday.add(morningKey);
           }
         }
 
-        // Trigger if current time is past morning target time and before 15:00 IST
-        if (!alreadyDoneMorning && curTotalMin >= mTargetMin && curTotalMin < 15 * 60) {
-          console.log(`[AttendanceReportDaemon] 🌅 Triggering MORNING Attendance MIS Report for ${istDateStr}...`);
-          await sbFetch(`attendance_report_schedules?id=eq.${sched.id}`, {
-            method: 'PATCH',
-            body: {
-              last_morning_status: 'IN_PROGRESS',
-              last_morning_run_at: now.toISOString(),
-              updated_at: now.toISOString(),
-            },
-          });
+        // Trigger once when current time reaches morning_time (within a 90-minute catchup window, no arbitrary hour gatekeeper)
+        if (!alreadyDoneMorning && curTotalMin >= mTargetMin && curTotalMin <= mTargetMin + 90) {
+          dispatchedOrgSlotsToday.add(morningKey);
+          console.log(`[AttendanceReportDaemon] 🌅 Triggering MORNING Attendance MIS Report for ${istDateStr} (Org: ${orgId})...`);
 
           const dispRes = await fetch(`${SUPABASE_URL}/functions/v1/attendance-report-dispatcher`, {
             method: 'POST',
@@ -337,7 +347,7 @@ export async function checkAndRunScheduledReports() {
             body: JSON.stringify({
               slot: 'MORNING',
               mode: 'AUTOMATED_SCHEDULE',
-              organization_id: sched.organization_id,
+              organization_id: orgId,
               date: istDateStr,
             }),
           });
@@ -349,6 +359,7 @@ export async function checkAndRunScheduledReports() {
             await sbFetch(`attendance_report_schedules?id=eq.${sched.id}`, {
               method: 'PATCH',
               body: {
+                last_morning_run_at: now.toISOString(),
                 last_morning_status: dispRes.ok && dispJson.success ? 'SUCCESS' : 'ERROR',
                 last_morning_message: dispJson.message || `Morning MIS delivered (Email: ${dispJson.email?.status}, WA: ${dispJson.whatsapp?.successCount || 0} sent)`,
                 updated_at: now.toISOString(),
@@ -358,34 +369,28 @@ export async function checkAndRunScheduledReports() {
         }
       }
 
-      // ── Evening Slot (07:00 PM / 19:00 default) ───────────────────────────
+      // ── Evening Slot (07:00 PM / 19:00 default, no restrictive hour gatekeeper) ──
       if (sched.evening_enabled !== false) {
         const [eH, eM] = (sched.evening_time || '19:00').split(':').map(Number);
         const eTargetMin = eH * 60 + eM;
+        const eveningKey = `${orgId}_${istDateStr}_EVENING_${sched.evening_time || '19:00'}`;
 
-        let alreadyDoneEvening = false;
-        if (sched.last_evening_run_at && (sched.last_evening_status === 'SUCCESS' || sched.last_evening_status === 'IN_PROGRESS')) {
+        let alreadyDoneEvening = dispatchedOrgSlotsToday.has(eveningKey);
+        if (!alreadyDoneEvening && sched.last_evening_run_at && (sched.last_evening_status === 'SUCCESS' || sched.last_evening_status === 'IN_PROGRESS')) {
           const runDate = new Date(sched.last_evening_run_at);
           const runIst = new Date(runDate.getTime() + istOffset);
           const runDateStr = runIst.toISOString().split('T')[0];
-          const runHour = runIst.getUTCHours();
-          // Evening run ONLY valid if it was actually executed at or after 17:00 (5:00 PM IST)!
-          if (runDateStr === istDateStr && runHour >= 17) {
+          const runTotalMin = runIst.getUTCHours() * 60 + runIst.getUTCMinutes();
+          if (runDateStr === istDateStr && (runTotalMin >= eTargetMin - 5 || sched.last_evening_status === 'IN_PROGRESS')) {
             alreadyDoneEvening = true;
+            dispatchedOrgSlotsToday.add(eveningKey);
           }
         }
 
-        // Trigger if current time is past evening target time (from 19:00 onwards until midnight)
-        if (!alreadyDoneEvening && curTotalMin >= eTargetMin) {
-          console.log(`[AttendanceReportDaemon] 🌆 Triggering EVENING End-of-Day Attendance MIS Report for ${istDateStr}...`);
-          await sbFetch(`attendance_report_schedules?id=eq.${sched.id}`, {
-            method: 'PATCH',
-            body: {
-              last_evening_status: 'IN_PROGRESS',
-              last_evening_run_at: now.toISOString(),
-              updated_at: now.toISOString(),
-            },
-          });
+        // Trigger once when current time reaches evening_time (within a 90-minute catchup window, no arbitrary >=17h gatekeeper)
+        if (!alreadyDoneEvening && curTotalMin >= eTargetMin && curTotalMin <= eTargetMin + 90) {
+          dispatchedOrgSlotsToday.add(eveningKey);
+          console.log(`[AttendanceReportDaemon] 🌆 Triggering EVENING End-of-Day Attendance MIS Report for ${istDateStr} (Org: ${orgId})...`);
 
           const dispRes = await fetch(`${SUPABASE_URL}/functions/v1/attendance-report-dispatcher`, {
             method: 'POST',
@@ -396,7 +401,7 @@ export async function checkAndRunScheduledReports() {
             body: JSON.stringify({
               slot: 'EVENING',
               mode: 'AUTOMATED_SCHEDULE',
-              organization_id: sched.organization_id,
+              organization_id: orgId,
               date: istDateStr,
             }),
           });
@@ -408,6 +413,7 @@ export async function checkAndRunScheduledReports() {
             await sbFetch(`attendance_report_schedules?id=eq.${sched.id}`, {
               method: 'PATCH',
               body: {
+                last_evening_run_at: now.toISOString(),
                 last_evening_status: dispRes.ok && dispJson.success ? 'SUCCESS' : 'ERROR',
                 last_evening_message: dispJson.message || `Evening MIS delivered (Email: ${dispJson.email?.status}, WA: ${dispJson.whatsapp?.successCount || 0} sent)`,
                 updated_at: now.toISOString(),

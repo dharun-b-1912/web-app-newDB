@@ -219,7 +219,12 @@ export class IdCardPdf {
   }
 
   public finish(): Blob {
-    this.obj(1, `<< /Type /Catalog /Pages 2 0 R >>`);
+    const oiId = this.alloc();
+    this.obj(
+      oiId,
+      `<< /Type /OutputIntent /S /GTS_PDFX /OutputCondition (FOGRA39) /OutputConditionIdentifier (FOGRA39) /RegistryName (http://www.color.org) /Info (Coated FOGRA39 - ISO 12647-2:2004) >>`
+    );
+    this.obj(1, `<< /Type /Catalog /Pages 2 0 R /OutputIntents [${oiId} 0 R] >>`);
     this.obj(2, `<< /Type /Pages /Kids [${this.pageIds.map(i => `${i} 0 R`).join(' ')}] /Count ${this.pageIds.length} >>`);
 
     const xrefPos = this.pos;
@@ -299,23 +304,37 @@ export function drawFitImage(
 // Substitute placeholders
 export function substituteField(templateStr: string, r: IdCardPersonRecord): string {
   let s = templateStr;
+  const fullName = r.name || r.display_name || 'Muthu Kumar P';
+  const firstName = r.first_name || fullName.trim().split(/\s+/)[0] || 'Muthu';
   const mapping: Record<string, string> = {
-    '{name}': r.name || r.display_name || 'Muthu Kumar P',
+    '{name}': fullName,
+    '{first_name}': firstName,
     '{idno}': r.idno || r.employee_code || 'EMP-20418',
+    '{employee_id}': r.idno || r.employee_code || 'EMP-20418',
     '{designation}': r.designation || 'Software Engineer',
     '{department}': r.department || 'Product Engineering',
     '{branch}': r.branch || 'Coimbatore HQ',
     '{worksite}': r.worksite || r.branch || 'Coimbatore HQ',
+    '{location}': r.location || r.worksite || r.branch || 'Coimbatore HQ',
     '{org}': r.org || 'Joy PeopleHR',
+    '{company}': r.org || 'Joy PeopleHR',
     '{phone}': r.phone || '+91 98765 43210',
+    '{emergency_phone}': r.emergency_phone || r.emergency_contact || r.phone || '+91 98765 43210',
     '{email}': r.email || 'employee@joypeoplehr.com',
     '{blood}': r.blood || 'B+',
+    '{blood_group}': r.blood || 'B+',
     '{dob}': r.dob || '09 Dec 2003',
     '{doj}': r.doj || '24 Nov 2025',
+    '{issue_date}': r.issue_date || r.doj || '24 Nov 2025',
     '{valid}': r.valid || 'Dec 2028',
+    '{expiry_date}': r.valid || 'Dec 2028',
     '{reporting_manager}': r.reporting_manager || 'HR Operations',
     '{contractor}': r.contractor || 'Joy Workforce Solutions',
     '{address}': r.address || 'Joy Tower, 12 Mill Road, Coimbatore 641001',
+    '{father_name}': r.father_name || r.guardian_name || 'Ramasamy K',
+    '{uan}': r.uan || '101234567890',
+    '{pf_no}': r.pf_no || 'TN/CBE/0012345/000/012',
+    '{esi_no}': r.esi_no || '51000123450000001',
   };
 
   Object.entries(mapping).forEach(([token, val]) => {
@@ -382,8 +401,8 @@ export function drawTextElement(
   const targetBoxH = el.h > 0 ? el.h : 6;
 
   let sizePt = el.size || 10;
-  const minSizePt = el.minSize || 5.0;
-  const fontFam = `"${el.font || 'IBM Plex Sans'}", sans-serif`;
+  const minSizePt = el.minSize || (el.text.includes('{name}') ? 7.0 : 5.0);
+  const fontFam = `"${el.font || 'IBM Plex Sans'}", "Noto Sans Tamil", "Noto Sans Devanagari", "Inter", sans-serif`;
 
   const setFont = (szPt: number) => {
     const szMm = szPt * ptToMm;
@@ -476,7 +495,32 @@ export function drawTextElement(
     }
   }
 
-  // 5. Render Text
+  // 5. Draw Soft Contrast Legibility Pill if enabled
+  if (el.bgPill) {
+    ctx.save();
+    ctx.fillStyle = el.bgPillColor || 'rgba(255, 255, 255, 0.92)';
+    const rad = typeof el.bgPillRadius === 'number' ? el.bgPillRadius : 1.8;
+    const padX = 1.5;
+    const padY = 0.8;
+    drawRoundRect(
+      ctx,
+      el.x - padX,
+      startY - padY,
+      targetBoxW + padX * 2,
+      totalTextHeight + padY * 2,
+      rad
+    );
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 6. Render Text (Supports Solid, Outlined Stroke, Hollow Canva Display Text & Shadow)
+  ctx.save();
+  if (el.shadowColor) {
+    ctx.shadowColor = el.shadowColor;
+    ctx.shadowBlur = (el.shadowBlur ?? 0.6) * (MM / 72);
+    ctx.shadowOffsetY = 0.25;
+  }
   ctx.fillStyle = el.color || '#111827';
   ctx.textBaseline = 'top';
   ctx.textAlign = el.align || 'left';
@@ -487,9 +531,23 @@ export function drawTextElement(
       ? el.x + targetBoxW
       : el.x;
 
+  const hasStroke = Boolean(el.hollow || (el.strokeColor && (el.strokeWidth ?? 0) > 0));
+  if (hasStroke) {
+    ctx.strokeStyle = el.strokeColor || el.color || '#111827';
+    ctx.lineWidth = Math.max(0.18, (el.strokeWidth || 1.0) * ptToMm);
+    ctx.lineJoin = 'round';
+  }
+
   lines.forEach((l, i) => {
-    ctx.fillText(l, ax, startY + i * lh);
+    const ly = startY + i * lh;
+    if (!el.hollow) {
+      ctx.fillText(l, ax, ly);
+    }
+    if (hasStroke) {
+      ctx.strokeText(l, ax, ly);
+    }
   });
+  ctx.restore();
 
   // Track physical bounding box for collision detection & resize handles
   const effectiveBoxH = Math.max(targetBoxH, totalTextHeight);
@@ -580,14 +638,62 @@ export function drawImageElement(
     if (el.shape === 'circle') {
       ctx.beginPath();
       ctx.ellipse(el.x + el.w / 2, el.y + el.h / 2, el.w / 2, el.h / 2, 0, 0, Math.PI * 2);
+    } else if (el.shape === 'arch') {
+      // Dome/Arch top with flat or slightly rounded bottom (Canva cutout portrait frame)
+      const rTop = Math.min(el.w / 2, el.h * 0.48);
+      ctx.beginPath();
+      ctx.moveTo(el.x, el.y + rTop);
+      ctx.arc(el.x + el.w / 2, el.y + rTop, rTop, Math.PI, 0, false);
+      ctx.lineTo(el.x + el.w, el.y + el.h);
+      ctx.lineTo(el.x, el.y + el.h);
+      ctx.closePath();
+    } else if (el.shape === 'hexagon') {
+      const cx = el.x + el.w / 2;
+      const cy = el.y + el.h / 2;
+      const rx = el.w / 2;
+      const ry = el.h / 2;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const ang = (Math.PI / 3) * i - Math.PI / 2;
+        const px = cx + rx * Math.cos(ang);
+        const py = cy + ry * Math.sin(ang);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
     } else {
       drawRoundRect(ctx, el.x, el.y, el.w, el.h, el.shape === 'rounded' ? el.radius : 0);
     }
   };
 
+  // Draw outer sticker rim / drop shadow before clipping if border > 0
+  if (el.border > 0) {
+    ctx.save();
+    if (el.shadow) {
+      ctx.shadowColor = 'rgba(0,0,0,0.22)';
+      ctx.shadowBlur = 1.6;
+      ctx.shadowOffsetY = 0.6;
+    }
+    applyPath();
+    ctx.lineWidth = el.border * 2;
+    ctx.strokeStyle = el.borderColor || '#ffffff';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.restore();
+  }
+
   ctx.save();
   applyPath();
   ctx.clip();
+
+  // Apply Canva photo filter (B&W high contrast, grayscale, warm)
+  if (el.filter === 'contrast_bw') {
+    ctx.filter = 'grayscale(100%) contrast(122%) brightness(103%)';
+  } else if (el.filter === 'grayscale') {
+    ctx.filter = 'grayscale(100%)';
+  } else if (el.filter === 'warm') {
+    ctx.filter = 'sepia(18%) saturate(118%) contrast(105%)';
+  }
 
   if (img) {
     const dpi = drawFitImage(ctx, img, el.x, el.y, el.w, el.h, el.fit);
@@ -602,42 +708,231 @@ export function drawImageElement(
   } else if (isPreview) {
     if (el.src === 'logo') {
       // Modern corporate emblem / badge placeholder for logo
-      ctx.fillStyle = '#e2e8f0';
+      ctx.fillStyle = '#0f172a';
       ctx.fillRect(el.x, el.y, el.w, el.h);
-      ctx.fillStyle = '#64748b';
+      ctx.fillStyle = '#10b981';
       const cx = el.x + el.w / 2;
       const cy = el.y + el.h / 2;
       const s = Math.min(el.w, el.h) * 0.32;
-      ctx.fillRect(cx - s, cy - s * 0.7, s * 2, s * 1.4);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(cx - s * 0.5, cy - s * 0.3, s, s * 0.7);
-    } else {
-      // Modern stylized silhouette placeholder for employee photo
-      ctx.fillStyle = '#cbd5e1';
-      ctx.fillRect(el.x, el.y, el.w, el.h);
-      ctx.fillStyle = '#94a3b8';
-      const cx = el.x + el.w / 2;
-      const cy = el.y + el.h * 0.38;
-      const rad = Math.min(el.w, el.h) * 0.2;
       ctx.beginPath();
-      ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      ctx.arc(cx, cy, s, 0, Math.PI * 2);
       ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(cx - s * 0.45, cy - s * 0.45, s * 0.9, s * 0.9);
+    } else {
+      // Editorial Studio Portrait Illustration (replaces flat 2D grey placeholder)
+      const isBw = el.filter === 'contrast_bw' || el.filter === 'grayscale';
+      const bgGrad = ctx.createLinearGradient(el.x, el.y, el.x, el.y + el.h);
+      if (isBw) {
+        bgGrad.addColorStop(0, '#e5e7eb');
+        bgGrad.addColorStop(1, '#9ca3af');
+      } else {
+        bgGrad.addColorStop(0, '#dbeafe');
+        bgGrad.addColorStop(1, '#93c5fd');
+      }
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(el.x, el.y, el.w, el.h);
+
+      const cx = el.x + el.w / 2;
+      // Hair back volume
+      ctx.fillStyle = isBw ? '#111827' : '#1e293b';
       ctx.beginPath();
-      ctx.ellipse(cx, el.y + el.h * 0.92, el.w * 0.36, el.h * 0.3, 0, Math.PI, 0);
+      ctx.ellipse(cx, el.y + el.h * 0.42, el.w * 0.34, el.h * 0.28, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Shoulders / Blazer
+      ctx.fillStyle = isBw ? '#09090b' : '#0f172a';
+      ctx.beginPath();
+      ctx.ellipse(cx, el.y + el.h * 0.96, el.w * 0.44, el.h * 0.34, 0, Math.PI, 0);
+      ctx.fill();
+
+      // Neck & Face with soft editorial shading
+      ctx.fillStyle = isBw ? '#d4d4d8' : '#f1c27d';
+      ctx.fillRect(cx - el.w * 0.08, el.y + el.h * 0.46, el.w * 0.16, el.h * 0.16);
+      ctx.beginPath();
+      ctx.ellipse(cx, el.y + el.h * 0.38, el.w * 0.21, el.h * 0.19, -0.05, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Front Hair Sweep
+      ctx.fillStyle = isBw ? '#18181b' : '#0f172a';
+      ctx.beginPath();
+      ctx.arc(cx, el.y + el.h * 0.34, el.w * 0.22, Math.PI * 0.95, Math.PI * 2.05);
       ctx.fill();
     }
   }
+  ctx.filter = 'none';
   ctx.restore();
 
   if (el.border > 0) {
     applyPath();
     ctx.lineWidth = el.border;
-    ctx.strokeStyle = el.borderColor;
+    ctx.strokeStyle = el.borderColor || '#ffffff';
     ctx.stroke();
   }
 }
 
 export function drawRectElement(ctx: CanvasRenderingContext2D, el: RectElement, g: CardGeometry) {
+  el._box = { x: el.x, y: el.y, w: el.w, h: el.h };
+  const kind = el.graphicKind || 'rect';
+
+  // Canva Vector Graphics & Contact Icons
+  if (kind === 'doodle_arrow') {
+    ctx.save();
+    ctx.strokeStyle = el.stroke || el.fill || '#0a0a0a';
+    ctx.lineWidth = el.strokeWidth || 0.45;
+    ctx.setLineDash([0.9, 0.7]);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    // Looped dashed curve matching the Creative Studio reference card
+    const x0 = el.x + el.w * 0.1;
+    const y0 = el.y + el.h * 0.12;
+    const xLoop = el.x + el.w * 0.55;
+    const yLoop = el.y + el.h * 0.55;
+    const xEnd = el.x + el.w * 0.88;
+    const yEnd = el.y + el.h * 0.88;
+    ctx.moveTo(x0, y0);
+    ctx.bezierCurveTo(
+      el.x + el.w * 0.85,
+      el.y + el.h * 0.05,
+      el.x + el.w * 0.85,
+      el.y + el.h * 0.78,
+      xLoop,
+      yLoop
+    );
+    ctx.bezierCurveTo(
+      el.x + el.w * 0.15,
+      el.y + el.h * 0.35,
+      el.x + el.w * 0.72,
+      el.y + el.h * 0.3,
+      xEnd,
+      yEnd
+    );
+    ctx.stroke();
+
+    // Solid arrowhead at (xEnd, yEnd)
+    ctx.setLineDash([]);
+    ctx.fillStyle = el.stroke || el.fill || '#0a0a0a';
+    ctx.beginPath();
+    ctx.moveTo(xEnd, yEnd + 0.5);
+    ctx.lineTo(xEnd - 1.1, yEnd - 0.8);
+    ctx.lineTo(xEnd + 0.8, yEnd - 0.9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  if (kind === 'icon_phone' || kind === 'icon_mail' || kind === 'icon_pin') {
+    ctx.save();
+    ctx.strokeStyle = el.stroke || el.fill || '#ffffff';
+    ctx.fillStyle = el.fill || '#ffffff';
+    ctx.lineWidth = el.strokeWidth || 0.35;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const cx = el.x + el.w / 2;
+    const cy = el.y + el.h / 2;
+    const r = Math.min(el.w, el.h) * 0.42;
+
+    if (kind === 'icon_phone') {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, Math.PI * 0.2, Math.PI * 0.85);
+      ctx.stroke();
+      ctx.strokeRect(cx - r * 0.85, cy - r * 0.85, r * 0.55, r * 0.55);
+      ctx.strokeRect(cx + r * 0.3, cy + r * 0.3, r * 0.55, r * 0.55);
+    } else if (kind === 'icon_mail') {
+      const mw = el.w * 0.86;
+      const mh = el.h * 0.66;
+      const mx = cx - mw / 2;
+      const my = cy - mh / 2;
+      ctx.strokeRect(mx, my, mw, mh);
+      ctx.beginPath();
+      ctx.moveTo(mx, my);
+      ctx.lineTo(cx, cy + mh * 0.1);
+      ctx.lineTo(mx + mw, my);
+      ctx.stroke();
+    } else if (kind === 'icon_pin') {
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.25, r * 0.65, Math.PI, 0, false);
+      ctx.lineTo(cx, cy + r * 0.95);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.25, r * 0.24, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (kind === 'halftone_dots') {
+    ctx.save();
+    ctx.fillStyle = el.fill || '#94a3b8';
+    const cols = 6;
+    const rows = 4;
+    const stepX = el.w / cols;
+    const stepY = el.h / rows;
+    const dotR = Math.min(stepX, stepY) * 0.22;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        ctx.beginPath();
+        ctx.arc(el.x + (c + 0.5) * stepX, el.y + (r + 0.5) * stepY, dotR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (kind === 'wave_header') {
+    ctx.save();
+    ctx.fillStyle = el.fill || '#ffe600';
+    ctx.beginPath();
+    ctx.moveTo(el.x, el.y);
+    ctx.lineTo(el.x + el.w, el.y);
+    ctx.lineTo(el.x + el.w, el.y + el.h * 0.72);
+    ctx.bezierCurveTo(
+      el.x + el.w * 0.68,
+      el.y + el.h * 1.12,
+      el.x + el.w * 0.32,
+      el.y + el.h * 0.42,
+      el.x,
+      el.y + el.h * 0.88
+    );
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  if (kind === 'diagonal_accent') {
+    ctx.save();
+    ctx.fillStyle = el.fill || '#10b981';
+    ctx.beginPath();
+    ctx.moveTo(el.x, el.y);
+    ctx.lineTo(el.x + el.w, el.y);
+    ctx.lineTo(el.x + el.w * 0.75, el.y + el.h);
+    ctx.lineTo(el.x, el.y + el.h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  if (kind === 'circle') {
+    ctx.save();
+    ctx.fillStyle = el.fill;
+    ctx.beginPath();
+    ctx.ellipse(el.x + el.w / 2, el.y + el.h / 2, el.w / 2, el.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (el.stroke && el.strokeWidth && el.strokeWidth > 0) {
+      ctx.lineWidth = el.strokeWidth;
+      ctx.strokeStyle = el.stroke;
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
   const b = g.bleed;
   let x1 = el.x;
   let y1 = el.y;
@@ -669,8 +964,6 @@ export function drawRectElement(ctx: CanvasRenderingContext2D, el: RectElement, 
       ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
     }
   }
-
-  el._box = { x: el.x, y: el.y, w: el.w, h: el.h };
 }
 
 // Synchronous QR Drawing using pre-rendered canvas or simplified vector grid
@@ -684,19 +977,40 @@ export function drawQrElement(
   const rawData = substituteField(el.qrData, r);
   el._box = { x: el.x, y: el.y, w: el.w, h: el.h };
 
-  // Draw background
+  const rad = typeof el.frameRadius === 'number' ? el.frameRadius : 1.8;
+  const captionText = el.caption ? substituteField(el.caption, r) : '';
+  const pad = captionText ? 2.0 : 1.2;
+  const qrSize = Math.min(el.w - pad * 2, el.h - pad * 2 - (captionText ? 3.2 : 0));
+  const qrX = el.x + (el.w - qrSize) / 2;
+  const qrY = el.y + pad;
+
+  // Draw rounded QR card container
+  ctx.save();
   ctx.fillStyle = el.bgColor || '#ffffff';
-  ctx.fillRect(el.x, el.y, el.w, el.h);
+  drawRoundRect(ctx, el.x, el.y, el.w, el.h, rad);
+  ctx.fill();
+  ctx.restore();
+
+  // Draw caption inside bottom of QR card if provided (e.g. "_{idno}_")
+  if (captionText) {
+    ctx.save();
+    ctx.fillStyle = el.color || '#0a0a0a';
+    ctx.font = `700 ${5.2 * (MM / 72)}px "Barlow Condensed", "IBM Plex Sans", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(captionText.toUpperCase(), el.x + el.w / 2, el.y + el.h - 1.1);
+    ctx.restore();
+  }
 
   // If cached image exists, draw it
   const cacheKey = `${rawData}|${el.color}|${el.bgColor}`;
   if (qrImageCache.has(cacheKey)) {
     const cached = qrImageCache.get(cacheKey)!;
-    ctx.drawImage(cached, el.x, el.y, el.w, el.h);
+    ctx.drawImage(cached, qrX, qrY, qrSize, qrSize);
     return;
   }
 
-  // Otherwise trigger async generation and draw fallback placeholder
+  // Otherwise trigger async generation and draw crisp vector QR matrix
   QRCode.toDataURL(rawData, {
     margin: 1,
     color: {
@@ -712,14 +1026,54 @@ export function drawQrElement(
     img.src = url;
   }).catch(() => {});
 
-  // Clean fallback pattern while QR dataURL prepares
+  // Crisp Stylized QR Finder + Matrix Fallback
+  ctx.save();
+  ctx.strokeStyle = el.color || '#000000';
+  ctx.fillStyle = el.color || '#000000';
+  const fSize = qrSize * 0.24;
+  const drawFinder = (fx: number, fy: number) => {
+    ctx.lineWidth = 0.55;
+    drawRoundRect(ctx, fx, fy, fSize, fSize, 0.6);
+    ctx.stroke();
+    drawRoundRect(ctx, fx + fSize * 0.25, fy + fSize * 0.25, fSize * 0.5, fSize * 0.5, 0.3);
+    ctx.fill();
+  };
+  drawFinder(qrX + 0.6, qrY + 0.6);
+  drawFinder(qrX + qrSize - fSize - 0.6, qrY + 0.6);
+  drawFinder(qrX + 0.6, qrY + qrSize - fSize - 0.6);
+
+  // Center badge icon (like the Instagram/Brand badge in the reference image)
+  const cBox = qrSize * 0.22;
+  const cx = qrX + (qrSize - cBox) / 2;
+  const cy = qrY + (qrSize - cBox) / 2;
+  ctx.fillStyle = el.bgColor || '#ffffff';
+  ctx.fillRect(cx - 0.4, cy - 0.4, cBox + 0.8, cBox + 0.8);
   ctx.strokeStyle = el.color || '#000000';
   ctx.lineWidth = 0.5;
-  ctx.strokeRect(el.x + 1, el.y + 1, el.w - 2, el.h - 2);
-  ctx.fillStyle = el.color || '#000000';
-  ctx.fillRect(el.x + 2, el.y + 2, 4, 4);
-  ctx.fillRect(el.x + el.w - 6, el.y + 2, 4, 4);
-  ctx.fillRect(el.x + 2, el.y + el.h - 6, 4, 4);
+  drawRoundRect(ctx, cx, cy, cBox, cBox, 0.8);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx + cBox / 2, cy + cBox / 2, cBox * 0.24, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Decorative data dots around center
+  const cell = qrSize / 11;
+  for (let row = 0; row < 11; row++) {
+    for (let col = 0; col < 11; col++) {
+      const inTL = row < 3 && col < 3;
+      const inTR = row < 3 && col > 7;
+      const inBL = row > 7 && col < 3;
+      const inCenter = row >= 4 && row <= 6 && col >= 4 && col <= 6;
+      if (inTL || inTR || inBL || inCenter) continue;
+      if ((row * 7 + col * 13) % 3 === 0) {
+        ctx.fillStyle = el.color || '#000000';
+        ctx.beginPath();
+        ctx.arc(qrX + (col + 0.5) * cell, qrY + (row + 0.5) * cell, cell * 0.34, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
 }
 
 export function drawBackgroundArtwork(
@@ -871,10 +1225,14 @@ export function drawCardSide(
     photos?: Map<string, HTMLImageElement>;
     collectIssues?: PreflightIssue[];
     isPreview?: boolean;
+    showGuides?: boolean;
+    cropMarks?: boolean;
   } = {}
 ) {
-  const { logo, photos, collectIssues, isPreview } = options;
+  const { logo, photos, collectIssues, isPreview, showGuides } = options;
   const b = g.bleed;
+  const tw = g.w + 2 * b;
+  const th = g.h + 2 * b;
 
   ctx.save();
   ctx.scale(scale, scale);
@@ -883,18 +1241,11 @@ export function drawCardSide(
   // 1. Draw card background with advanced artwork & overlay
   drawBackgroundArtwork(ctx, side, g, collectIssues);
 
-  // 2. Draw card elements
+  // 2. Draw lower elements: shapes and photo
   for (const el of side.els) {
-    if (el.hidden) continue;
-
+    if (el.hidden || (el.type !== 'rect' && el.type !== 'image')) continue;
     ctx.save();
-
-    // Opacity
-    if (typeof el.opacity === 'number' && el.opacity < 1) {
-      ctx.globalAlpha = el.opacity;
-    }
-
-    // Rotation around center
+    if (typeof el.opacity === 'number' && el.opacity < 1) ctx.globalAlpha = el.opacity;
     if (el.rotation && el.rotation !== 0) {
       const cx = el.x + el.w / 2;
       const cy = el.y + el.h / 2;
@@ -902,19 +1253,92 @@ export function drawCardSide(
       ctx.rotate((el.rotation * Math.PI) / 180);
       ctx.translate(-cx, -cy);
     }
-
     if (el.type === 'rect') {
       drawRectElement(ctx, el, g);
     } else if (el.type === 'image') {
       drawImageElement(ctx, el, r, g, logo, photos, collectIssues, isPreview);
-    } else if (el.type === 'text') {
+    }
+    ctx.restore();
+  }
+
+  // 3. Draw Transparent Overlay Artwork (Layer 4: sits on top of photo, below text/QR)
+  if (side.overlayImg) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-b, -b, tw, th);
+    ctx.clip();
+    ctx.drawImage(side.overlayImg, -b, -b, tw, th);
+    ctx.restore();
+  }
+
+  // 4. Draw upper elements: text, QR, barcodes (Layer 5)
+  for (const el of side.els) {
+    if (el.hidden || (el.type === 'rect' || el.type === 'image')) continue;
+    ctx.save();
+    if (typeof el.opacity === 'number' && el.opacity < 1) ctx.globalAlpha = el.opacity;
+    if (el.rotation && el.rotation !== 0) {
+      const cx = el.x + el.w / 2;
+      const cy = el.y + el.h / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((el.rotation * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
+    if (el.type === 'text') {
       const underlyingBg = findUnderlyingBg(el, side);
       drawTextElement(ctx, el, r, g, collectIssues, underlyingBg);
     } else if (el.type === 'qr') {
       drawQrElement(ctx, el, r);
     }
-
     ctx.restore();
+  }
+
+  // 5. Draw Keep-Out Zones & Punch Slots (Phase 2 Prepress Safety)
+  if (side.keepOutZones && side.keepOutZones.length > 0) {
+    for (const zone of side.keepOutZones) {
+      if (options.showGuides || isPreview) {
+        ctx.save();
+        ctx.strokeStyle = '#ef4444';
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.12)';
+        ctx.lineWidth = 0.4;
+        ctx.setLineDash([2, 1.5]);
+        const rad = zone.type === 'punch_slot' ? zone.h / 2 : 1.5;
+        drawRoundRect(ctx, zone.x, zone.y, zone.w, zone.h, rad);
+        ctx.fill();
+        ctx.stroke();
+
+        if (options.showGuides) {
+          ctx.fillStyle = '#b91c1c';
+          ctx.font = 'bold 2.2pt sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(zone.label || 'KEEP OUT', zone.x + zone.w / 2, zone.y + zone.h / 2);
+        }
+        ctx.restore();
+      }
+
+      // Check collision with any element on this side
+      if (collectIssues) {
+        const buf = zone.bufferMm ?? 1.0;
+        const zLeft = zone.x - buf;
+        const zTop = zone.y - buf;
+        const zRight = zone.x + zone.w + buf;
+        const zBottom = zone.y + zone.h + buf;
+
+        for (const el of side.els) {
+          if (el.hidden) continue;
+          if (el.x < zRight && el.x + el.w > zLeft && el.y < zBottom && el.y + el.h > zTop) {
+            const elName = (el as any).text?.slice(0, 15) || el.type;
+            collectIssues.push({
+              key: `keepout:${el.id}:${zone.id}`,
+              lv: 'fix',
+              t: `"${elName}" enters ${zone.label} keep-out zone (will be clipped by hole punch)`,
+              elementId: el.id,
+              category: 'layout',
+            });
+          }
+        }
+      }
+    }
   }
 
   ctx.restore();

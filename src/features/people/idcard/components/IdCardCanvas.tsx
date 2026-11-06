@@ -14,12 +14,16 @@ import {
 } from '../idCardTypes';
 import {
   drawCardSide,
+  drawRoundRect,
   substituteField,
 } from '../idCardPdfEngine';
 
 interface IdCardCanvasProps {
   geometry: CardGeometry;
   sideData: CardSideData;
+  companionSideData?: CardSideData;
+  activeSide?: 'front' | 'back';
+  onSideChange?: (side: 'front' | 'back') => void;
   activeEmployee: IdCardPersonRecord;
   selectedElementId: string | null;
   onSelectElement: (id: string | null) => void;
@@ -42,6 +46,9 @@ type HandleType = 'tl' | 'tc' | 'tr' | 'mr' | 'br' | 'bc' | 'bl' | 'ml' | 'rot';
 export const IdCardCanvas: React.FC<IdCardCanvasProps> = ({
   geometry,
   sideData,
+  companionSideData,
+  activeSide = 'front',
+  onSideChange,
   activeEmployee,
   selectedElementId,
   onSelectElement,
@@ -58,7 +65,9 @@ export const IdCardCanvas: React.FC<IdCardCanvasProps> = ({
   onToggleGuides,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const companionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [dual3DView, setDual3DView] = useState<boolean>(true);
 
   // Interaction State
   const [dragMode, setDragMode] = useState<DragMode>(null);
@@ -72,8 +81,8 @@ export const IdCardCanvas: React.FC<IdCardCanvasProps> = ({
     rot: 0,
   });
 
-  // Base Scale: 1 mm = 6.0 pixels for portrait or 4.8 pixels for landscape at zoom 1.0
-  const baseScale = (geometry.orientation === 'portrait' ? 6.0 : 4.8) * zoom;
+  // Base Scale: fits both Front + Back side-by-side cleanly on 1440px+ viewports
+  const baseScale = (geometry.orientation === 'portrait' ? (dual3DView && companionSideData ? 3.5 : 5.2) : 4.2) * zoom;
   const b = geometry.bleed;
   const totalW = (geometry.w + 2 * b) * baseScale;
   const totalH = (geometry.h + 2 * b) * baseScale;
@@ -119,16 +128,48 @@ export const IdCardCanvas: React.FC<IdCardCanvasProps> = ({
     ctx.save();
     ctx.scale(dpr, dpr);
 
-    // Clear background
-    ctx.fillStyle = '#0b0e11';
-    ctx.fillRect(0, 0, totalW, totalH);
+    // Clear canvas with transparent studio backdrop so CR80 rounded corners look physical
+    ctx.clearRect(0, 0, totalW, totalH);
 
-    // 1. Draw Card Content (with bleed)
+    // Clip to ISO CR80 3.18mm Rounded Trim Box when in Finished View (showGuides === false)
+    ctx.save();
+    if (!showGuides) {
+      drawRoundRect(
+        ctx,
+        b * baseScale,
+        b * baseScale,
+        geometry.w * baseScale,
+        geometry.h * baseScale,
+        3.18 * baseScale
+      );
+      ctx.clip();
+    }
+
+    // 1. Draw Card Content
     drawCardSide(ctx, sideData, activeEmployee, geometry, baseScale, {
       logo: logoImg,
       photos: photosMap,
       isPreview: true,
+      showGuides,
     });
+    ctx.restore();
+
+    // Subtle 3D PVC Specular Rim Light when in Finished View
+    if (!showGuides) {
+      ctx.save();
+      drawRoundRect(
+        ctx,
+        b * baseScale + 0.5,
+        b * baseScale + 0.5,
+        geometry.w * baseScale - 1,
+        geometry.h * baseScale - 1,
+        3.18 * baseScale
+      );
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // 2. Draw Guidelines if enabled
     if (showGuides) {
@@ -424,10 +465,63 @@ export const IdCardCanvas: React.FC<IdCardCanvasProps> = ({
     setActiveHandle(null);
   };
 
+  // Render Companion Side (Front/Back Side-by-Side 3D Studio Preview)
+  useEffect(() => {
+    const compCanvas = companionCanvasRef.current;
+    if (!compCanvas || !companionSideData || !dual3DView) return;
+    const ctx = compCanvas.getContext('2d');
+    if (!ctx) return;
+
+    const compScale = baseScale * 0.86;
+    const compW = (geometry.w + 2 * b) * compScale;
+    const compH = (geometry.h + 2 * b) * compScale;
+    const dpr = window.devicePixelRatio || 1;
+    compCanvas.width = Math.round(compW * dpr);
+    compCanvas.height = Math.round(compH * dpr);
+    compCanvas.style.width = `${compW}px`;
+    compCanvas.style.height = `${compH}px`;
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, compW, compH);
+
+    drawRoundRect(
+      ctx,
+      b * compScale,
+      b * compScale,
+      geometry.w * compScale,
+      geometry.h * compScale,
+      3.18 * compScale
+    );
+    ctx.clip();
+
+    drawCardSide(ctx, companionSideData, activeEmployee, geometry, compScale, {
+      logo: logoImg,
+      photos: photosMap,
+      isPreview: true,
+      showGuides: false,
+    });
+
+    // Subtle 3D PVC Specular Rim Light
+    drawRoundRect(
+      ctx,
+      b * compScale + 0.5,
+      b * compScale + 0.5,
+      geometry.w * compScale - 1,
+      geometry.h * compScale - 1,
+      3.18 * compScale
+    );
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.24)';
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+
+    ctx.restore();
+  }, [companionSideData, dual3DView, activeEmployee, geometry, baseScale, b, logoImg, photosMap]);
+
   return (
     <div
       ref={containerRef}
-      className="flex-1 w-full h-full relative overflow-auto bg-[#0a0c0e] flex flex-col items-center justify-center p-6 select-none"
+      className="flex-1 w-full h-full relative overflow-auto bg-[#0a0c0e] flex flex-col items-center justify-center p-4 select-none"
     >
       {/* Grid Pattern Background */}
       <div
@@ -438,20 +532,75 @@ export const IdCardCanvas: React.FC<IdCardCanvasProps> = ({
         }}
       />
 
-      {/* Floating Canvas Framing */}
-      <div className="relative shadow-2xl rounded-sm border border-[#252d37] bg-black">
-        <canvas
-          ref={canvasRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          className="cursor-crosshair block"
-        />
+      {/* Side-by-Side 3D Physical PVC Cards Stage */}
+      <div className="relative z-10 flex flex-row items-center justify-center gap-5">
+        {/* Active Editable Side Card */}
+        <div className="flex flex-col items-center">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+              Editing {activeSide === 'front' ? 'Front Side' : 'Back Side'} (Interactive)
+            </span>
+          </div>
+          <div
+            className="relative transition-transform duration-200"
+            style={{
+              filter: showGuides
+                ? 'drop-shadow(0 20px 35px rgba(0,0,0,0.65))'
+                : 'drop-shadow(0 28px 42px rgba(0,0,0,0.75)) drop-shadow(0 8px 16px rgba(0,0,0,0.45))',
+            }}
+          >
+            <canvas
+              ref={canvasRef}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              className="cursor-crosshair block"
+            />
+          </div>
+        </div>
+
+        {/* Companion Side Live 3D Preview (Click to switch side) */}
+        {companionSideData && dual3DView && (
+          <div
+            onClick={() => onSideChange && onSideChange(activeSide === 'front' ? 'back' : 'front')}
+            className="flex flex-col items-center group cursor-pointer transition-all hover:scale-[1.02]"
+            title={`Click to switch and edit ${activeSide === 'front' ? 'Back Side' : 'Front Side'}`}
+          >
+            <div className="mb-2 flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-800/90 text-slate-300 border border-slate-700 group-hover:border-emerald-500/50 group-hover:text-emerald-300 transition-colors">
+                {activeSide === 'front' ? 'Back Side Preview (Click to Edit)' : 'Front Side Preview (Click to Edit)'}
+              </span>
+            </div>
+            <div
+              className="relative opacity-95 group-hover:opacity-100 transition-opacity"
+              style={{
+                filter:
+                  'drop-shadow(0 26px 38px rgba(0,0,0,0.72)) drop-shadow(0 8px 14px rgba(0,0,0,0.42))',
+              }}
+            >
+              <canvas ref={companionCanvasRef} className="block pointer-events-none" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom Guideline Legend & Quick Info */}
-      <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-xs select-none z-10 bg-[#13171c]/90 px-4 py-1.5 rounded-full border border-[#252d37] shadow-lg">
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-3.5 text-xs select-none z-10 bg-[#13171c]/90 px-4 py-1.5 rounded-full border border-[#252d37] shadow-lg">
+        {companionSideData && (
+          <>
+            <button
+              type="button"
+              onClick={() => setDual3DView(v => !v)}
+              className="flex items-center gap-1.5 font-bold text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+            >
+              <span className={`w-2 h-2 rounded-full ${dual3DView ? 'bg-emerald-400' : 'bg-gray-600'}`} />
+              <span>{dual3DView ? 'Front + Back 3D View' : 'Single Side View'}</span>
+            </button>
+            <span className="text-gray-600">|</span>
+          </>
+        )}
+
         <button
           onClick={onToggleGuides}
           className="flex items-center gap-1.5 font-bold text-gray-300 hover:text-white transition-colors cursor-pointer"
@@ -464,17 +613,12 @@ export const IdCardCanvas: React.FC<IdCardCanvasProps> = ({
 
         <div className="flex items-center gap-1.5">
           <span className="w-2.5 h-1 bg-[#e5007d]" />
-          <span className="text-gray-300 font-medium">Trim (Cut Line: {geometry.w} × {geometry.h} mm)</span>
+          <span className="text-gray-300 font-medium">CR80 Trim ({geometry.w} × {geometry.h} mm • R3.18mm)</span>
         </div>
 
         <div className="flex items-center gap-1.5">
           <span className="w-2.5 h-1 bg-[#00e5ff]" />
           <span className="text-gray-300 font-medium">Bleed (+{geometry.bleed} mm)</span>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-0.5 border-t border-dashed border-[#10b981]" />
-          <span className="text-gray-300 font-medium">Safe Margin ({geometry.safe} mm inside)</span>
         </div>
 
         <span className="text-gray-600">|</span>

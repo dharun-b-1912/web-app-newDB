@@ -81,6 +81,9 @@ export type ModuleId =
   | 'assets'
   | 'onboarding'
   | 'offboarding'
+  | 'id-cards'
+  | 'idcard'
+  | 'verify-id-card'
   // Attendance & Time - Core
   | 'attendance'
   | 'attendance-dashboard'
