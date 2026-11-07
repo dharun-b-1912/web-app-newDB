@@ -1047,11 +1047,33 @@ const AppContent: React.FC = () => {
       case 'legal':
       case 'trust-legal':
       case 'legal-center':
-      case 'privacy-policy':
-      case 'terms-of-service':
-      case 'dpa':
       case 'security-center':
-        return <LegalCenterView />;
+        return <LegalCenterView initialTab="security" />;
+      case 'dpdp':
+      case 'dpdp-act':
+      case 'grievance':
+        return <LegalCenterView initialTab="dpdp" />;
+      case 'eula':
+      case 'mobile-terms':
+        return <LegalCenterView initialTab="eula" />;
+      case 'vapt':
+      case 'cert-in':
+      case 'iso-27001':
+      case 'soc2':
+      case 'certifications':
+        return <LegalCenterView initialTab="certifications" />;
+      case 'oss':
+      case 'oss-attribution':
+      case 'open-source':
+        return <LegalCenterView initialTab="oss" />;
+      case 'dpa':
+        return <LegalCenterView initialTab="dpa" />;
+      case 'privacy-policy':
+      case 'privacy':
+        return <LegalCenterView initialTab="privacy" />;
+      case 'terms-of-service':
+      case 'terms':
+        return <LegalCenterView initialTab="terms" />;
       case 'vendors':
       case 'vendor':
       case 'vendor-hub':
