@@ -7,7 +7,7 @@ import { ToastProvider } from './components/ui/Toast';
 import { AuthPage } from './features/auth/AuthPage';
 import { AppShell } from './components/shell/AppShell';
 import { RouteGuard } from './components/auth/RouteGuard';
-import { getPrimaryRole, canViewModule } from './lib/rbac/permissionEngine';
+import { getPrimaryRole, canViewModule, isPublicModule } from './lib/rbac/permissionEngine';
 import { SessionExpiryModal } from './components/states/SessionExpiryModal';
 import { parseRouteFromUrl, syncUrlWithRoute } from './lib/router/urlRouter';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
@@ -15,6 +15,8 @@ import { realtimeSyncEngine } from './services/realtimeSyncEngine';
 import { navPerfTracker } from './services/observability/navigationPerfTracker';
 import { ShieldAlert } from 'lucide-react';
 import { JoySplashScreen } from './components/common/JoySplashScreen';
+import { JoyLogo } from './components/common/JoyLogo';
+import { CookieConsentBanner } from './components/common/CookieConsentBanner';
 
 // Primary workspaces code-split via React.lazy for instant initial page load & 90% bundle reduction
 const DashboardView = lazy(() => import('./features/dashboard/DashboardView').then(m => ({ default: m.DashboardView })));
@@ -164,12 +166,7 @@ const AppContent: React.FC = () => {
   // Compute the correct starting route: URL first -> localStorage saved route -> role default
   const [currentRoute, setCurrentRoute] = useState<string>(() => {
     const urlState = parseRouteFromUrl();
-    if (
-      urlState.route === 'accept-invite' ||
-      urlState.route === 'reset-password' ||
-      urlState.route === 'verify-id-card' ||
-      urlState.route === 'verify'
-    ) {
+    if (urlState.route && isPublicModule(urlState.route)) {
       return urlState.route;
     }
 
@@ -193,17 +190,19 @@ const AppContent: React.FC = () => {
       return 'platform-dashboard';
     }
 
-    // 2. If tenant role, ensure they are not on an auth route
+    // 2. If valid URL route exists, ALWAYS use it! (URL-First Rule)
     if (urlState.route) {
       const r = urlState.route.toLowerCase();
       if (
-        r.includes('accept-invite') ||
-        r.includes('reset-password') ||
-        r.includes('login') ||
-        r.includes('activate') ||
-        r.includes('invitation') ||
-        r.startsWith('auth') ||
-        ((primaryRole === 'Company Admin' || primaryRole === 'HR Head') && (r.startsWith('ess') || r === 'ess-dashboard'))
+        stored && (
+          r.includes('accept-invite') ||
+          r.includes('reset-password') ||
+          r.includes('login') ||
+          r.includes('activate') ||
+          r.includes('invitation') ||
+          r.startsWith('auth') ||
+          ((primaryRole === 'Company Admin' || primaryRole === 'HR Head') && (r.startsWith('ess') || r === 'ess-dashboard'))
+        )
       ) {
         return getDefaultRouteForUser();
       }
@@ -213,24 +212,28 @@ const AppContent: React.FC = () => {
       return urlState.route;
     }
 
-    // 3. Check localStorage saved active route
+    // 3. Fallback to localStorage saved active route ONLY when browsing root ('/') without specific slug
     try {
-      const savedRoute = localStorage.getItem('workforce_active_route');
-      if (savedRoute) {
-        const sr = savedRoute.toLowerCase();
-        if (
-          !sr.startsWith('platform') &&
-          !sr.startsWith('saas-') &&
-          !sr.includes('accept-invite') &&
-          !sr.includes('reset-password') &&
-          !sr.includes('login') &&
-          !sr.includes('activate') &&
-          !sr.includes('invitation') &&
-          !sr.startsWith('auth') &&
-          !sr.includes('face') &&
-          !((primaryRole === 'Company Admin' || primaryRole === 'HR Head') && (sr.startsWith('ess') || sr === 'ess-dashboard'))
-        ) {
-          return savedRoute;
+      const isRootPath = typeof window !== 'undefined' && (window.location.pathname === '/' || window.location.pathname === '');
+      if (isRootPath) {
+        const savedRoute = localStorage.getItem('workforce_active_route');
+        if (savedRoute) {
+          const sr = savedRoute.toLowerCase();
+          if (
+            !isPublicModule(sr) &&
+            !sr.startsWith('platform') &&
+            !sr.startsWith('saas-') &&
+            !sr.includes('accept-invite') &&
+            !sr.includes('reset-password') &&
+            !sr.includes('login') &&
+            !sr.includes('activate') &&
+            !sr.includes('invitation') &&
+            !sr.startsWith('auth') &&
+            !sr.includes('face') &&
+            !((primaryRole === 'Company Admin' || primaryRole === 'HR Head') && (sr.startsWith('ess') || sr === 'ess-dashboard'))
+          ) {
+            return savedRoute;
+          }
         }
       }
     } catch { }
@@ -241,6 +244,68 @@ const AppContent: React.FC = () => {
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
   const [isSessionExpired, setIsSessionExpired] = useState(false);
+  const [sessionSecondsLeft, setSessionSecondsLeft] = useState(120);
+
+  // Enterprise Inactivity & Session Expiry Guard (28 min idle -> 2 min warning -> expiry)
+  useEffect(() => {
+    if (!user) {
+      setIsSessionModalOpen(false);
+      setIsSessionExpired(false);
+      return;
+    }
+
+    const WARNING_TIMEOUT_MS = 28 * 60 * 1000;
+    let idleTimer: any;
+    let countdownInterval: any;
+
+    const resetIdleTimer = () => {
+      if (isSessionExpired) return;
+
+      clearTimeout(idleTimer);
+      clearInterval(countdownInterval);
+      setIsSessionModalOpen(false);
+      setSessionSecondsLeft(120);
+
+      idleTimer = setTimeout(() => {
+        setIsSessionModalOpen(true);
+        setIsSessionExpired(false);
+        setSessionSecondsLeft(120);
+
+        countdownInterval = setInterval(() => {
+          setSessionSecondsLeft((prev) => {
+            if (prev <= 1) {
+              clearInterval(countdownInterval);
+              setIsSessionExpired(true);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }, WARNING_TIMEOUT_MS);
+    };
+
+    const handleUserActivity = () => {
+      if (!isSessionModalOpen && !isSessionExpired) {
+        resetIdleTimer();
+      }
+    };
+
+    resetIdleTimer();
+
+    window.addEventListener('mousemove', handleUserActivity);
+    window.addEventListener('keydown', handleUserActivity);
+    window.addEventListener('click', handleUserActivity);
+    window.addEventListener('scroll', handleUserActivity);
+
+    return () => {
+      clearTimeout(idleTimer);
+      clearInterval(countdownInterval);
+      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('click', handleUserActivity);
+      window.removeEventListener('scroll', handleUserActivity);
+    };
+  }, [user, isSessionModalOpen, isSessionExpired]);
   const [renderSafetyTimedOut, setRenderSafetyTimedOut] = useState(false);
   const lastMountedRouteRef = useRef<string | null>(null);
 
@@ -306,7 +371,9 @@ const AppContent: React.FC = () => {
     if (currentRoute) {
       syncUrlWithRoute(currentRoute, undefined, true);
       try {
-        localStorage.setItem('workforce_active_route', currentRoute);
+        if (!isPublicModule(currentRoute)) {
+          localStorage.setItem('workforce_active_route', currentRoute);
+        }
       } catch { }
     }
   }, [currentRoute, isLandingDomain]);
@@ -403,9 +470,11 @@ const AppContent: React.FC = () => {
         syncUrlWithRoute(defRoute, undefined, true);
         navPerfTracker.logImmediate('ROUTE_REDIRECT', `/${prevRoute}`, `/${defRoute}`, 0, 'non_platform_role_guard');
       } else if (
-        (roleName === 'Company Admin' && (currentRoute === 'ess-dashboard' || currentRoute.startsWith('ess'))) ||
-        (roleName === 'HR Head' && (currentRoute === 'ess-dashboard' || currentRoute.startsWith('ess'))) ||
-        !canViewModule(user, currentRoute)
+        !isPublicModule(currentRoute) && (
+          (roleName === 'Company Admin' && (currentRoute === 'ess-dashboard' || currentRoute.startsWith('ess'))) ||
+          (roleName === 'HR Head' && (currentRoute === 'ess-dashboard' || currentRoute.startsWith('ess'))) ||
+          !canViewModule(user, currentRoute)
+        )
       ) {
         const prevRoute = currentRoute;
         const defRoute = getDefaultRouteForUser(user);
@@ -494,9 +563,19 @@ const AppContent: React.FC = () => {
     ));
 
   if (isPublicIdVerificationRoute) {
+    const canManageIdCards = Boolean(user && canViewModule(user, 'id-cards'));
     return (
       <Suspense fallback={null}>
-        <IdCardVerificationView onBackToApp={() => handleNavigate(user ? 'id-cards' : 'login')} />
+        <IdCardVerificationView
+          onBackToApp={
+            canManageIdCards
+              ? () => handleNavigate('id-cards')
+              : user
+              ? () => handleNavigate(getDefaultRouteForUser(user))
+              : undefined
+          }
+        />
+        <CookieConsentBanner />
       </Suspense>
     );
   }
@@ -516,7 +595,82 @@ const AppContent: React.FC = () => {
           onNavigateToCompanyLogin={() => handleNavigate('login')}
           onSuccessRoute={(targetRoute) => handleNavigate(targetRoute)}
         />
+        <CookieConsentBanner />
       </Suspense>
+    );
+  }
+
+  // Dedicated Statutory & Trust Center Public Portal (Accessible without login)
+  const isPublicLegalRoute =
+    currentRoute === 'trust-legal' ||
+    currentRoute === 'legal' ||
+    currentRoute === 'dpdp' ||
+    currentRoute === 'dpdp-act' ||
+    currentRoute === 'grievance' ||
+    currentRoute === 'eula' ||
+    currentRoute === 'mobile-terms' ||
+    currentRoute === 'vapt' ||
+    currentRoute === 'cert-in' ||
+    currentRoute === 'iso-27001' ||
+    currentRoute === 'soc2' ||
+    currentRoute === 'certifications' ||
+    currentRoute === 'oss' ||
+    currentRoute === 'oss-attribution' ||
+    currentRoute === 'open-source' ||
+    currentRoute === 'dpa' ||
+    currentRoute === 'privacy' ||
+    currentRoute === 'privacy-policy' ||
+    currentRoute === 'terms' ||
+    currentRoute === 'terms-of-service';
+
+  if (!user && isPublicLegalRoute) {
+    const getInitialTab = (): any => {
+      if (currentRoute === 'dpdp' || currentRoute === 'dpdp-act' || currentRoute === 'grievance') return 'dpdp';
+      if (currentRoute === 'eula' || currentRoute === 'mobile-terms') return 'eula';
+      if (
+        currentRoute === 'vapt' ||
+        currentRoute === 'cert-in' ||
+        currentRoute === 'iso-27001' ||
+        currentRoute === 'soc2' ||
+        currentRoute === 'certifications'
+      )
+        return 'certifications';
+      if (currentRoute === 'oss' || currentRoute === 'oss-attribution' || currentRoute === 'open-source') return 'oss';
+      if (currentRoute === 'dpa') return 'dpa';
+      if (currentRoute === 'privacy' || currentRoute === 'privacy-policy') return 'privacy';
+      if (currentRoute === 'terms' || currentRoute === 'terms-of-service') return 'terms';
+      return 'security';
+    };
+
+    return (
+      <div className="min-h-screen bg-[#F8FCFA] dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-between">
+        <header className="w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-30">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <JoyLogo className="h-8 w-auto shrink-0" />
+              <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block" />
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 hidden sm:inline">
+                Joy PeopleHR Enterprise Trust & Compliance
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleNavigate('login')}
+                className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+              >
+                Sign In to Portal
+              </button>
+            </div>
+          </div>
+        </header>
+        <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6">
+          <Suspense fallback={null}>
+            <LegalCenterView initialTab={getInitialTab()} />
+          </Suspense>
+        </main>
+        <CookieConsentBanner />
+      </div>
     );
   }
 
@@ -552,10 +706,13 @@ const AppContent: React.FC = () => {
 
   if (!user) {
     return (
-      <AuthPage
-        onNavigateToSuperAdmin={() => handleNavigate('superadmin-login')}
-        onSuccessRoute={(targetRoute) => handleNavigate(targetRoute)}
-      />
+      <>
+        <AuthPage
+          onNavigateToSuperAdmin={() => handleNavigate('superadmin-login')}
+          onSuccessRoute={(targetRoute) => handleNavigate(targetRoute)}
+        />
+        <CookieConsentBanner />
+      </>
     );
   }
 
@@ -1228,13 +1385,20 @@ const AppContent: React.FC = () => {
         <SessionExpiryModal
           isOpen={isSessionModalOpen}
           isExpired={isSessionExpired}
-          secondsRemaining={120}
-          onStaySignedIn={() => setIsSessionModalOpen(false)}
+          secondsRemaining={sessionSecondsLeft}
+          onStaySignedIn={() => {
+            setIsSessionModalOpen(false);
+            setIsSessionExpired(false);
+            setSessionSecondsLeft(120);
+          }}
           onReLoginSuccess={() => {
             setIsSessionModalOpen(false);
             setIsSessionExpired(false);
+            setSessionSecondsLeft(120);
           }}
         />
+
+        <CookieConsentBanner />
       </AppShell>
     </ErrorBoundary>
   );

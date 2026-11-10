@@ -437,7 +437,7 @@ export const IdCardVerificationView: React.FC<IdCardVerificationViewProps> = ({ 
               )}
             </button>
 
-            {onBackToApp && (
+            {onBackToApp ? (
               <button
                 type="button"
                 onClick={onBackToApp}
@@ -446,6 +446,14 @@ export const IdCardVerificationView: React.FC<IdCardVerificationViewProps> = ({ 
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>ID Card Studio</span>
               </button>
+            ) : (
+              <a
+                href="/"
+                className="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1.5 transition-colors border border-slate-700/60"
+              >
+                <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Joy PeopleHR Portal</span>
+              </a>
             )}
           </div>
         </div>

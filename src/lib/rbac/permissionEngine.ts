@@ -628,6 +628,57 @@ export function getRoleProfile(user: User | null): RoleAccessProfile {
   return ROLE_PROFILES[primaryRole] || ROLE_PROFILES['Employee'];
 }
 
+export const UNIVERSAL_PUBLIC_MODULES = new Set<string>([
+  'verify-id-card',
+  'verify',
+  'legal',
+  'trust-legal',
+  'legal-center',
+  'security-center',
+  'dpdp',
+  'dpdp-act',
+  'grievance',
+  'eula',
+  'mobile-terms',
+  'vapt',
+  'cert-in',
+  'iso-27001',
+  'soc2',
+  'certifications',
+  'oss',
+  'oss-attribution',
+  'open-source',
+  'privacy',
+  'privacy-policy',
+  'terms',
+  'terms-of-service',
+  'dpa',
+  'cookie-policy',
+  'cookies',
+  'accept-invite',
+  'reset-password',
+  'login',
+  'superadmin-login',
+  'vendor-login',
+  'register',
+]);
+
+export function isPublicModule(module: string): boolean {
+  if (!module) return false;
+  const m = module.toLowerCase().replace(/^\//, '');
+  return (
+    UNIVERSAL_PUBLIC_MODULES.has(m) ||
+    m.startsWith('verify') ||
+    m.startsWith('dpdp') ||
+    m.startsWith('legal') ||
+    m.startsWith('cert-in') ||
+    m.startsWith('vapt') ||
+    m.startsWith('iso-27001') ||
+    m.startsWith('oss') ||
+    m.startsWith('eula')
+  );
+}
+
 /**
  * Checks if user can view a given module.
  *
@@ -640,6 +691,8 @@ export function getRoleProfile(user: User | null): RoleAccessProfile {
  *  level 5 — Employee          : ess-* self-service only; no team/dept/admin/platform
  */
 export function canViewModule(user: User | null, module: ModuleId | string): boolean {
+  // ── Universal Public & Statutory Modules: Always accessible without login or role restrictions ─
+  if (isPublicModule(module)) return true;
   if (!user) return false;
   const profile = getRoleProfile(user);
   const roleName = getPrimaryRole(user);
@@ -755,6 +808,9 @@ export function hasPermission(
   module: ModuleId | string,
   action: PermissionAction = 'view'
 ): boolean {
+  if (isPublicModule(module)) {
+    return action === 'view';
+  }
   if (!user) return false;
   const roleName = getPrimaryRole(user);
 

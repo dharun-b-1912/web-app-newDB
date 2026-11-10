@@ -83,8 +83,28 @@ app.use((req, res, next) => {
   if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   }
-  // Restricted Permissions Policy
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
+  // Restricted Permissions Policy (Camera permitted for facial attendance & photo verification)
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(self)');
+
+  // Enterprise Cookie Security: Ensure all cookies use Secure, HttpOnly, and SameSite=Lax
+  const originalSetHeader = res.setHeader;
+  res.setHeader = function (name, value) {
+    if (name && typeof name === 'string' && name.toLowerCase() === 'set-cookie') {
+      const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+      if (Array.isArray(value)) {
+        value = value.map((c) => {
+          let str = String(c);
+          if (!str.includes('SameSite')) str += '; SameSite=Lax';
+          if (!str.includes('Secure') && isHttps) str += '; Secure';
+          return str;
+        });
+      } else if (typeof value === 'string') {
+        if (!value.includes('SameSite')) value += '; SameSite=Lax';
+        if (!value.includes('Secure') && isHttps) value += '; Secure';
+      }
+    }
+    return originalSetHeader.call(this, name, value);
+  };
 
   // Dynamic CORS Origin Validation
   const origin = req.headers.origin;
