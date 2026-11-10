@@ -6,7 +6,7 @@
 
 import React, { useState } from 'react';
 import { Breadcrumb } from '../../components/shell/Breadcrumb';
-import { DivyaManpowerOnboardingTab } from './components/DivyaManpowerOnboardingTab';
+import { ManpowerOnboardingTab } from './components/ManpowerOnboardingTab';
 import { EmployeeCreateWizardModal } from '../people/EmployeeCreateWizardModal';
 import { BulkEmployeeImportModal } from '../people/bulk/BulkEmployeeImportModal';
 
@@ -18,7 +18,7 @@ export const OnboardingView: React.FC = () => {
     <div className="space-y-6 pb-12">
       <Breadcrumb items={[{ label: 'People & Core HR' }, { label: 'Onboarding Engine 2.0' }]} />
 
-      <DivyaManpowerOnboardingTab
+      <ManpowerOnboardingTab
         onInitiateOnboarding={() => setIsCreateWizardOpen(true)}
         onBulkImport={() => setIsBulkImportOpen(true)}
       />

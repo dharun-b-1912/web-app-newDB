@@ -1,4 +1,4 @@
-// src/features/onboarding/components/DivyaManpowerOnboardingTab.tsx
+// src/features/onboarding/components/ManpowerOnboardingTab.tsx
 // ============================================================================
 // Component: Statutory Onboarding & Compliance Automation Hub
 // 100% Dynamic Multi-Tenant Supabase Database Integration & Real Email Dispatcher
@@ -51,12 +51,14 @@ import {
 import { Employee } from '../../../types';
 import { EmployeeSelfOnboardingPortal } from '../employee/EmployeeSelfOnboardingPortal';
 
-export interface DivyaManpowerOnboardingTabProps {
+export interface ManpowerOnboardingTabProps {
   onInitiateOnboarding?: () => void;
   onBulkImport?: () => void;
 }
 
-export const DivyaManpowerOnboardingTab: React.FC<DivyaManpowerOnboardingTabProps> = ({
+export type DivyaManpowerOnboardingTabProps = ManpowerOnboardingTabProps;
+
+export const ManpowerOnboardingTab: React.FC<ManpowerOnboardingTabProps> = ({
   onInitiateOnboarding,
   onBulkImport,
 }) => {
@@ -1039,3 +1041,6 @@ export const DivyaManpowerOnboardingTab: React.FC<DivyaManpowerOnboardingTabProp
     </div>
   );
 };
+
+export const DivyaManpowerOnboardingTab = ManpowerOnboardingTab;
+export default ManpowerOnboardingTab;
