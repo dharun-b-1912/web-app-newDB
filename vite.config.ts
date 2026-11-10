@@ -504,6 +504,175 @@ export default defineConfig(({ mode }) => {
           });
         },
       },
+      {
+        name: 'workforce-security-admin-dev-gateway',
+        configureServer(server) {
+          server.middlewares.use(async (req, res, next) => {
+            if (!req.url) return next();
+            const parsedUrl = new URL(req.url, 'http://localhost');
+            const pathname = parsedUrl.pathname;
+
+            if (req.method === 'GET' && (pathname === '/api/workforce/sync' || pathname === '/api/employees/sync')) {
+              try {
+                const supabaseAdmin = await getSupabaseAdmin(env);
+                const { data: employees, error } = await supabaseAdmin
+                  .from('employees')
+                  .select('*')
+                  .order('created_at', { ascending: false });
+
+                if (error) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ success: false, error: error.message }));
+                }
+
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({
+                  success: true,
+                  count: employees.length,
+                  employees: employees || [],
+                }));
+              } catch (err: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({ success: false, error: err.message }));
+              }
+            }
+
+            if (req.method === 'POST' && (
+              pathname === '/api/auth/suspend-employee' ||
+              pathname === '/api/auth/reactivate-employee' ||
+              pathname === '/api/auth/reset-password-admin' ||
+              pathname === '/api/auth/revoke-sessions' ||
+              pathname === '/api/auth/provision-user'
+            )) {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const payload = JSON.parse(body || '{}');
+                  const supabaseAdmin = await getSupabaseAdmin(env);
+
+                  if (pathname === '/api/auth/suspend-employee') {
+                    const { employeeId, email } = payload;
+                    let q = supabaseAdmin.from('employees').update({
+                      employment_status: 'SUSPENDED',
+                      updated_at: new Date().toISOString()
+                    });
+                    if (employeeId) q = q.or(`id.eq.${employeeId},employee_code.eq.${employeeId}`);
+                    else if (email) q = q.ilike('work_email', email);
+                    await q;
+
+                    if (email) {
+                      const { data: userList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+                      const authUser = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+                      if (authUser) {
+                        await supabaseAdmin.auth.admin.updateUserById(authUser.id, { ban_duration: '876000h' });
+                      }
+                    }
+
+                    res.statusCode = 200;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: true, status: 'SUSPENDED' }));
+                  }
+
+                  if (pathname === '/api/auth/reactivate-employee') {
+                    const { employeeId, email } = payload;
+                    let q = supabaseAdmin.from('employees').update({
+                      employment_status: 'ACTIVE',
+                      updated_at: new Date().toISOString()
+                    });
+                    if (employeeId) q = q.or(`id.eq.${employeeId},employee_code.eq.${employeeId}`);
+                    else if (email) q = q.ilike('work_email', email);
+                    await q;
+
+                    if (email) {
+                      const { data: userList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+                      const authUser = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+                      if (authUser) {
+                        await supabaseAdmin.auth.admin.updateUserById(authUser.id, { ban_duration: 'none' });
+                      }
+                    }
+
+                    res.statusCode = 200;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: true, status: 'ACTIVE' }));
+                  }
+
+                  if (pathname === '/api/auth/reset-password-admin') {
+                    const { email, newPassword = 'joypeoplehr' } = payload;
+                    const cleanEmail = (email || '').trim().toLowerCase();
+                    const cleanPass = (newPassword || 'joypeoplehr').trim();
+
+                    const { data: userList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+                    const authUser = userList?.users?.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+                    if (authUser) {
+                      await supabaseAdmin.auth.admin.updateUserById(authUser.id, {
+                        password: cleanPass,
+                        email_confirm: true
+                      });
+                    }
+
+                    res.statusCode = 200;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: true, message: `Password reset to ${cleanPass}` }));
+                  }
+
+                  if (pathname === '/api/auth/revoke-sessions') {
+                    const { email } = payload;
+                    if (email) {
+                      const { data: userList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+                      const authUser = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+                      if (authUser) {
+                        await supabaseAdmin.auth.admin.signOut(authUser.id).catch(() => {});
+                      }
+                    }
+                    res.statusCode = 200;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: true, message: 'Sessions revoked' }));
+                  }
+
+                  if (pathname === '/api/auth/provision-user') {
+                    const { email, password = 'joypeoplehr', fullName, employeeCode, phone } = payload;
+                    const cleanEmail = (email || '').trim().toLowerCase();
+                    const cleanPass = (password || 'joypeoplehr').trim();
+                    const cleanName = (fullName || cleanEmail.split('@')[0]).trim();
+
+                    const { data: userList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+                    let authUser = userList?.users?.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+
+                    if (authUser) {
+                      await supabaseAdmin.auth.admin.updateUserById(authUser.id, {
+                        password: cleanPass,
+                        email_confirm: true,
+                      });
+                    } else {
+                      const { data: newUser } = await supabaseAdmin.auth.admin.createUser({
+                        email: cleanEmail,
+                        password: cleanPass,
+                        email_confirm: true,
+                        user_metadata: { full_name: cleanName, employee_code: employeeCode }
+                      });
+                      authUser = newUser?.user;
+                    }
+
+                    res.statusCode = 200;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: true, message: `User provisioned for ${cleanEmail}` }));
+                  }
+                } catch (err: any) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ success: false, error: err.message }));
+                }
+              });
+            } else {
+              next();
+            }
+          });
+        }
+      },
     ],
     resolve: {
       alias: {

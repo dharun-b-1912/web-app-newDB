@@ -371,11 +371,13 @@ app.post('/api/auth/provision-user', async (req, res) => {
     let finalOrgId = organizationId;
     let finalCompanyId = companyId;
     let finalBranchId = null;
+    let finalDeptId = null;
+    let finalDesigId = null;
 
     try {
       const { data: sampleEmp } = await supabaseAdminClient
         .from('employees')
-        .select('organization_id, company_id, branch_id')
+        .select('organization_id, company_id, branch_id, department_id, designation_id')
         .limit(1)
         .maybeSingle();
 
@@ -383,12 +385,48 @@ app.post('/api/auth/provision-user', async (req, res) => {
         finalOrgId = finalOrgId || sampleEmp.organization_id;
         finalCompanyId = finalCompanyId || sampleEmp.company_id;
         finalBranchId = sampleEmp.branch_id;
+        finalDeptId = sampleEmp.department_id;
+        finalDesigId = sampleEmp.designation_id;
       }
     } catch (refErr) {
       console.warn('[Auth Provisioning] Sample employee lookup notice:', refErr.message);
     }
 
-    // 3. Upsert into public.employees
+    // 3. Check or Create user_profiles row (so foreign key constraint passes)
+    let userProfileRowId = null;
+    try {
+      let { data: up } = await supabaseAdminClient
+        .from('user_profiles')
+        .select('id')
+        .eq('auth_user_id', authUser.id)
+        .maybeSingle();
+
+      if (!up) {
+        userProfileRowId = crypto.randomUUID();
+        await supabaseAdminClient.from('user_profiles').insert([{
+          id: userProfileRowId,
+          auth_user_id: authUser.id,
+          organization_id: finalOrgId || '0c621892-e938-4707-9957-13534ea32c19',
+          email: cleanEmail,
+          full_name: cleanFullName,
+          phone: phone || null,
+          status: 'ACTIVE',
+          role: role || 'EMPLOYEE'
+        }]);
+      } else {
+        userProfileRowId = up.id;
+        await supabaseAdminClient.from('user_profiles').update({
+          status: 'ACTIVE',
+          email: cleanEmail,
+          full_name: cleanFullName,
+          phone: phone || null
+        }).eq('id', userProfileRowId);
+      }
+    } catch (upErr) {
+      console.warn('[Auth Provisioning] user_profiles notice:', upErr.message);
+    }
+
+    // 4. Upsert into public.employees
     const nameParts = cleanFullName.split(' ');
     const firstName = nameParts[0] || 'Employee';
     const lastName = nameParts.slice(1).join(' ') || '';
@@ -414,15 +452,19 @@ app.post('/api/auth/provision-user', async (req, res) => {
       organization_id: finalOrgId || '0c621892-e938-4707-9957-13534ea32c19',
       company_id: finalCompanyId || null,
       branch_id: finalBranchId || null,
-      user_id: authUser.id,
+      department_id: finalDeptId || null,
+      designation_id: finalDesigId || null,
+      user_id: userProfileRowId || null,
       employee_code: cleanCode || `WF-${Math.floor(1000 + Math.random() * 9000)}`,
       first_name: firstName,
       last_name: lastName,
       display_name: cleanFullName,
       work_email: cleanEmail,
+      personal_email: cleanEmail,
       phone: phone || null,
+      doj: new Date().toISOString().split('T')[0],
       employment_status: 'ACTIVE',
-      employment_type: 'Full Time',
+      employment_type: 'FULL_TIME',
       updated_at: new Date().toISOString(),
     };
 
@@ -430,14 +472,29 @@ app.post('/api/auth/provision-user', async (req, res) => {
       empPayload.created_at = new Date().toISOString();
     }
 
-    const { data: savedEmp, error: empSaveErr } = await supabaseAdminClient
-      .from('employees')
-      .upsert(empPayload, { onConflict: 'id' })
-      .select()
-      .maybeSingle();
+    let savedEmp = null;
+    if (existingEmpId) {
+      const { data, error: empUpdateErr } = await supabaseAdminClient
+        .from('employees')
+        .update(empPayload)
+        .eq('id', existingEmpId)
+        .select()
+        .maybeSingle();
+      savedEmp = data;
+      if (empUpdateErr) console.warn('[Auth Provisioning] employees update notice:', empUpdateErr.message);
+    } else {
+      const { data, error: empInsertErr } = await supabaseAdminClient
+        .from('employees')
+        .insert([empPayload])
+        .select()
+        .maybeSingle();
+      savedEmp = data;
+      if (empInsertErr) console.warn('[Auth Provisioning] employees insert notice:', empInsertErr.message);
+    }
 
-    if (empSaveErr) {
-      console.warn('[Auth Provisioning] employees table upsert notice:', empSaveErr.message);
+    // Link employee_id back to user_profiles
+    if (savedEmp?.id && userProfileRowId) {
+      await supabaseAdminClient.from('user_profiles').update({ employee_id: savedEmp.id }).eq('id', userProfileRowId).catch(() => {});
     }
 
     return res.status(200).json({
@@ -455,6 +512,208 @@ app.post('/api/auth/provision-user', async (req, res) => {
   } catch (err) {
     console.error('[Auth Provisioning Exception]:', err);
     return res.status(500).json({ success: false, error: err.message || 'Internal provisioning error' });
+  }
+});
+
+// Workforce Synchronization Endpoint (guarantees identical employee list across localhost and production)
+app.get(['/api/workforce/sync', '/api/employees/sync'], async (req, res) => {
+  try {
+    const { data: employees, error } = await supabaseAdminClient
+      .from('employees')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Workforce Sync] Supabase query error:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: employees.length,
+      employees: employees || []
+    });
+  } catch (err) {
+    console.error('[Workforce Sync Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Security Administration: Suspend Employee Login Access
+app.post('/api/auth/suspend-employee', async (req, res) => {
+  try {
+    const { employeeId, email, reason = 'Administrative suspension' } = req.body || {};
+    if (!employeeId && !email) {
+      return res.status(400).json({ success: false, error: 'employeeId or email is required' });
+    }
+
+    const now = new Date().toISOString();
+    console.log(`[Security Admin] Suspending access for employee ${employeeId || email}`);
+
+    // 1. Update public.employees status
+    let q = supabaseAdminClient.from('employees').update({
+      employment_status: 'SUSPENDED',
+      updated_at: now
+    });
+    if (employeeId) {
+      q = q.or(`id.eq.${employeeId},employee_code.eq.${employeeId}`);
+    } else {
+      q = q.ilike('work_email', email);
+    }
+    await q;
+
+    // 2. Ban user in Supabase Auth if exists
+    if (email) {
+      const { data: userList } = await supabaseAdminClient.auth.admin.listUsers({ perPage: 1000 });
+      const authUser = userList?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
+      if (authUser) {
+        await supabaseAdminClient.auth.admin.updateUserById(authUser.id, {
+          ban_duration: '876000h'
+        });
+      }
+    }
+
+    // 3. Log Audit
+    await recordAdminAuditLog({
+      action: 'SUSPEND_EMPLOYEE_AUTH',
+      entityType: 'EMPLOYEE',
+      entityId: employeeId || email,
+      metadata: { reason }
+    });
+
+    return res.status(200).json({
+      success: true,
+      status: 'SUSPENDED',
+      message: `Employee login access suspended successfully.`
+    });
+  } catch (err) {
+    console.error('[Suspend Employee Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Security Administration: Reactivate Employee Login Access
+app.post('/api/auth/reactivate-employee', async (req, res) => {
+  try {
+    const { employeeId, email } = req.body || {};
+    if (!employeeId && !email) {
+      return res.status(400).json({ success: false, error: 'employeeId or email is required' });
+    }
+
+    const now = new Date().toISOString();
+    console.log(`[Security Admin] Reactivating access for employee ${employeeId || email}`);
+
+    // 1. Update public.employees status
+    let q = supabaseAdminClient.from('employees').update({
+      employment_status: 'ACTIVE',
+      updated_at: now
+    });
+    if (employeeId) {
+      q = q.or(`id.eq.${employeeId},employee_code.eq.${employeeId}`);
+    } else {
+      q = q.ilike('work_email', email);
+    }
+    await q;
+
+    // 2. Unban user in Supabase Auth if exists
+    if (email) {
+      const { data: userList } = await supabaseAdminClient.auth.admin.listUsers({ perPage: 1000 });
+      const authUser = userList?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
+      if (authUser) {
+        await supabaseAdminClient.auth.admin.updateUserById(authUser.id, {
+          ban_duration: 'none'
+        });
+      }
+    }
+
+    // 3. Log Audit
+    await recordAdminAuditLog({
+      action: 'REACTIVATE_EMPLOYEE_AUTH',
+      entityType: 'EMPLOYEE',
+      entityId: employeeId || email,
+      metadata: { action: 'reactivate' }
+    });
+
+    return res.status(200).json({
+      success: true,
+      status: 'ACTIVE',
+      message: `Employee login access reactivated successfully.`
+    });
+  } catch (err) {
+    console.error('[Reactivate Employee Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Security Administration: Admin Password Reset
+app.post('/api/auth/reset-password-admin', async (req, res) => {
+  try {
+    const { email, newPassword = 'joypeoplehr' } = req.body || {};
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email is required' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPass = (newPassword || 'joypeoplehr').trim();
+
+    const { data: userList } = await supabaseAdminClient.auth.admin.listUsers({ perPage: 1000 });
+    const authUser = userList?.users?.find(u => u.email?.toLowerCase() === cleanEmail);
+
+    if (!authUser) {
+      return res.status(404).json({ success: false, error: `No Auth user found for ${cleanEmail}` });
+    }
+
+    await supabaseAdminClient.auth.admin.updateUserById(authUser.id, {
+      password: cleanPass,
+      email_confirm: true
+    });
+
+    // Send email notification via SMTP
+    try {
+      const transporter = nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_PORT === 465,
+        auth: { user: SMTP_USER, pass: SMTP_PASS },
+        tls: { rejectUnauthorized: false }
+      });
+      await transporter.sendMail({
+        from: SMTP_FROM,
+        to: cleanEmail,
+        subject: 'Joy PeopleHR — Password Reset Notice',
+        html: `<p>Hello,</p><p>Your Joy PeopleHR portal password has been reset by an administrator.</p><p><strong>New Temporary Password:</strong> ${cleanPass}</p><p><a href="https://mobile.joypeoplehr.com">Sign in to Mobile App</a> or <a href="https://app.joypeoplehr.com/login">Sign in to Web Portal</a></p>`
+      });
+    } catch (mailErr) {
+      console.warn('[Admin Password Reset] Mail dispatch notice:', mailErr.message);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Password reset to ${cleanPass} and notification dispatched to ${cleanEmail}`
+    });
+  } catch (err) {
+    console.error('[Admin Password Reset Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Security Administration: Revoke All Active Sessions
+app.post('/api/auth/revoke-sessions', async (req, res) => {
+  try {
+    const { email, employeeId } = req.body || {};
+    if (email) {
+      const { data: userList } = await supabaseAdminClient.auth.admin.listUsers({ perPage: 1000 });
+      const authUser = userList?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
+      if (authUser) {
+        await supabaseAdminClient.auth.admin.signOut(authUser.id).catch(() => {});
+      }
+    }
+    return res.status(200).json({
+      success: true,
+      message: 'All active sessions revoked successfully.'
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

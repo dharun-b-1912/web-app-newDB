@@ -2025,6 +2025,43 @@ export const api = {
                 console.warn('[API] Supabase getEmployees error:', error.message || error);
               }
             }
+            // Resilient Workforce Sync fallback to backend proxy
+            try {
+              const syncOrigin = typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'https://app.joypeoplehr.com' : '';
+              const syncRes = await fetch(`${syncOrigin}/api/workforce/sync`, { signal: AbortSignal.timeout(4000) });
+              if (syncRes.ok) {
+                const syncData = await syncRes.json();
+                if (syncData.success && Array.isArray(syncData.employees) && syncData.employees.length > 0) {
+                  const mapped = syncData.employees.map((row: any) => ({
+                    id: row.id,
+                    employee_code: row.employee_code,
+                    first_name: row.first_name,
+                    last_name: row.last_name,
+                    display_name: row.display_name || `${row.first_name} ${row.last_name}`.trim(),
+                    work_email: row.work_email,
+                    personal_email: row.personal_email,
+                    phone: row.phone,
+                    organization_id: row.organization_id,
+                    company_id: row.company_id,
+                    branch_id: row.branch_id,
+                    department_id: row.department_id,
+                    designation_id: row.designation_id,
+                    reporting_manager_id: row.reporting_manager_id,
+                    status: row.employment_status === 'ACTIVE' ? 'Active' : row.employment_status === 'RESIGNED' ? 'Resigned' : row.employment_status === 'SUSPENDED' ? 'Suspended' : 'Inactive',
+                    employment_status: row.employment_status || 'ACTIVE',
+                    employment_type: row.employment_type || 'Full Time',
+                    employment_source: row.employment_source || 'DIRECT',
+                    doj: row.doj,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                  }));
+                  setStorage(KEYS.EMPLOYEES, mapped);
+                  api._empCache = { data: mapped, timestamp: Date.now() };
+                  return mapped;
+                }
+              }
+            } catch (_) {}
+
             const fallback = api.getEmployeesSync(params);
             if (fallback && fallback.length > 0) return fallback;
             return [];
@@ -2034,6 +2071,43 @@ export const api = {
           if (!isAbort && !isSupabaseCircuitOpen()) {
             console.warn('[API] Supabase getEmployees fetch notice:', err);
           }
+          // Resilient Workforce Sync fallback to backend proxy
+          try {
+            const syncOrigin = typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'https://app.joypeoplehr.com' : '';
+            const syncRes = await fetch(`${syncOrigin}/api/workforce/sync`, { signal: AbortSignal.timeout(4000) });
+            if (syncRes.ok) {
+              const syncData = await syncRes.json();
+              if (syncData.success && Array.isArray(syncData.employees) && syncData.employees.length > 0) {
+                const mapped = syncData.employees.map((row: any) => ({
+                  id: row.id,
+                  employee_code: row.employee_code,
+                  first_name: row.first_name,
+                  last_name: row.last_name,
+                  display_name: row.display_name || `${row.first_name} ${row.last_name}`.trim(),
+                  work_email: row.work_email,
+                  personal_email: row.personal_email,
+                  phone: row.phone,
+                  organization_id: row.organization_id,
+                  company_id: row.company_id,
+                  branch_id: row.branch_id,
+                  department_id: row.department_id,
+                  designation_id: row.designation_id,
+                  reporting_manager_id: row.reporting_manager_id,
+                  status: row.employment_status === 'ACTIVE' ? 'Active' : row.employment_status === 'RESIGNED' ? 'Resigned' : row.employment_status === 'SUSPENDED' ? 'Suspended' : 'Inactive',
+                  employment_status: row.employment_status || 'ACTIVE',
+                  employment_type: row.employment_type || 'Full Time',
+                  employment_source: row.employment_source || 'DIRECT',
+                  doj: row.doj,
+                  created_at: row.created_at,
+                  updated_at: row.updated_at,
+                }));
+                setStorage(KEYS.EMPLOYEES, mapped);
+                api._empCache = { data: mapped, timestamp: Date.now() };
+                return mapped;
+              }
+            }
+          } catch (_) {}
+
           const cached = api._empCache?.data;
           if (cached && cached.length > 0) return cached;
           const fallback = api.getEmployeesSync(params);
