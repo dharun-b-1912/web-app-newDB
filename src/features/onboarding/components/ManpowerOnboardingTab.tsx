@@ -190,7 +190,7 @@ export const ManpowerOnboardingTab: React.FC<ManpowerOnboardingTabProps> = ({
 
   // Copy Link Handler
   const handleCopyLink = (token: string) => {
-    const inviteUrl = `${window.location.origin}/onboard?token=${encodeURIComponent(token)}`;
+    const inviteUrl = `${window.location.origin}/candidate-portal?token=${encodeURIComponent(token)}`;
     navigator.clipboard.writeText(inviteUrl);
     setCopiedToken(token);
     showToast('Secure candidate onboarding link copied to clipboard!', 'success');

@@ -97,6 +97,7 @@ export class StatutoryOnboardingService {
     token?: string;
     inviteUrl?: string;
     emailSent?: boolean;
+    emailError?: string;
     error?: string;
     invitation?: OnboardingInvitation;
   }> {
@@ -105,7 +106,7 @@ export class StatutoryOnboardingService {
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const empId = invitation.employee_id || `cand-${Date.now().toString(36)}`;
       const baseUrl = getAppBaseUrl();
-      const inviteUrl = `${baseUrl}/onboard?token=${encodeURIComponent(token)}`;
+      const inviteUrl = `${baseUrl}/candidate-portal?token=${encodeURIComponent(token)}`;
 
       const { data, error } = await supabase
         .from('onboarding_invitations')
@@ -129,6 +130,7 @@ export class StatutoryOnboardingService {
       }
 
       let emailSent = false;
+      let emailError: string | undefined;
       if (invitation.email && invitation.email.includes('@')) {
         try {
           const emailRes = await resendEmailService.sendCandidateOnboardingInvitationEmail({
@@ -143,7 +145,11 @@ export class StatutoryOnboardingService {
             expiresInDays: 7,
           });
           emailSent = Boolean(emailRes.success);
-        } catch (emailErr) {
+          if (!emailRes.success) {
+            emailError = emailRes.error || emailRes.message || 'Email delivery failed';
+          }
+        } catch (emailErr: any) {
+          emailError = emailErr?.message || 'Email dispatch exception';
           console.warn('[StatutoryOnboardingService] Email dispatch notice:', emailErr);
         }
       }
@@ -153,6 +159,7 @@ export class StatutoryOnboardingService {
         token,
         inviteUrl,
         emailSent,
+        emailError,
         invitation: data as OnboardingInvitation,
       };
     } catch (err: any) {
@@ -197,7 +204,7 @@ export class StatutoryOnboardingService {
     }
 
     const baseUrl = getAppBaseUrl();
-    const inviteUrl = `${baseUrl}/onboard?token=${encodeURIComponent(invitation.token)}`;
+    const inviteUrl = `${baseUrl}/candidate-portal?token=${encodeURIComponent(invitation.token)}`;
 
     try {
       const emailRes = await resendEmailService.sendCandidateOnboardingInvitationEmail({

@@ -49,9 +49,9 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API
 // Enterprise / Custom SMTP Transport Configuration
 const SMTP_HOST = process.env.SMTP_HOST || 's11777.bom1.stableserver.net';
 const SMTP_PORT = Number(process.env.SMTP_PORT) || 465;
-const SMTP_USER = process.env.SMTP_USER || process.env.VITE_SMTP_USER;
-const SMTP_PASS = process.env.SMTP_PASS || process.env.VITE_SMTP_PASS;
-const SMTP_FROM = process.env.SMTP_FROM || (SMTP_USER ? `Joy PeopleHR <${SMTP_USER}>` : 'Joy PeopleHR <noreply@joypeoplehr.com>');
+const SMTP_USER = process.env.SMTP_USER || process.env.VITE_SMTP_USER || 'noreply@joypeoplehr.com';
+const SMTP_PASS = process.env.SMTP_PASS || process.env.VITE_SMTP_PASS || 'Joyson@5610';
+const SMTP_FROM = process.env.SMTP_FROM || `Joy PeopleHR <${SMTP_USER}>`;
 
 // Whitelisted Origins for Strict CORS Enforcement
 const ALLOWED_ORIGINS = new Set([

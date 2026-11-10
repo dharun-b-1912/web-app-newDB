@@ -563,13 +563,20 @@ const AppContent: React.FC = () => {
   // Dedicated Public Candidate Self-Onboarding Portal (Accessible via tokenized invitation link without login)
   const candidatePath = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '';
   const isCandidateOnboardingRoute =
+    currentRoute === 'candidate-portal' ||
     currentRoute === 'candidate-onboarding' ||
     currentRoute === 'onboard' ||
+    candidatePath === '/candidate-portal' ||
+    candidatePath.startsWith('/candidate-portal/') ||
+    candidatePath.startsWith('/candidate-portal?') ||
+    candidatePath === '/candidate/onboard' ||
+    candidatePath.startsWith('/candidate/onboard/') ||
+    candidatePath.startsWith('/candidate/onboard?') ||
+    candidatePath === '/candidate-onboarding' ||
+    candidatePath.startsWith('/candidate-onboarding/') ||
     candidatePath === '/onboard' ||
     candidatePath.startsWith('/onboard/') ||
     candidatePath.startsWith('/onboard?') ||
-    candidatePath === '/candidate-onboarding' ||
-    candidatePath.startsWith('/candidate-onboarding/') ||
     candidatePath.includes('/onboarding/complete');
 
   if (isCandidateOnboardingRoute) {

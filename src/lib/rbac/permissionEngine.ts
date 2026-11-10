@@ -663,6 +663,7 @@ export const UNIVERSAL_PUBLIC_MODULES = new Set<string>([
   'superadmin-login',
   'vendor-login',
   'register',
+  'candidate-portal',
   'onboard',
   'candidate-onboarding',
   'onboarding/complete',
@@ -677,6 +678,8 @@ export function isPublicModule(module: string): boolean {
 
   return (
     UNIVERSAL_PUBLIC_MODULES.has(m) ||
+    m === 'candidate-portal' ||
+    m.startsWith('candidate-portal/') ||
     m === 'onboard' ||
     m.startsWith('onboard/') ||
     m === 'candidate-onboarding' ||

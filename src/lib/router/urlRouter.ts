@@ -39,9 +39,11 @@ export const ROUTE_ALIASES: Record<string, string> = {
   '/auth/reset-password': 'reset-password',
   '/reset-password': 'reset-password',
   '/invitation': 'accept-invite',
-  '/onboard': 'candidate-onboarding',
-  '/candidate-onboarding': 'candidate-onboarding',
-  '/onboarding/complete': 'candidate-onboarding',
+  '/candidate-portal': 'candidate-portal',
+  '/candidate/onboard': 'candidate-portal',
+  '/candidate-onboarding': 'candidate-portal',
+  '/onboard': 'candidate-portal',
+  '/onboarding/complete': 'candidate-portal',
 
   // Core HRMS Slugs — Dashboard
   '/dashboard': 'dashboard',
@@ -716,7 +718,8 @@ export const ROUTE_TO_PATH: Record<string, string> = {
   'terms-of-service': '/terms',
   'accept-invite': '/auth/accept-invite',
   'reset-password': '/auth/reset-password',
-  'candidate-onboarding': '/onboard',
+  'candidate-portal': '/candidate-portal',
+  'candidate-onboarding': '/candidate-portal',
 
   // ESS & TL
   'tl-dashboard': '/tl/dashboard',
