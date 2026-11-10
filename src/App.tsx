@@ -76,7 +76,7 @@ const AppContent: React.FC = () => {
   // Initialize Realtime Sync Engine for live automatic data replication and purge old legacy mock remnants
   useEffect(() => {
     // One-time cleanup of old mock / test datasets from localStorage
-    const PURGE_VERSION = 'wf_purge_v8_strict_zero_seed';
+    const PURGE_VERSION = 'wf_purge_v9_sync_production_authoritative';
     if (localStorage.getItem('wf_storage_version') !== PURGE_VERSION) {
       const prefixesToPurge = [
         'workforce_employee_onboardings',
@@ -89,6 +89,7 @@ const AppContent: React.FC = () => {
         'workforce_vendor_saved_views',
         'workforce_excel_test_data',
         'workforce_employees',
+        'workforce_extended_registry',
         'workforce_21_workers',
         'workforceos_attendance_daily_v2',
         'workforceos_attendance_regularizations_v2',
@@ -99,6 +100,7 @@ const AppContent: React.FC = () => {
         'workforce_payroll_advances',
         'joy_redis_',
         'upstash_redis_',
+        'joy_auth_',
         'workforce_companies',
         'workforce_departments',
         'workforce_designations',

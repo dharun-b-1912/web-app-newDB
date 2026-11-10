@@ -135,6 +135,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     designation_title: '',
     branch_id: '',
     location_id: '',
+    work_location: '',
+    work_location_name: '',
     work_mode: 'Hybrid' as WorkMode,
     job_level: 'Mid Level',
     grade: 'G3',
@@ -217,9 +219,15 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       work_email: emp.work_email || (p as any).work_email || '',
       personal_email: emp.personal_email || p.personal_email || (p as any).personal_email || '',
       email_type: (emp.work_email ? 'WORK' : (emp.personal_email || p.personal_email) ? 'PERSONAL' : 'WORK') as 'PERSONAL' | 'WORK' | 'NONE',
-      phone: p.phone || (p as any).primary_mobile || (emp as any).phone || '',
-      dob: p.date_of_birth || '',
-      gender: p.gender || 'Male',
+      phone: (emp as any).phone || p.phone || (p as any).primary_mobile || '',
+      dob: (emp as any).dob || p.date_of_birth || p.dob || '',
+      gender: (() => {
+        const rawG = String((emp as any).gender || p.gender || '').toUpperCase();
+        if (rawG.includes('FEMALE')) return 'Female';
+        if (rawG.includes('NON')) return 'Non-Binary';
+        if (rawG.includes('PREFER')) return 'Prefer not to say';
+        return 'Male';
+      })(),
 
       // Step 2: Contact
       alternate_phone: p.alternate_phone || '',
@@ -260,6 +268,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       branch_id: emp.branch_id || '',
       location_id: (emp as any).location_id || (e as any).location_id || emp.branch_id || '',
       work_location: (emp as any).work_location || (emp as any).work_location_name || (e as any).work_location || '',
+      work_location_name: (emp as any).work_location_name || (emp as any).work_location || (e as any).work_location_name || (e as any).work_location || '',
       work_mode: (e.work_mode || (emp as any).work_mode || 'Hybrid') as WorkMode,
       job_level: e.job_level || (emp as any).job_level || 'Mid Level',
       grade: e.grade || (emp as any).grade || 'G3',
@@ -382,6 +391,28 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         if (isPrevEmpty && v !== '' && v !== null && v !== undefined && (!Array.isArray(v) || v.length > 0)) {
           (nextData as any)[k] = v;
         }
+      }
+
+      // Explicitly hydrate authoritative database identity attributes
+      if (freshData.gender) nextData.gender = freshData.gender;
+      if (freshData.dob) nextData.dob = freshData.dob;
+      if (freshData.phone) nextData.phone = freshData.phone;
+      if (freshData.first_name) nextData.first_name = freshData.first_name;
+      if (freshData.last_name) nextData.last_name = freshData.last_name;
+      if (freshData.employee_code) nextData.employee_code = freshData.employee_code;
+      if (freshData.department_id) {
+        nextData.department_id = freshData.department_id;
+        nextData.department_name = freshData.department_name;
+      }
+      if (freshData.designation_id) {
+        nextData.designation_id = freshData.designation_id;
+        nextData.designation_title = freshData.designation_title;
+      }
+      if ((freshData as any).location_id) {
+        nextData.location_id = (freshData as any).location_id;
+      }
+      if ((freshData as any).work_location_name) {
+        nextData.work_location_name = (freshData as any).work_location_name;
       }
 
       // Explicitly hydrate real database salary details if available

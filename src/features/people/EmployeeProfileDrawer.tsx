@@ -96,11 +96,22 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
   const [activeInvitation, setActiveInvitation] = useState<any>(null);
   const [isDispatchingInvite, setIsDispatchingInvite] = useState(false);
+  const [availableLocations, setAvailableLocations] = useState<any[]>([]);
 
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    api.getLocations().then((locs) => setAvailableLocations(locs || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (employee) {
+      const activePhone = employee.phone || employee.profile?.phone || employee.primary_mobile || '';
+      const activeGender = (employee as any).gender || employee.profile?.gender || 'Male';
+      const activeDob = (employee as any).dob || employee.profile?.date_of_birth || '';
+      const activeLocation = employee.employment?.work_location || (employee as any).work_location || (employee as any).location || 'Joy Corporate Solutions Private Limited (HQ)';
+      const activeLocationId = (employee as any).location_id || employee.employment?.location_id || (employee as any).work_location_id || '';
+
       const data: Partial<Employee> = {
         first_name: employee.first_name || '',
         last_name: employee.last_name || '',
@@ -113,22 +124,27 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
         employment_source: employee.employment_source || 'DIRECT',
         vendor_name: employee.vendor_name || employee.employment?.vendor_name || '',
         vendor_employee_code: employee.vendor_employee_code || employee.employment?.vendor_employee_code || '',
+        phone: activePhone,
+        gender: activeGender,
+        location_id: activeLocationId,
         profile: {
-          phone: employee.profile?.phone || '',
-          gender: employee.profile?.gender || 'Male',
-          date_of_birth: employee.profile?.date_of_birth || '',
-          nationality: employee.profile?.nationality || 'Indian',
+          nationality: 'Indian',
+          ...(employee.profile || {}),
+          phone: activePhone,
+          gender: activeGender,
+          date_of_birth: activeDob,
           current_address: employee.profile?.current_address,
           permanent_address: employee.profile?.permanent_address,
-          ...(employee.profile || {}),
         },
         employment: {
           doj: employee.employment?.doj || employee.created_at?.split('T')[0] || '',
-          work_location: employee.employment?.work_location || (employee as any).work_location || (employee as any).location || '',
           reporting_manager_name: employee.employment?.reporting_manager_name || '',
           confirmation_status: employee.employment?.confirmation_status || 'Confirmed',
           probation_period_months: employee.employment?.probation_period_months || 6,
           ...(employee.employment || {}),
+          work_location: activeLocation,
+          work_location_name: activeLocation,
+          location_id: activeLocationId,
         },
       };
       setFormData(data);
@@ -138,7 +154,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
       setConcurrencyConflict(false);
 
       const status = employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id, {
-        phone: employee.profile?.phone || (employee as any).phone || '',
+        phone: employee.phone || employee.primary_mobile || employee.profile?.phone || '',
         email: employee.work_email,
         name: `${employee.first_name} ${employee.last_name}`,
         role: employee.designation_title,
@@ -577,7 +593,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                       </div>
                       <div className="flex items-center gap-2 text-gray-700">
                         <Phone className="w-4 h-4 text-gray-400 shrink-0" />
-                        <span className="font-semibold">{employee.profile?.phone || employee.phone || employee.primary_mobile || 'Not provided'}</span>
+                        <span className="font-semibold">{employee.phone || employee.primary_mobile || employee.profile?.phone || 'Not provided'}</span>
                       </div>
                       <div className="flex items-center gap-2 text-gray-700">
                         <MapPin className="w-4 h-4 text-gray-400 shrink-0" />
@@ -738,22 +754,39 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="block text-gray-600 font-bold mb-1">Work Location</label>
-                        <input
-                          type="text"
-                          value={formData.employment?.work_location || ''}
-                          onChange={(e) =>
+                        <label className="block text-gray-600 font-bold mb-1">Work Location / Campus</label>
+                        <select
+                          value={
+                            formData.location_id ||
+                            (formData.employment as any)?.location_id ||
+                            (availableLocations.find((l) => l.name === formData.employment?.work_location)?.id) ||
+                            ''
+                          }
+                          onChange={(e) => {
+                            const selectedId = e.target.value;
+                            const matched = availableLocations.find((l) => l.id === selectedId);
+                            const locName = matched?.name || selectedId;
                             setFormData({
                               ...formData,
+                              location_id: selectedId,
                               employment: {
                                 doj: formData.employment?.doj || employee?.employment?.doj || '',
                                 ...(formData.employment || {}),
-                                work_location: e.target.value,
+                                location_id: selectedId,
+                                work_location: locName,
+                                work_location_name: locName,
                               } as any,
-                            })
-                          }
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#07563D]"
-                        />
+                            });
+                          }}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#07563D] text-xs font-semibold bg-white"
+                        >
+                          <option value="">-- Select Work Location / Campus --</option>
+                          {availableLocations.map((loc) => (
+                            <option key={loc.id} value={loc.id}>
+                              {loc.name} {loc.city ? `(${loc.city})` : ''}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </Card>
@@ -1043,7 +1076,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                                 role_code: 'EMPLOYEE',
                                 target_id: employee.id,
                                 target_type: 'EMPLOYEE',
-                                phone: employee.profile?.phone || (employee as any).phone || '',
+                                phone: employee.phone || (employee as any).primary_mobile || employee.profile?.phone || '',
                               });
                               if (!res.success) throw new Error(res.error);
                               showToast(`✓ Invitation dispatched to ${employee.work_email}`, 'success');
@@ -1167,7 +1200,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                       setIsProcessingAuth(true);
                       try {
                         const email = employee.work_email || (employee.profile as any)?.personal_email;
-                        const phone = authStatus?.phone || employee.profile?.phone || (employee as any).phone || '';
+                        const phone = employee.phone || (employee as any).primary_mobile || authStatus?.phone || employee.profile?.phone || '';
                         
                         // 1. Call backend admin password reset API (updates Supabase auth + sends email)
                         if (email) {
@@ -1208,7 +1241,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                     onClick={async () => {
                       setIsProcessingAuth(true);
                       try {
-                        const phone = authStatus?.phone || employee.profile?.phone || (employee as any).phone || '';
+                        const phone = employee.phone || (employee as any).primary_mobile || authStatus?.phone || employee.profile?.phone || '';
                         const email = employee.work_email || (employee.profile as any)?.personal_email;
 
                         // 1. Guarantee activation in Supabase Auth & DB via backend proxy
@@ -1282,7 +1315,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                           }).catch(() => {});
 
                           const updated = await employeeAuthService.suspendEmployeeAuth(employee.id, employee.organization_id, {
-                            phone: employee.profile?.phone || (employee as any).phone || '',
+                            phone: employee.phone || (employee as any).primary_mobile || employee.profile?.phone || '',
                             email: employee.work_email,
                             name: `${employee.first_name} ${employee.last_name}`,
                             role: employee.designation_title,
@@ -1319,7 +1352,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                           }).catch(() => {});
 
                           const updated = await employeeAuthService.activateEmployeeAuth(employee.id, employee.organization_id, {
-                            phone: employee.profile?.phone || (employee as any).phone || '',
+                            phone: employee.phone || (employee as any).primary_mobile || employee.profile?.phone || '',
                             email: employee.work_email,
                             name: `${employee.first_name} ${employee.last_name}`,
                             role: employee.designation_title,

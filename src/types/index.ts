@@ -623,6 +623,8 @@ export interface Employee {
   personal_email?: string;
   phone?: string;
   primary_mobile?: string;
+  gender?: string;
+  dob?: string;
   avatar_url?: string;
   avatar_asset_id?: string | null;
   avatar_version?: number;

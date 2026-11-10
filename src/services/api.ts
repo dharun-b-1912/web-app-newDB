@@ -1716,11 +1716,17 @@ export const api = {
                     gender: e.gender || undefined,
                   };
                   if (e.phone) {
-                    e.primary_mobile = e.primary_mobile || e.phone;
-                    e.profile.phone = e.profile.phone || e.phone;
+                    e.primary_mobile = e.phone;
+                    if (e.profile) e.profile.phone = e.phone;
                   }
-                  if (e.personal_email) {
-                    e.profile.personal_email = e.profile.personal_email || e.personal_email;
+                  if (e.personal_email && e.profile) {
+                    e.profile.personal_email = e.personal_email;
+                  }
+                  if (e.gender && e.profile) {
+                    e.profile.gender = e.gender;
+                  }
+                  if (e.dob && e.profile) {
+                    e.profile.date_of_birth = e.dob;
                   }
 
                   e.employment = e.employment || {
@@ -1853,11 +1859,15 @@ export const api = {
                     e.work_location_name = e.work_location;
                   } else {
                     const existingLoc = (e.work_location || e.work_location_name || '').toString().trim();
-                    e.work_location = existingLoc || '';
+                    e.work_location = existingLoc || e.branch_name || 'Joy Corporate Solutions Private Limited (HQ)';
                     e.work_location_name = e.work_location;
                   }
 
                   e.location = e.work_location || e.branch_name || '';
+                  if (e.employment) {
+                    e.employment.work_location = e.work_location;
+                    e.employment.work_location_name = e.work_location;
+                  }
                   e.company_name = e.company_name || 'Joy Corporate Solutions Pvt Ltd';
 
                   // Shift & Attendance Policy resolution (preserve cached client assignments \u0026 Supabase DB assignments)
@@ -2193,17 +2203,29 @@ export const api = {
             },
           };
 
-          // Personal email from employee record or profile
+          // Authoritative Supabase Database fields strictly override any local cache or fallbacks
+          if (empRes.data.phone) {
+            emp.phone = empRes.data.phone;
+            emp.primary_mobile = empRes.data.phone;
+            emp.profile.phone = empRes.data.phone;
+            emp.profile.primary_mobile = empRes.data.phone;
+          }
+          if (empRes.data.gender) {
+            emp.gender = empRes.data.gender;
+            emp.profile.gender = empRes.data.gender;
+          }
+          if (empRes.data.dob) {
+            emp.dob = empRes.data.dob;
+            emp.profile.date_of_birth = empRes.data.dob;
+          }
           if (empRes.data.personal_email) {
             emp.personal_email = empRes.data.personal_email;
             emp.profile.personal_email = empRes.data.personal_email;
           }
-
-          // Hydrate demographic fallbacks
-          if (!emp.profile.phone && emp.phone) emp.profile.phone = emp.phone;
-          if (!emp.profile.primary_mobile && emp.phone) emp.profile.primary_mobile = emp.phone;
-          if (!emp.profile.date_of_birth && emp.dob) emp.profile.date_of_birth = emp.dob;
-          if (!emp.profile.gender && emp.gender) emp.profile.gender = emp.gender;
+          if (empRes.data.work_email) {
+            emp.work_email = empRes.data.work_email;
+            emp.profile.work_email = empRes.data.work_email;
+          }
 
           // Hydrate from employee_profiles table if available
           if (profRes?.data) {
@@ -3090,18 +3112,29 @@ export const api = {
     employeePatch.profile = mergedProfile;
     employeePatch.employment = mergedEmployment;
 
-    // Apply patch to employees table in Supabase if authenticated
-    const isAuth = await hasAuthenticatedSession();
-    if (isAuth) {
-      try {
-        const cleanPatch = sanitizeEmployeeForSupabase({ ...existing, ...employeePatch });
-        const { error } = await supabase.from('employees').upsert(cleanPatch, { onConflict: 'id' });
-        if (error) {
-          console.warn('[API] Supabase step upsert notice:', error.message || error);
+    // Apply patch to employees table and assignments in Supabase via backend gateway with service role
+    try {
+      const syncUrl = typeof window !== 'undefined' && window.location.origin ? `${window.location.origin}/api/workforce/update-employee` : '/api/workforce/update-employee';
+      const cleanPatch = sanitizeEmployeeForSupabase({ ...existing, ...employeePatch });
+      const payloadPatch = {
+        ...cleanPatch,
+        location_id: formData.location_id || employeePatch.location_id,
+        work_location: formData.work_location || formData.work_location_name || employeePatch.work_location,
+        work_location_name: formData.work_location_name || formData.work_location || employeePatch.work_location_name,
+      };
+      const res = await fetch(syncUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: employeeId, patch: payloadPatch }),
+      });
+      if (res.ok) {
+        const resData = await res.json();
+        if (resData.success && resData.employee) {
+          Object.assign(existing, resData.employee);
         }
-      } catch (err) {
-        console.warn('[API] Supabase employee step upsert fallback:', err);
       }
+    } catch (gwErr) {
+      console.warn('[API] saveEmployeeOnboardingStep gateway notice:', gwErr);
     }
 
     // Always update local cache so in-memory/fallback state is 100% in sync
@@ -3965,40 +3998,67 @@ export const api = {
         }
 
         const isAuth = await hasAuthenticatedSession();
-        if (isAuth) {
-          const { data: updateData, error: updateErr } = await dbClient
-            .from('employees')
-            .update(directPatch)
-            .eq('id', id)
-            .select('*')
-            .maybeSingle();
 
-          if (updateErr) {
-            console.warn('[API] Direct Supabase employee update notice:', updateErr.message || updateErr);
-          } else if (updateData) {
-            canonicalRecord = updateData as Employee;
-            logger.db('EMPLOYEE_UPDATE_SUCCESS', {
-              correlationId,
-              table: 'employees',
-              employeeId: id,
-              operation: 'UPDATE',
-              status: 'SUCCESS',
-              rows: 1,
-            });
+        // Apply employee updates and location assignment via backend gateway with service role
+        try {
+          const syncUrl = typeof window !== 'undefined' && window.location.origin ? `${window.location.origin}/api/workforce/update-employee` : '/api/workforce/update-employee';
+          const payloadPatch = {
+            ...directPatch,
+            location_id: (data as any).location_id || (data.employment as any)?.location_id,
+            work_location: (data as any).work_location || (data.employment as any)?.work_location,
+            work_location_name: (data as any).work_location_name || (data.employment as any)?.work_location_name,
+          };
+          const updateRes = await fetch(syncUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, patch: payloadPatch }),
+          });
+          if (updateRes.ok) {
+            const resData = await updateRes.json();
+            if (resData.success && resData.employee) {
+              canonicalRecord = resData.employee;
+            }
+          }
+        } catch (backendErr) {
+          console.warn('[API] Backend update-employee proxy notice:', backendErr);
+        }
 
-            // Keep user_profiles synced if email, name, or employment status updated
-            try {
-              const profilePatch: any = {
-                updated_at: new Date().toISOString(),
-              };
-              if (targetWorkEmail) profilePatch.email = targetWorkEmail;
-              if (displayName) profilePatch.full_name = displayName;
-              if (targetPhone) profilePatch.phone = targetPhone;
-              if (resolvedEmploymentStatus) {
-                profilePatch.status = (resolvedEmploymentStatus === 'ACTIVE' || resolvedEmploymentStatus === 'PROBATION') ? 'ACTIVE' : 'INACTIVE';
-              }
-              await supabase.from('user_profiles').update(profilePatch).eq('employee_id', id);
-            } catch (_) {}
+        if (!canonicalRecord) {
+          if (isAuth) {
+            const { data: updateData, error: updateErr } = await dbClient
+              .from('employees')
+              .update(directPatch)
+              .eq('id', id)
+              .select('*')
+              .maybeSingle();
+
+            if (updateErr) {
+              console.warn('[API] Direct Supabase employee update notice:', updateErr.message || updateErr);
+            } else if (updateData) {
+              canonicalRecord = updateData as Employee;
+              logger.db('EMPLOYEE_UPDATE_SUCCESS', {
+                correlationId,
+                table: 'employees',
+                employeeId: id,
+                operation: 'UPDATE',
+                status: 'SUCCESS',
+                rows: 1,
+              });
+
+              // Keep user_profiles synced if email, name, or employment status updated
+              try {
+                const profilePatch: any = {
+                  updated_at: new Date().toISOString(),
+                };
+                if (targetWorkEmail) profilePatch.email = targetWorkEmail;
+                if (displayName) profilePatch.full_name = displayName;
+                if (targetPhone) profilePatch.phone = targetPhone;
+                if (resolvedEmploymentStatus) {
+                  profilePatch.status = (resolvedEmploymentStatus === 'ACTIVE' || resolvedEmploymentStatus === 'PROBATION') ? 'ACTIVE' : 'INACTIVE';
+                }
+                await supabase.from('user_profiles').update(profilePatch).eq('employee_id', id);
+              } catch (_) {}
+            }
           }
         }
 

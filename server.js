@@ -515,6 +515,9 @@ app.post('/api/auth/provision-user', async (req, res) => {
   }
 });
 
+// Helper: Valid UUID check
+const isValidUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
 // Workforce Synchronization Endpoint (guarantees identical employee list across localhost and production)
 app.get(['/api/workforce/sync', '/api/employees/sync'], async (req, res) => {
   try {
@@ -535,6 +538,176 @@ app.get(['/api/workforce/sync', '/api/employees/sync'], async (req, res) => {
     });
   } catch (err) {
     console.error('[Workforce Sync Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Workforce Administration: Update Employee Record & Linked Work Location & Profile
+app.post(['/api/workforce/update-employee', '/api/employees/update'], async (req, res) => {
+  try {
+    const { id, patch = {} } = req.body || {};
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Employee ID is required' });
+    }
+
+    const now = new Date().toISOString();
+    const cleanEmpPatch = { updated_at: now };
+
+    if (patch.first_name) cleanEmpPatch.first_name = String(patch.first_name).trim();
+    if (patch.last_name) cleanEmpPatch.last_name = String(patch.last_name).trim();
+    if (patch.middle_name !== undefined) cleanEmpPatch.middle_name = patch.middle_name ? String(patch.middle_name).trim() : null;
+    if (patch.display_name) cleanEmpPatch.display_name = String(patch.display_name).trim();
+    else if (patch.first_name || patch.last_name) {
+      cleanEmpPatch.display_name = `${patch.first_name || ''} ${patch.last_name || ''}`.trim();
+    }
+    if (patch.employee_code) cleanEmpPatch.employee_code = String(patch.employee_code).trim();
+    if (patch.work_email) cleanEmpPatch.work_email = String(patch.work_email).trim();
+    if (patch.personal_email !== undefined) cleanEmpPatch.personal_email = patch.personal_email ? String(patch.personal_email).trim() : null;
+    if (patch.phone !== undefined) cleanEmpPatch.phone = patch.phone ? String(patch.phone).trim() : null;
+    if (patch.avatar_url !== undefined) cleanEmpPatch.avatar_url = patch.avatar_url || null;
+    if (patch.dob !== undefined) cleanEmpPatch.dob = patch.dob || null;
+    if (patch.doj) cleanEmpPatch.doj = patch.doj;
+    if (patch.confirmation_date !== undefined) cleanEmpPatch.confirmation_date = patch.confirmation_date || null;
+
+    if (patch.gender) {
+      const g = String(patch.gender).toUpperCase().replace(/[\s-]/g, '_');
+      cleanEmpPatch.gender = g.includes('FEMALE') ? 'FEMALE' : g.includes('NON') ? 'NON_BINARY' : g.includes('PREFER') ? 'PREFER_NOT_TO_SAY' : 'MALE';
+    }
+
+    if (patch.department_id && isValidUUID(patch.department_id)) cleanEmpPatch.department_id = patch.department_id;
+    if (patch.designation_id && isValidUUID(patch.designation_id)) cleanEmpPatch.designation_id = patch.designation_id;
+    if (patch.branch_id && isValidUUID(patch.branch_id)) cleanEmpPatch.branch_id = patch.branch_id;
+    if (patch.reporting_manager_id !== undefined) {
+      cleanEmpPatch.reporting_manager_id = (patch.reporting_manager_id && isValidUUID(patch.reporting_manager_id)) ? patch.reporting_manager_id : null;
+    }
+    if (patch.employment_type) {
+      const t = String(patch.employment_type).toUpperCase();
+      cleanEmpPatch.employment_type = t.includes('PART') ? 'PART_TIME' : t.includes('CONTRACT') ? 'CONTRACT' : t.includes('INTERN') ? 'INTERN' : 'FULL_TIME';
+    }
+    if (patch.employment_status || patch.status) {
+      const s = String(patch.employment_status || patch.status).toUpperCase();
+      cleanEmpPatch.employment_status = s.includes('PROBATION') ? 'PROBATION' : s.includes('NOTICE') ? 'NOTICE_PERIOD' : s.includes('SUSPEND') || s.includes('INACTIVE') ? 'SUSPENDED' : s.includes('RESIGN') ? 'RESIGNED' : s.includes('TERMINAT') ? 'TERMINATED' : 'ACTIVE';
+    }
+
+    // 1. Update public.employees
+    const { data: updatedEmp, error: empErr } = await supabaseAdminClient
+      .from('employees')
+      .update(cleanEmpPatch)
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (empErr) {
+      console.error('[Update Employee] Error updating employees table:', empErr);
+      return res.status(500).json({ success: false, error: empErr.message });
+    }
+
+    // 2. Assign dynamic Work Location if location_id or work_location_id or work_location provided
+    const targetLocId = patch.location_id || patch.work_location_id;
+    let resolvedWorkLocationId = null;
+    if (targetLocId && isValidUUID(targetLocId)) {
+      resolvedWorkLocationId = targetLocId;
+    } else if (patch.work_location || patch.work_location_name) {
+      const locName = String(patch.work_location || patch.work_location_name).trim();
+      const { data: matchedLoc } = await supabaseAdminClient
+        .from('work_locations')
+        .select('id')
+        .ilike('name', `%${locName}%`)
+        .limit(1)
+        .maybeSingle();
+      if (matchedLoc) resolvedWorkLocationId = matchedLoc.id;
+    }
+
+    if (resolvedWorkLocationId) {
+      await supabaseAdminClient
+        .from('employee_work_location_assignments')
+        .upsert({
+          employee_id: id,
+          work_location_id: resolvedWorkLocationId,
+          organization_id: updatedEmp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+          company_id: updatedEmp.company_id || '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+          is_primary: true,
+          attendance_allowed: true,
+          is_active: true,
+          effective_from: updatedEmp.doj || new Date().toISOString().split('T')[0],
+          updated_at: now
+        }, { onConflict: 'employee_id,work_location_id' });
+    }
+
+    // 3. Keep public.user_profiles synced
+    const profilePatch = { updated_at: now };
+    if (cleanEmpPatch.display_name) profilePatch.full_name = cleanEmpPatch.display_name;
+    if (cleanEmpPatch.work_email) profilePatch.email = cleanEmpPatch.work_email;
+    if (cleanEmpPatch.phone) profilePatch.phone = cleanEmpPatch.phone;
+    if (cleanEmpPatch.employment_status) {
+      profilePatch.status = (cleanEmpPatch.employment_status === 'ACTIVE' || cleanEmpPatch.employment_status === 'PROBATION') ? 'ACTIVE' : 'INACTIVE';
+    }
+    await supabaseAdminClient.from('user_profiles').update(profilePatch).eq('employee_id', id);
+
+    // 4. Update Supabase Auth user metadata
+    if (cleanEmpPatch.work_email || updatedEmp.work_email) {
+      try {
+        const { data: userList } = await supabaseAdminClient.auth.admin.listUsers({ perPage: 1000 });
+        const targetEmail = (cleanEmpPatch.work_email || updatedEmp.work_email).toLowerCase();
+        const authUser = userList?.users?.find(u => u.email?.toLowerCase() === targetEmail);
+        if (authUser) {
+          await supabaseAdminClient.auth.admin.updateUserById(authUser.id, {
+            user_metadata: {
+              ...(authUser.user_metadata || {}),
+              full_name: cleanEmpPatch.display_name || authUser.user_metadata?.full_name,
+              employee_code: cleanEmpPatch.employee_code || authUser.user_metadata?.employee_code
+            }
+          });
+        }
+      } catch (authErr) {
+        console.warn('[Update Employee] Auth user sync warning:', authErr);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      employee: updatedEmp
+    });
+  } catch (err) {
+    console.error('[Update Employee Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Workforce Administration: Assign Work Location Endpoint
+app.post('/api/workforce/assign-location', async (req, res) => {
+  try {
+    const { employeeId, workLocationId, isPrimary = true } = req.body || {};
+    if (!employeeId || !workLocationId) {
+      return res.status(400).json({ success: false, error: 'employeeId and workLocationId are required' });
+    }
+
+    const { data: emp } = await supabaseAdminClient.from('employees').select('id, organization_id, company_id, doj').eq('id', employeeId).maybeSingle();
+    if (!emp) return res.status(404).json({ success: false, error: 'Employee not found' });
+
+    const now = new Date().toISOString();
+    const { data: assign, error: aErr } = await supabaseAdminClient
+      .from('employee_work_location_assignments')
+      .upsert({
+        employee_id: employeeId,
+        work_location_id: workLocationId,
+        organization_id: emp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+        company_id: emp.company_id || '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+        is_primary: Boolean(isPrimary),
+        attendance_allowed: true,
+        is_active: true,
+        effective_from: emp.doj || new Date().toISOString().split('T')[0],
+        updated_at: now
+      }, { onConflict: 'employee_id,work_location_id' })
+      .select('*')
+      .single();
+
+    if (aErr) {
+      return res.status(500).json({ success: false, error: aErr.message });
+    }
+
+    return res.status(200).json({ success: true, assignment: assign });
+  } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
