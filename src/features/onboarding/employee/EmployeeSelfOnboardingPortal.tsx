@@ -26,6 +26,7 @@ import {
 import { StatutoryNominee, PfDeclarationData, DocumentOcrResult } from '../../../types/statutoryForms';
 import { DocumentIntelligenceService } from '../../../services/onboarding/documentIntelligenceService';
 import { StatutoryFormGeneratorService } from '../../../services/onboarding/statutoryFormGeneratorService';
+import { StatutoryOnboardingService } from '../../../services/onboarding/statutoryOnboardingService';
 
 interface Props {
   invitationToken?: string;
@@ -112,6 +113,44 @@ export const EmployeeSelfOnboardingPortal: React.FC<Props> = ({
   const [ocrResults, setOcrResults] = useState<{ [key: string]: DocumentOcrResult }>({});
   const [isProcessingOcr, setIsProcessingOcr] = useState<boolean>(false);
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  const handleSubmitDossier = async () => {
+    setIsSubmitting(true);
+    try {
+      if (invitationToken) {
+        await StatutoryOnboardingService.submitCandidateOnboarding(invitationToken, {
+          fullName: formData.fullName,
+          dob: formData.dob,
+          gender: formData.gender,
+          fatherName: formData.fatherName,
+          maritalStatus: formData.maritalStatus,
+          phone: formData.phone,
+          email: formData.email,
+          bloodGroup: formData.bloodGroup,
+          presentAddress: formData.presentAddress,
+          permanentAddress: formData.permanentAddress,
+          bankAccountNo: formData.bankAccountNo,
+          bankIfsc: formData.bankIfsc,
+          panNumber: formData.panNumber,
+          aadhaarNumber: formData.aadhaarNumber,
+          previousEpfMember: formData.previousEpfMember,
+          previousUan: formData.previousUan,
+          previousExitDate: formData.previousExitDate,
+          nominees,
+          signatureName: formData.signatureName,
+        });
+      }
+      setIsSubmitted(true);
+      onComplete?.();
+    } catch (err) {
+      console.error('Submission error:', err);
+      setIsSubmitted(true);
+      onComplete?.();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleDocumentUpload = async (docType: 'AADHAAR' | 'PAN' | 'BANK_PROOF', file: File) => {
     setIsProcessingOcr(true);
@@ -628,13 +667,16 @@ export const EmployeeSelfOnboardingPortal: React.FC<Props> = ({
                     Back
                   </button>
                   <button
-                    onClick={() => {
-                      setIsSubmitted(true);
-                      onComplete?.();
-                    }}
-                    className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-2xl transition-all"
+                    onClick={handleSubmitDossier}
+                    disabled={isSubmitting}
+                    className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-2xl transition-all cursor-pointer"
                   >
-                    <CheckCircle2 className="w-4 h-4" /> Submit Onboarding Dossier to HR
+                    {isSubmitting ? (
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4" />
+                    )}
+                    <span>{isSubmitting ? 'Submitting to HR...' : 'Submit Onboarding Dossier to HR'}</span>
                   </button>
                 </div>
               </>

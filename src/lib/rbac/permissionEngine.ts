@@ -661,6 +661,9 @@ export const UNIVERSAL_PUBLIC_MODULES = new Set<string>([
   'superadmin-login',
   'vendor-login',
   'register',
+  'onboard',
+  'candidate-onboarding',
+  'onboarding/complete',
 ]);
 
 export function isPublicModule(module: string): boolean {
@@ -668,6 +671,8 @@ export function isPublicModule(module: string): boolean {
   const m = module.toLowerCase().replace(/^\//, '');
   return (
     UNIVERSAL_PUBLIC_MODULES.has(m) ||
+    m.startsWith('onboard') ||
+    m.startsWith('candidate-onboarding') ||
     m.startsWith('verify') ||
     m.startsWith('dpdp') ||
     m.startsWith('legal') ||

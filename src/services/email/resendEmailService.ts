@@ -94,6 +94,19 @@ export interface OrganizationUserInviteEmailParams {
   expiresInDays?: number;
 }
 
+export interface CandidateOnboardingInviteEmailParams {
+  to: string;
+  candidateName: string;
+  organizationName?: string;
+  designation?: string;
+  department?: string;
+  onboardingUrl?: string;
+  token: string;
+  phone?: string;
+  expiresInDays?: number;
+  invitedBy?: string;
+}
+
 export interface AccountCreationOtpEmailParams {
   to: string;
   recipientName: string;
@@ -1149,6 +1162,135 @@ class ResendEmailService {
       to: params.to,
       subject: `Invitation to join ${orgName} as ${params.roleDisplayName} — Joy PeopleHR`,
       html,
+    });
+  }
+
+  /**
+   * Dispatches Official Candidate Statutory Onboarding & KYC Invitation Email
+   */
+  async sendCandidateOnboardingInvitationEmail(
+    params: CandidateOnboardingInviteEmailParams
+  ): Promise<EmailDeliveryResponse> {
+    const orgName = params.organizationName || 'Joy Corporate Solutions Pvt Ltd';
+    const baseUrl = getAppBaseUrl();
+    const token = params.token;
+    const onboardingLink =
+      params.onboardingUrl ||
+      `${baseUrl}/onboard?token=${encodeURIComponent(token)}`;
+    const expiryDays = params.expiresInDays || 7;
+
+    const subject = `Official Invitation: Complete Your Digital Onboarding & Statutory KYC — ${orgName}`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 32px 16px; background-color: #07090e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e2e8f0;">
+  <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 620px; margin: 0 auto; background-color: #0d121c; border-radius: 20px; overflow: hidden; border: 1px solid #1a2333; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);">
+    
+    <!-- Top Header & Brand Banner -->
+    <tr>
+      <td style="background: linear-gradient(135deg, #07563d 0%, #043828 60%, #022017 100%); padding: 36px 32px 28px 32px; text-align: center; border-bottom: 1px solid #059669;">
+        <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 14px;">
+          <tr>
+            <td style="background-color: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 999px; padding: 4px 14px;">
+              <span style="font-size: 11px; font-weight: 800; color: #a7f3d0; text-transform: uppercase; letter-spacing: 1.5px;">📋 Digital Workforce Onboarding</span>
+            </td>
+          </tr>
+        </table>
+        <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">${orgName}</h1>
+        <p style="margin: 8px 0 0 0; font-size: 13px; color: #d1fae5; font-weight: 500;">Official Employee KYC, Nomination & Statutory Documentation</p>
+      </td>
+    </tr>
+
+    <!-- Body Content -->
+    <tr>
+      <td style="padding: 32px 32px 24px 32px; font-size: 14px; line-height: 1.6; color: #cbd5e1;">
+        <p style="margin: 0 0 16px 0; font-size: 15px; color: #f8fafc;">
+          Dear <strong style="color: #ffffff;">${params.candidateName}</strong>,
+        </p>
+        <p style="margin: 0 0 16px 0;">
+          Welcome! You have been invited to complete your official digital onboarding and statutory compliance documentation for your employment with <strong>${orgName}</strong>.
+        </p>
+        <p style="margin: 0 0 20px 0;">
+          To ensure timely issuance of your appointment order, PF/ESI registration, and salary account setup, please fill in your details and upload required verification documents using the secure candidate portal below:
+        </p>
+
+        <!-- What will be completed card -->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #121927; border: 1px solid #1e293b; border-radius: 14px; margin: 20px 0; overflow: hidden;">
+          <tr>
+            <td style="padding: 14px 18px; background-color: #182235; border-bottom: 1px solid #1e293b;">
+              <span style="font-size: 11px; font-weight: 800; color: #10b981; text-transform: uppercase; letter-spacing: 1px;">Statutory Onboarding Requirements</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 18px;">
+              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-size: 13px; color: #cbd5e1;">
+                <tr>
+                  <td style="padding: 5px 0;">✅ <strong>EPFO Form 11</strong> — Provident Fund declaration & UAN linking</td>
+                </tr>
+                <tr>
+                  <td style="padding: 5px 0;">✅ <strong>Form 2 & Form F</strong> — EPF, EPS & Gratuity family nominations</td>
+                </tr>
+                <tr>
+                  <td style="padding: 5px 0;">✅ <strong>Payment of Wages & Form Q</strong> — Appointment order acknowledgment</td>
+                </tr>
+                <tr>
+                  <td style="padding: 5px 0;">✅ <strong>Identity Verification (KYC)</strong> — Aadhaar, PAN card & Bank proof upload</td>
+                </tr>
+                ${params.designation ? `<tr><td style="padding: 5px 0; color: #94a3b8;">Designation: <strong style="color: #ffffff;">${params.designation}</strong></td></tr>` : ''}
+                ${params.department ? `<tr><td style="padding: 5px 0; color: #94a3b8;">Department: <strong style="color: #ffffff;">${params.department}</strong></td></tr>` : ''}
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Call to Action Button -->
+        <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 28px auto;">
+          <tr>
+            <td align="center" style="border-radius: 12px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); box-shadow: 0 10px 20px rgba(5, 150, 105, 0.35);">
+              <a href="${onboardingLink}" target="_blank" style="display: inline-block; padding: 15px 36px; font-size: 14px; font-weight: 800; color: #ffffff; text-decoration: none; border-radius: 12px; letter-spacing: 0.5px;">
+                🚀 Start Candidate Onboarding &rarr;
+              </a>
+            </td>
+          </tr>
+        </table>
+
+        <p style="margin: 24px 0 8px 0; font-size: 12px; color: #94a3b8; text-align: center;">
+          Or copy and paste this secure link directly into your browser:
+        </p>
+        <div style="background-color: #0b0f17; border: 1px dashed #334155; border-radius: 8px; padding: 10px 14px; font-size: 11px; word-break: break-all; color: #38bdf8; text-align: center; font-family: monospace;">
+          ${onboardingLink}
+        </div>
+
+        <p style="margin: 20px 0 0 0; font-size: 11px; color: #64748b; line-height: 1.5; text-align: center;">
+          ⏰ This secure tokenized link will expire in <strong>${expiryDays} days</strong>. For any technical support, reach out to your HR Operations Desk.
+        </p>
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="background-color: #080b11; padding: 20px 32px; border-top: 1px solid #1a2333; text-align: center; font-size: 11px; color: #64748b;">
+        <p style="margin: 0 0 4px 0;">This is an automated official communication from <strong>Joy PeopleHR Enterprise</strong> on behalf of <strong>${orgName}</strong>.</p>
+        <p style="margin: 0;">&copy; ${new Date().getFullYear()} Joy PeopleHR &middot; DPDP Act 2023 & ISO 27001 Certified Platform.</p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+
+    return this.sendEmail({
+      to: params.to,
+      subject,
+      html,
+      text: `Hello ${params.candidateName}, you are invited to complete your digital onboarding with ${orgName}. Please open: ${onboardingLink}`,
     });
   }
 

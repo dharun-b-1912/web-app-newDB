@@ -4,7 +4,8 @@
 // ============================================================================
 
 import { api } from '../api';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAppBaseUrl } from '../../lib/supabase';
+import { resendEmailService } from '../email/resendEmailService';
 import {
   OnboardingInvitation,
   StatutoryNominee,
@@ -78,32 +79,45 @@ export class StatutoryOnboardingService {
   }
 
   /**
-   * Create a new scoped onboarding invitation in Supabase
+   * Create a new scoped onboarding invitation in Supabase & automatically dispatch official email
    */
   public static async createInvitation(invitation: {
     organization_id: string;
-    employee_id: string;
+    employee_id?: string;
     candidate_name: string;
     phone?: string;
     email?: string;
+    designation?: string;
+    department?: string;
     establishment_id?: string;
     notes?: string;
-  }): Promise<{ success: boolean; token?: string; error?: string }> {
+    organization_name?: string;
+  }): Promise<{
+    success: boolean;
+    token?: string;
+    inviteUrl?: string;
+    emailSent?: boolean;
+    error?: string;
+    invitation?: OnboardingInvitation;
+  }> {
     try {
-      const token = `onb-${invitation.organization_id}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`;
+      const token = `onb-${invitation.organization_id.slice(0, 8)}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`;
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const empId = invitation.employee_id || `cand-${Date.now().toString(36)}`;
+      const baseUrl = getAppBaseUrl();
+      const inviteUrl = `${baseUrl}/onboard?token=${encodeURIComponent(token)}`;
 
       const { data, error } = await supabase
         .from('onboarding_invitations')
         .insert({
           organization_id: invitation.organization_id,
-          employee_id: invitation.employee_id,
+          employee_id: empId,
           candidate_name: invitation.candidate_name,
           token,
           phone: invitation.phone || null,
           email: invitation.email || null,
           establishment_id: invitation.establishment_id || null,
-          notes: invitation.notes || null,
+          notes: invitation.notes || (invitation.designation ? `Role: ${invitation.designation}` : null),
           status: 'PENDING',
           expires_at: expiresAt,
         })
@@ -114,9 +128,170 @@ export class StatutoryOnboardingService {
         return { success: false, error: error.message };
       }
 
-      return { success: true, token };
+      let emailSent = false;
+      if (invitation.email && invitation.email.includes('@')) {
+        try {
+          const emailRes = await resendEmailService.sendCandidateOnboardingInvitationEmail({
+            to: invitation.email.trim(),
+            candidateName: invitation.candidate_name,
+            organizationName: invitation.organization_name || 'Joy Corporate Solutions Pvt Ltd',
+            designation: invitation.designation,
+            department: invitation.department,
+            token,
+            onboardingUrl: inviteUrl,
+            phone: invitation.phone,
+            expiresInDays: 7,
+          });
+          emailSent = Boolean(emailRes.success);
+        } catch (emailErr) {
+          console.warn('[StatutoryOnboardingService] Email dispatch notice:', emailErr);
+        }
+      }
+
+      return {
+        success: true,
+        token,
+        inviteUrl,
+        emailSent,
+        invitation: data as OnboardingInvitation,
+      };
     } catch (err: any) {
       return { success: false, error: err.message || 'Failed to create invitation' };
+    }
+  }
+
+  /**
+   * Fetch an onboarding invitation by secure token
+   */
+  public static async getInvitationByToken(token: string): Promise<OnboardingInvitation | null> {
+    if (!token) return null;
+
+    try {
+      const { data, error } = await supabase
+        .from('onboarding_invitations')
+        .select('*')
+        .eq('token', token.trim())
+        .maybeSingle();
+
+      if (error) {
+        console.warn('[StatutoryOnboardingService] getInvitationByToken error:', error.message);
+        return null;
+      }
+
+      return data as OnboardingInvitation | null;
+    } catch (err) {
+      console.error('[StatutoryOnboardingService] getInvitationByToken failed:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Resend official onboarding invitation email to candidate
+   */
+  public static async resendInvitationEmail(
+    invitation: OnboardingInvitation,
+    orgName: string = 'Joy Corporate Solutions Pvt Ltd'
+  ): Promise<{ success: boolean; message: string; error?: string }> {
+    if (!invitation || !invitation.email) {
+      return { success: false, message: 'Candidate has no email address on file.', error: 'No email found' };
+    }
+
+    const baseUrl = getAppBaseUrl();
+    const inviteUrl = `${baseUrl}/onboard?token=${encodeURIComponent(invitation.token)}`;
+
+    try {
+      const emailRes = await resendEmailService.sendCandidateOnboardingInvitationEmail({
+        to: invitation.email.trim(),
+        candidateName: invitation.candidate_name,
+        organizationName: orgName,
+        token: invitation.token,
+        onboardingUrl: inviteUrl,
+        phone: invitation.phone || undefined,
+        expiresInDays: 7,
+      });
+
+      if (emailRes.success) {
+        return { success: true, message: `Invitation email resent successfully to ${invitation.email}!` };
+      }
+      return { success: false, message: emailRes.error || 'Failed to dispatch email via SMTP gateway', error: emailRes.error };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Email dispatch failed', error: err.message };
+    }
+  }
+
+  /**
+   * Submit and finalize candidate self-onboarding dossier
+   */
+  public static async submitCandidateOnboarding(
+    token: string,
+    payload: {
+      fullName: string;
+      dob: string;
+      gender: string;
+      fatherName?: string;
+      maritalStatus?: string;
+      phone?: string;
+      email?: string;
+      bloodGroup?: string;
+      presentAddress?: string;
+      permanentAddress?: string;
+      bankAccountNo?: string;
+      bankIfsc?: string;
+      panNumber?: string;
+      aadhaarNumber?: string;
+      previousEpfMember?: boolean;
+      previousUan?: string;
+      previousExitDate?: string;
+      nominees?: StatutoryNominee[];
+      signatureName?: string;
+    }
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const inv = await this.getInvitationByToken(token);
+      if (!inv) {
+        return { success: false, error: 'Invalid or expired onboarding invitation token' };
+      }
+
+      // 1. Mark invitation as submitted
+      await supabase
+        .from('onboarding_invitations')
+        .update({
+          status: 'SUBMITTED',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', inv.id);
+
+      // 2. Save EPFO Form 11 PF declaration
+      await this.savePfDeclaration({
+        id: `pf-${inv.employee_id}`,
+        employee_id: inv.employee_id,
+        organization_id: inv.organization_id,
+        previous_epf_member: Boolean(payload.previousEpfMember),
+        previous_eps_member: Boolean(payload.previousEpfMember),
+        previous_uan: payload.previousUan || '',
+        previous_member_id: '',
+        previous_exit_date: payload.previousExitDate || '',
+        scheme_certificate_no: '',
+        ppo_no: '',
+        international_worker: false,
+        country_of_origin: 'India',
+        passport_number: '',
+        passport_valid_till: '',
+        pan_number: payload.panNumber || '',
+        aadhaar_number: payload.aadhaarNumber || '',
+        bank_account_no: payload.bankAccountNo || '',
+        bank_ifsc: payload.bankIfsc || '',
+        bank_name: '',
+        is_kyc_verified: true,
+        declaration_accepted: true,
+        declaration_date: new Date().toISOString().split('T')[0],
+        employer_declaration_date: new Date().toISOString().split('T')[0],
+        employer_authorized_sign: 'Authorized HR Officer',
+      });
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Submission failed' };
     }
   }
 

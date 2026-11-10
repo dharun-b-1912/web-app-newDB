@@ -67,6 +67,7 @@ const VendorPortalWorkspace = lazy(() => import('./features/vendor/VendorPortalW
 const VendorLoginPage = lazy(() => import('./features/auth/VendorLoginPage').then(m => ({ default: m.VendorLoginPage })));
 const ResetPasswordPage = lazy(() => import('./features/auth/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
 const StorageAdministrationView = lazy(() => import('./features/storage/StorageAdministrationView').then(m => ({ default: m.StorageAdministrationView })));
+const CandidatePublicOnboardingPage = lazy(() => import('./features/onboarding/employee/CandidatePublicOnboardingPage').then(m => ({ default: m.CandidatePublicOnboardingPage })));
 
 const AppContent: React.FC = () => {
   const { user, isLoading, logout, login } = useAuth();
@@ -549,6 +550,25 @@ const AppContent: React.FC = () => {
         <ResetPasswordPage
           onNavigateToLogin={() => handleNavigate('login')}
         />
+      </Suspense>
+    );
+  }
+
+  // Dedicated Public Candidate Self-Onboarding Portal (Accessible via tokenized invitation link without login)
+  const isCandidateOnboardingRoute =
+    currentRoute === 'candidate-onboarding' ||
+    currentRoute === 'onboard' ||
+    (typeof window !== 'undefined' && (
+      window.location.pathname.startsWith('/onboard') ||
+      window.location.pathname.startsWith('/candidate-onboarding') ||
+      window.location.pathname.includes('/onboarding/complete')
+    ));
+
+  if (isCandidateOnboardingRoute) {
+    return (
+      <Suspense fallback={null}>
+        <CandidatePublicOnboardingPage onNavigateToLogin={() => handleNavigate('login')} />
+        <CookieConsentBanner />
       </Suspense>
     );
   }
