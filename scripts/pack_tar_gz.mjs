@@ -72,7 +72,6 @@ const ignoredPatterns = [
   '1.FlutterApp',
   '1.FlutterApp new version (27-08).rar',
   'Essl Support files',
-  'dist',
   'deploy_package.tar.gz',
   'deploy_package.tar',
   'deploy_source.tar.gz',
@@ -105,8 +104,8 @@ const ignoredPatterns = [
 
 function shouldIgnore(relPath) {
   const normalized = relPath.replace(/\\/g, '/');
-  // Never ignore any source code inside src/
-  if (normalized.startsWith('src/')) {
+  // Never ignore any source code inside src/ or built client assets inside dist/
+  if (normalized.startsWith('src/') || normalized.startsWith('dist/')) {
     return false;
   }
   return ignoredPatterns.some((pattern) => {

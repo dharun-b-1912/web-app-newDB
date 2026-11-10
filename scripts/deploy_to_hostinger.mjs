@@ -58,7 +58,9 @@ child.stdout.on('data', (data) => {
                 domain,
                 path: archivePath,
                 type: 'nodejs',
-                nodeVersion: 22
+                nodeVersion: 22,
+                buildScript: 'build:hostinger',
+                entryFile: 'server.js'
               }
             }
           }

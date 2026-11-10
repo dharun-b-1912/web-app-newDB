@@ -8,6 +8,7 @@
     "dev:all": "node scripts/dev-orchestrator.cjs",
     "gateway": "node scripts/workforce-gateway-agent.cjs",
     "build": "vite build",
+    "build:hostinger": "echo Pre-built bundle ready",
     "deploy:hostinger": "npm run build && node scripts/create_deploy_archive.mjs && node scripts/deploy_to_hostinger.mjs",
     "start": "node server.js",
     "preview": "vite preview",
