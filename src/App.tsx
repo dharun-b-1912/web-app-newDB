@@ -76,7 +76,7 @@ const AppContent: React.FC = () => {
   // Initialize Realtime Sync Engine for live automatic data replication and purge old legacy mock remnants
   useEffect(() => {
     // One-time cleanup of old mock / test datasets from localStorage
-    const PURGE_VERSION = 'wf_purge_v9_sync_production_authoritative';
+    const PURGE_VERSION = 'wf_purge_v10_dedup_vaishnavi_prod';
     if (localStorage.getItem('wf_storage_version') !== PURGE_VERSION) {
       const prefixesToPurge = [
         'workforce_employee_onboardings',

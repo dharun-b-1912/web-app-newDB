@@ -1342,6 +1342,26 @@ export const api = {
       );
     }
 
+    // Strict deduplication by ID, employee_code, and work_email
+    const syncSeenIds = new Set<string>();
+    const syncSeenCodes = new Set<string>();
+    const syncSeenEmails = new Set<string>();
+    list = list.filter((e: any) => {
+      if (!e || !e.id) return false;
+      const idKey = String(e.id).toLowerCase();
+      const codeKey = String(e.employee_code || '').trim().toUpperCase();
+      const emailKey = String(e.work_email || e.personal_email || '').trim().toLowerCase();
+
+      if (syncSeenIds.has(idKey)) return false;
+      if (codeKey && syncSeenCodes.has(codeKey)) return false;
+      if (emailKey && syncSeenEmails.has(emailKey)) return false;
+
+      syncSeenIds.add(idKey);
+      if (codeKey) syncSeenCodes.add(codeKey);
+      if (emailKey) syncSeenEmails.add(emailKey);
+      return true;
+    });
+
     // Authoritatively resolve department and designation from master dictionaries
     const syncDeptMap = new Map<string, string>();
     DEFAULT_DEPARTMENTS.forEach((d) => syncDeptMap.set(String(d.id).toLowerCase().trim(), d.name.trim()));
@@ -2008,18 +2028,57 @@ export const api = {
               } catch (_) {}
             }
 
-            const dbIds = new Set(data.map((e: any) => e.id));
-            const cachedEmployees = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
-            const localOnly = cachedEmployees.filter(
-              (ce) => !dbIds.has(ce.id) && isValidUUID(ce.id)
-            );
-            const allUnified = [...data, ...localOnly];
+            const dbIds = new Set(data.map((e: any) => String(e.id).toLowerCase()));
+            const dbCodes = new Set(data.map((e: any) => String(e.employee_code || '').trim().toUpperCase()).filter(Boolean));
+            const dbEmails = new Set(data.map((e: any) => String(e.work_email || e.personal_email || '').trim().toLowerCase()).filter(Boolean));
 
-            const combined = allUnified.filter((e: any) =>
-              isValidUUID(e?.id) &&
-              !String(e?.employee_code || '').toUpperCase().startsWith('CE0') &&
-              !String(e?.work_email || '').toLowerCase().includes('@plant.joycorporatesolutions.com')
-            );
+            // Strictly deduplicate data itself first by ID, employee_code, and email
+            const seenIds = new Set<string>();
+            const seenCodes = new Set<string>();
+            const seenEmails = new Set<string>();
+            const deduplicated: Employee[] = [];
+
+            for (const emp of data) {
+              if (!emp || !isValidUUID(emp.id)) continue;
+              const idKey = String(emp.id).toLowerCase();
+              const codeKey = String(emp.employee_code || '').trim().toUpperCase();
+              const emailKey = String(emp.work_email || emp.personal_email || '').trim().toLowerCase();
+
+              if (seenIds.has(idKey)) continue;
+              if (codeKey && seenCodes.has(codeKey)) continue;
+              if (emailKey && seenEmails.has(emailKey)) continue;
+
+              if (codeKey.startsWith('CE0')) continue;
+              if (emailKey.includes('@plant.joycorporatesolutions.com')) continue;
+
+              seenIds.add(idKey);
+              if (codeKey) seenCodes.add(codeKey);
+              if (emailKey) seenEmails.add(emailKey);
+              deduplicated.push(emp);
+            }
+
+            // Only permit local-only employees that do NOT collide with any DB record
+            const cachedEmployees = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+            for (const ce of cachedEmployees) {
+              if (!ce || !ce.id || !isValidUUID(ce.id)) continue;
+              const idKey = String(ce.id).toLowerCase();
+              const codeKey = String(ce.employee_code || '').trim().toUpperCase();
+              const emailKey = String(ce.work_email || ce.personal_email || '').trim().toLowerCase();
+
+              if (seenIds.has(idKey) || dbIds.has(idKey)) continue;
+              if (codeKey && (seenCodes.has(codeKey) || dbCodes.has(codeKey))) continue;
+              if (emailKey && (seenEmails.has(emailKey) || dbEmails.has(emailKey))) continue;
+
+              if (codeKey.startsWith('CE0')) continue;
+              if (emailKey.includes('@plant.joycorporatesolutions.com')) continue;
+
+              seenIds.add(idKey);
+              if (codeKey) seenCodes.add(codeKey);
+              if (emailKey) seenEmails.add(emailKey);
+              deduplicated.push(ce);
+            }
+
+            const combined = deduplicated;
             const resultList = filterObj ? filterEmployeesLocalHelper(combined, filterObj) : combined;
             if (isUnfiltered) {
               setStorage(KEYS.EMPLOYEES, combined);

@@ -95,7 +95,26 @@ export const PeopleView: React.FC = () => {
     setIsLoading(true);
     try {
       const data = await api.getEmployees(activeCompany?.id ? { companyId: activeCompany.id } : undefined);
-      setEmployees(data || []);
+      const rawList = data || [];
+      const viewSeenIds = new Set<string>();
+      const viewSeenCodes = new Set<string>();
+      const viewSeenEmails = new Set<string>();
+      const cleanList = rawList.filter((emp) => {
+        if (!emp || !emp.id) return false;
+        const idKey = String(emp.id).toLowerCase();
+        const codeKey = String(emp.employee_code || '').trim().toUpperCase();
+        const emailKey = String(emp.work_email || (emp as any).personal_email || '').trim().toLowerCase();
+
+        if (viewSeenIds.has(idKey)) return false;
+        if (codeKey && viewSeenCodes.has(codeKey)) return false;
+        if (emailKey && viewSeenEmails.has(emailKey)) return false;
+
+        viewSeenIds.add(idKey);
+        if (codeKey) viewSeenCodes.add(codeKey);
+        if (emailKey) viewSeenEmails.add(emailKey);
+        return true;
+      });
+      setEmployees(cleanList);
 
       // Authoritative lifecycle counts
       try {
