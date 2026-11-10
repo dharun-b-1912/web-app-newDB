@@ -116,3 +116,4 @@ async function heal() {
 }
 
 heal();
+

@@ -504,7 +504,7 @@ export const attendanceApi = {
         try {
           let empQ = client
             .from('employees')
-            .select('id, employee_code, first_name, last_name, display_name, avatar_url, department_id, designation_id, department, designation');
+            .select('id, employee_code, first_name, last_name, display_name, avatar_url, department_id, designation_id');
           if (tenantId && tenantId !== 'platform-root') {
             empQ = empQ.eq('organization_id', tenantId);
           }

@@ -158,6 +158,23 @@ const resilientSupabaseFetch = async (input: RequestInfo | URL, init?: RequestIn
         return res;
       }
 
+      // If 401 Unauthorized occurs due to an expired session token, attempt immediate refresh and retry
+      if (res.status === 401 && attempt === 0 && typeof window !== 'undefined') {
+        try {
+          const { data: refData } = await supabase.auth.refreshSession();
+          if (refData?.session?.access_token) {
+            _cachedActiveSession = refData.session;
+            _sessionVerifiedTimestamp = Date.now();
+            if (init) {
+              const currentHeaders = new Headers(init.headers || {});
+              currentHeaders.set('Authorization', `Bearer ${refData.session.access_token}`);
+              init.headers = currentHeaders;
+            }
+            continue;
+          }
+        } catch (_) {}
+      }
+
       // Check if response is a transient server error that can be retried
       if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < maxRetries) {
         lastStatus = res.status;
@@ -214,9 +231,9 @@ const resilientSupabaseFetch = async (input: RequestInfo | URL, init?: RequestIn
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
-    autoRefreshToken: false,
+    autoRefreshToken: true,
     detectSessionInUrl: true,
-    skipAutoInitialize: true,
+    skipAutoInitialize: false,
   },
   global: {
     fetch: resilientSupabaseFetch,
