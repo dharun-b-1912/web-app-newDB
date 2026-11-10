@@ -450,7 +450,13 @@ const AppContent: React.FC = () => {
         navPerfTracker.logImmediate('ROUTE_REDIRECT', `/${prevRoute}`, '/platform-dashboard', 0, 'platform_role_guard');
       }
     } else {
-      if (currentRoute.startsWith('platform') || currentRoute.startsWith('saas-')) {
+      if (currentRoute === 'login' || currentRoute === 'employer-login' || currentRoute === 'admin/login') {
+        const prevRoute = currentRoute;
+        const defRoute = getDefaultRouteForUser(user);
+        setCurrentRoute(defRoute);
+        syncUrlWithRoute(defRoute, undefined, true);
+        navPerfTracker.logImmediate('ROUTE_REDIRECT', `/${prevRoute}`, `/${defRoute}`, 0, 'already_logged_in_redirect');
+      } else if (currentRoute.startsWith('platform') || currentRoute.startsWith('saas-')) {
         const isLocalhost = typeof window !== 'undefined' &&
           (window.location.hostname === 'localhost' ||
            window.location.hostname === '127.0.0.1' ||
@@ -555,19 +561,24 @@ const AppContent: React.FC = () => {
   }
 
   // Dedicated Public Candidate Self-Onboarding Portal (Accessible via tokenized invitation link without login)
+  const candidatePath = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '';
   const isCandidateOnboardingRoute =
     currentRoute === 'candidate-onboarding' ||
     currentRoute === 'onboard' ||
-    (typeof window !== 'undefined' && (
-      window.location.pathname.startsWith('/onboard') ||
-      window.location.pathname.startsWith('/candidate-onboarding') ||
-      window.location.pathname.includes('/onboarding/complete')
-    ));
+    candidatePath === '/onboard' ||
+    candidatePath.startsWith('/onboard/') ||
+    candidatePath.startsWith('/onboard?') ||
+    candidatePath === '/candidate-onboarding' ||
+    candidatePath.startsWith('/candidate-onboarding/') ||
+    candidatePath.includes('/onboarding/complete');
 
   if (isCandidateOnboardingRoute) {
     return (
       <Suspense fallback={null}>
-        <CandidatePublicOnboardingPage onNavigateToLogin={() => handleNavigate('login')} />
+        <CandidatePublicOnboardingPage
+          onNavigateToLogin={() => handleNavigate('login')}
+          onNavigateToEmployerLogin={() => handleNavigate('employer-login')}
+        />
         <CookieConsentBanner />
       </Suspense>
     );
@@ -725,9 +736,21 @@ const AppContent: React.FC = () => {
   }
 
   if (!user) {
+    const isEmployerLogin =
+      currentRoute === 'employer-login' ||
+      currentRoute === 'admin/login' ||
+      (typeof window !== 'undefined' && (
+        window.location.pathname === '/employer-login' ||
+        window.location.pathname === '/employer/login' ||
+        window.location.pathname === '/admin/login' ||
+        window.location.pathname === '/company/login' ||
+        window.location.pathname === '/company-admin'
+      ));
+
     return (
       <>
         <AuthPage
+          initialContext={isEmployerLogin ? 'admin' : 'tenant'}
           onNavigateToSuperAdmin={() => handleNavigate('superadmin-login')}
           onSuccessRoute={(targetRoute) => handleNavigate(targetRoute)}
         />

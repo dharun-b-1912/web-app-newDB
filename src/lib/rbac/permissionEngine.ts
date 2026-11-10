@@ -658,6 +658,8 @@ export const UNIVERSAL_PUBLIC_MODULES = new Set<string>([
   'accept-invite',
   'reset-password',
   'login',
+  'employer-login',
+  'admin/login',
   'superadmin-login',
   'vendor-login',
   'register',
@@ -669,10 +671,17 @@ export const UNIVERSAL_PUBLIC_MODULES = new Set<string>([
 export function isPublicModule(module: string): boolean {
   if (!module) return false;
   const m = module.toLowerCase().replace(/^\//, '');
+
+  // Guard: HR Onboarding Engine is an authenticated employer module, not a public module
+  if (m === 'onboarding') return false;
+
   return (
     UNIVERSAL_PUBLIC_MODULES.has(m) ||
-    m.startsWith('onboard') ||
-    m.startsWith('candidate-onboarding') ||
+    m === 'onboard' ||
+    m.startsWith('onboard/') ||
+    m === 'candidate-onboarding' ||
+    m.startsWith('candidate-onboarding/') ||
+    m.startsWith('onboarding/complete') ||
     m.startsWith('verify') ||
     m.startsWith('dpdp') ||
     m.startsWith('legal') ||

@@ -13,9 +13,13 @@ import { JoyLogo } from '../../../components/common/JoyLogo';
 
 interface Props {
   onNavigateToLogin?: () => void;
+  onNavigateToEmployerLogin?: () => void;
 }
 
-export const CandidatePublicOnboardingPage: React.FC<Props> = ({ onNavigateToLogin }) => {
+export const CandidatePublicOnboardingPage: React.FC<Props> = ({
+  onNavigateToLogin,
+  onNavigateToEmployerLogin,
+}) => {
   const [token, setToken] = useState<string>('');
   const [manualTokenInput, setManualTokenInput] = useState<string>('');
   const [invitation, setInvitation] = useState<OnboardingInvitation | null>(null);
@@ -87,14 +91,25 @@ export const CandidatePublicOnboardingPage: React.FC<Props> = ({ onNavigateToLog
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            {onNavigateToEmployerLogin && (
+              <button
+                type="button"
+                onClick={onNavigateToEmployerLogin}
+                className="px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 text-xs font-semibold transition-colors border border-emerald-700/60 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              >
+                <Building2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Employer / HR Login</span>
+              </button>
+            )}
             {onNavigateToLogin && (
               <button
                 type="button"
                 onClick={onNavigateToLogin}
-                className="px-3.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors border border-slate-700"
+                className="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors border border-slate-700 flex items-center gap-1.5 cursor-pointer"
               >
-                Employee Portal Login
+                <UserCheck className="w-3.5 h-3.5 text-slate-400" />
+                <span>Employee Login</span>
               </button>
             )}
           </div>

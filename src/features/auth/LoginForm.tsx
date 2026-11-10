@@ -144,7 +144,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         <div className="flex items-center gap-2">
           <h2 className="text-xl font-bold text-gray-900 tracking-tight">
             {authContext === 'admin'
-              ? 'Company Administration & IAM'
+              ? 'Employer & Company Administration'
               : authContext === 'platform'
               ? 'Platform Administration'
               : authContext === 'vendor'
@@ -154,7 +154,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         </div>
         <p className="text-xs text-gray-500 mt-1">
           {authContext === 'admin'
-            ? 'Organization Owner & Company Admin access: Legal entities, RBAC, workflows & commercials.'
+            ? 'Employer, HR Head & Company Admin access: Legal entities, RBAC, workforce onboarding, workflows & payroll.'
             : authContext === 'platform'
             ? 'Authorized personnel only. All access attempts are recorded.'
             : authContext === 'vendor'

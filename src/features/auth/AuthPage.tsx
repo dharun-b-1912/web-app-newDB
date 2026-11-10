@@ -39,6 +39,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
       const currentPath = window.location.pathname;
       if (
         currentPath === '/admin/login' ||
+        currentPath === '/employer-login' ||
+        currentPath === '/employer/login' ||
         currentPath === '/company-admin' ||
         currentPath === '/org-admin' ||
         currentPath === '/company/login'
@@ -78,7 +80,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
           )}
         >
           <Building2 className="w-3.5 h-3.5 text-emerald-300" />
-          <span>Company / Org Admin</span>
+          <span>Employer & Company Admin</span>
         </button>
 
         <button
@@ -92,7 +94,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
           )}
         >
           <Users className="w-3.5 h-3.5" />
-          <span>Employee & HR Portal</span>
+          <span>Employee Self-Service (ESS)</span>
         </button>
 
         <button
@@ -149,14 +151,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
             <div className="space-y-2">
               <h1 className="text-xl font-bold tracking-tight text-white">
                 {authContext === 'admin'
-                  ? 'Company Administration & Governance'
+                  ? 'Employer & Company Administration'
                   : authContext === 'platform'
                   ? 'Platform Control Plane'
                   : 'One secure workspace for your people operations.'}
               </h1>
               <p className="text-xs text-white/70 leading-relaxed">
                 {authContext === 'admin'
-                  ? 'Enterprise cockpit for Organization Admins: Legal Entities, Custom RBAC, Approval Workflows & Commercials.'
+                  ? 'Enterprise cockpit for Employers, Founders & HR Desk: Workforce Onboarding, Legal Entities, Custom RBAC & Payroll.'
                   : authContext === 'platform'
                   ? 'Manage multi-tenant infrastructure, customer lifecycle, and compliance policies.'
                   : 'Empowering teams with seamless attendance, payroll, talent, and workforce intelligence.'}
