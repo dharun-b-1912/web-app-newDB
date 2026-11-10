@@ -209,7 +209,29 @@ export const PeopleView: React.FC = () => {
   };
 
   const accessibleEmployees = useMemo(() => {
-    return filterAccessibleEmployees(employees);
+    const list = filterAccessibleEmployees(employees);
+    const seenIds = new Set<string>();
+    const seenCodes = new Set<string>();
+    const seenEmails = new Set<string>();
+    const seenNames = new Set<string>();
+    return list.filter((emp) => {
+      if (!emp || !emp.id) return false;
+      const idKey = String(emp.id).toLowerCase();
+      const codeKey = String(emp.employee_code || '').trim().toUpperCase();
+      const emailKey = String(emp.work_email || (emp as any).personal_email || '').trim().toLowerCase();
+      const nameKey = `${String(emp.first_name || '').trim()} ${String(emp.last_name || '').trim()}`.toLowerCase().replace(/\s+/g, ' ');
+
+      if (seenIds.has(idKey)) return false;
+      if (codeKey && seenCodes.has(codeKey)) return false;
+      if (emailKey && seenEmails.has(emailKey)) return false;
+      if (nameKey && nameKey !== ' ' && seenNames.has(nameKey)) return false;
+
+      seenIds.add(idKey);
+      if (codeKey) seenCodes.add(codeKey);
+      if (emailKey) seenEmails.add(emailKey);
+      if (nameKey && nameKey !== ' ') seenNames.add(nameKey);
+      return true;
+    });
   }, [employees, filterAccessibleEmployees]);
 
   // Helper to check if an employee is Vendor

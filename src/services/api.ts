@@ -1342,23 +1342,27 @@ export const api = {
       );
     }
 
-    // Strict deduplication by ID, employee_code, and work_email
+    // Strict deduplication by ID, employee_code, work_email, and name
     const syncSeenIds = new Set<string>();
     const syncSeenCodes = new Set<string>();
     const syncSeenEmails = new Set<string>();
+    const syncSeenNames = new Set<string>();
     list = list.filter((e: any) => {
       if (!e || !e.id) return false;
       const idKey = String(e.id).toLowerCase();
       const codeKey = String(e.employee_code || '').trim().toUpperCase();
       const emailKey = String(e.work_email || e.personal_email || '').trim().toLowerCase();
+      const nameKey = `${String(e.first_name || '').trim()} ${String(e.last_name || '').trim()}`.toLowerCase().replace(/\s+/g, ' ');
 
       if (syncSeenIds.has(idKey)) return false;
       if (codeKey && syncSeenCodes.has(codeKey)) return false;
       if (emailKey && syncSeenEmails.has(emailKey)) return false;
+      if (nameKey && nameKey !== ' ' && syncSeenNames.has(nameKey)) return false;
 
       syncSeenIds.add(idKey);
       if (codeKey) syncSeenCodes.add(codeKey);
       if (emailKey) syncSeenEmails.add(emailKey);
+      if (nameKey && nameKey !== ' ') syncSeenNames.add(nameKey);
       return true;
     });
 
@@ -2031,11 +2035,13 @@ export const api = {
             const dbIds = new Set(data.map((e: any) => String(e.id).toLowerCase()));
             const dbCodes = new Set(data.map((e: any) => String(e.employee_code || '').trim().toUpperCase()).filter(Boolean));
             const dbEmails = new Set(data.map((e: any) => String(e.work_email || e.personal_email || '').trim().toLowerCase()).filter(Boolean));
+            const dbNames = new Set(data.map((e: any) => `${String(e.first_name || '').trim()} ${String(e.last_name || '').trim()}`.toLowerCase().replace(/\s+/g, ' ')).filter(Boolean));
 
-            // Strictly deduplicate data itself first by ID, employee_code, and email
+            // Strictly deduplicate data itself first by ID, employee_code, email, and normalized full name
             const seenIds = new Set<string>();
             const seenCodes = new Set<string>();
             const seenEmails = new Set<string>();
+            const seenNames = new Set<string>();
             const deduplicated: Employee[] = [];
 
             for (const emp of data) {
@@ -2043,10 +2049,12 @@ export const api = {
               const idKey = String(emp.id).toLowerCase();
               const codeKey = String(emp.employee_code || '').trim().toUpperCase();
               const emailKey = String(emp.work_email || emp.personal_email || '').trim().toLowerCase();
+              const nameKey = `${String(emp.first_name || '').trim()} ${String(emp.last_name || '').trim()}`.toLowerCase().replace(/\s+/g, ' ');
 
               if (seenIds.has(idKey)) continue;
               if (codeKey && seenCodes.has(codeKey)) continue;
               if (emailKey && seenEmails.has(emailKey)) continue;
+              if (nameKey && nameKey !== ' ' && seenNames.has(nameKey)) continue;
 
               if (codeKey.startsWith('CE0')) continue;
               if (emailKey.includes('@plant.joycorporatesolutions.com')) continue;
@@ -2054,20 +2062,23 @@ export const api = {
               seenIds.add(idKey);
               if (codeKey) seenCodes.add(codeKey);
               if (emailKey) seenEmails.add(emailKey);
+              if (nameKey && nameKey !== ' ') seenNames.add(nameKey);
               deduplicated.push(emp);
             }
 
-            // Only permit local-only employees that do NOT collide with any DB record
+            // Only permit local-only employees that do NOT collide with any DB record or name
             const cachedEmployees = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
             for (const ce of cachedEmployees) {
               if (!ce || !ce.id || !isValidUUID(ce.id)) continue;
               const idKey = String(ce.id).toLowerCase();
               const codeKey = String(ce.employee_code || '').trim().toUpperCase();
               const emailKey = String(ce.work_email || ce.personal_email || '').trim().toLowerCase();
+              const nameKey = `${String(ce.first_name || '').trim()} ${String(ce.last_name || '').trim()}`.toLowerCase().replace(/\s+/g, ' ');
 
               if (seenIds.has(idKey) || dbIds.has(idKey)) continue;
               if (codeKey && (seenCodes.has(codeKey) || dbCodes.has(codeKey))) continue;
               if (emailKey && (seenEmails.has(emailKey) || dbEmails.has(emailKey))) continue;
+              if (nameKey && nameKey !== ' ' && (seenNames.has(nameKey) || dbNames.has(nameKey))) continue;
 
               if (codeKey.startsWith('CE0')) continue;
               if (emailKey.includes('@plant.joycorporatesolutions.com')) continue;
@@ -2075,6 +2086,7 @@ export const api = {
               seenIds.add(idKey);
               if (codeKey) seenCodes.add(codeKey);
               if (emailKey) seenEmails.add(emailKey);
+              if (nameKey && nameKey !== ' ') seenNames.add(nameKey);
               deduplicated.push(ce);
             }
 
