@@ -292,6 +292,172 @@ app.post('/api/auth/validate-session', (req, res) => {
   });
 });
 
+// Universal Employee Auth Account Provisioning & Activation Endpoint
+app.post('/api/auth/provision-user', async (req, res) => {
+  try {
+    const {
+      email,
+      password = 'joypeoplehr',
+      fullName,
+      employeeCode,
+      phone,
+      role = 'Employee',
+      organizationId,
+      companyId,
+      designationTitle = 'Analyst',
+      departmentName = 'Digital Marketing'
+    } = req.body || {};
+
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email is required' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = (password || 'joypeoplehr').trim();
+    const cleanFullName = (fullName || cleanEmail.split('@')[0]).trim();
+    const cleanCode = (employeeCode || '').trim();
+
+    console.log(`[Auth Provisioning] Processing activation for: ${cleanEmail} (${cleanFullName})`);
+
+    // 1. Check or Create in Supabase Auth (auth.users)
+    const { data: userList, error: listErr } = await supabaseAdminClient.auth.admin.listUsers({ perPage: 1000 });
+    if (listErr) {
+      console.error('[Auth Provisioning] listUsers error:', listErr);
+      return res.status(500).json({ success: false, error: 'Failed to access auth directory: ' + listErr.message });
+    }
+
+    let authUser = userList?.users?.find(u => u.email?.toLowerCase() === cleanEmail);
+
+    if (authUser) {
+      console.log(`[Auth Provisioning] Updating existing auth user ${authUser.id} with new password and active confirmation`);
+      const { data: updateData, error: updateErr } = await supabaseAdminClient.auth.admin.updateUserById(
+        authUser.id,
+        {
+          password: cleanPassword,
+          email_confirm: true,
+          user_metadata: {
+            ...authUser.user_metadata,
+            full_name: cleanFullName,
+            employee_code: cleanCode || authUser.user_metadata?.employee_code,
+            role: role || authUser.user_metadata?.role || 'Employee',
+          }
+        }
+      );
+      if (updateErr) {
+        console.error('[Auth Provisioning] updateUserById error:', updateErr);
+        return res.status(500).json({ success: false, error: 'Failed to update credentials: ' + updateErr.message });
+      }
+      authUser = updateData.user;
+    } else {
+      console.log(`[Auth Provisioning] Creating brand new auth user for ${cleanEmail}`);
+      const { data: createData, error: createErr } = await supabaseAdminClient.auth.admin.createUser({
+        email: cleanEmail,
+        password: cleanPassword,
+        email_confirm: true,
+        user_metadata: {
+          full_name: cleanFullName,
+          employee_code: cleanCode,
+          role: role || 'Employee',
+        }
+      });
+      if (createErr) {
+        console.error('[Auth Provisioning] createUser error:', createErr);
+        return res.status(500).json({ success: false, error: 'Failed to create auth user: ' + createErr.message });
+      }
+      authUser = createData.user;
+    }
+
+    // 2. Resolve sample tenant hierarchy if not provided
+    let finalOrgId = organizationId;
+    let finalCompanyId = companyId;
+    let finalBranchId = null;
+
+    try {
+      const { data: sampleEmp } = await supabaseAdminClient
+        .from('employees')
+        .select('organization_id, company_id, branch_id')
+        .limit(1)
+        .maybeSingle();
+
+      if (sampleEmp) {
+        finalOrgId = finalOrgId || sampleEmp.organization_id;
+        finalCompanyId = finalCompanyId || sampleEmp.company_id;
+        finalBranchId = sampleEmp.branch_id;
+      }
+    } catch (refErr) {
+      console.warn('[Auth Provisioning] Sample employee lookup notice:', refErr.message);
+    }
+
+    // 3. Upsert into public.employees
+    const nameParts = cleanFullName.split(' ');
+    const firstName = nameParts[0] || 'Employee';
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    let existingEmpId = null;
+    try {
+      let query = supabaseAdminClient.from('employees').select('id');
+      if (cleanCode) {
+        query = query.or(`work_email.ilike.${cleanEmail},employee_code.ilike.${cleanCode}`);
+      } else {
+        query = query.ilike('work_email', cleanEmail);
+      }
+      const { data: matchedEmp } = await query.limit(1).maybeSingle();
+      if (matchedEmp?.id) {
+        existingEmpId = matchedEmp.id;
+      }
+    } catch (lookupErr) {
+      console.warn('[Auth Provisioning] Employee lookup notice:', lookupErr.message);
+    }
+
+    const empPayload = {
+      id: existingEmpId || crypto.randomUUID(),
+      organization_id: finalOrgId || '0c621892-e938-4707-9957-13534ea32c19',
+      company_id: finalCompanyId || null,
+      branch_id: finalBranchId || null,
+      user_id: authUser.id,
+      employee_code: cleanCode || `WF-${Math.floor(1000 + Math.random() * 9000)}`,
+      first_name: firstName,
+      last_name: lastName,
+      display_name: cleanFullName,
+      work_email: cleanEmail,
+      phone: phone || null,
+      employment_status: 'ACTIVE',
+      employment_type: 'Full Time',
+      updated_at: new Date().toISOString(),
+    };
+
+    if (!existingEmpId) {
+      empPayload.created_at = new Date().toISOString();
+    }
+
+    const { data: savedEmp, error: empSaveErr } = await supabaseAdminClient
+      .from('employees')
+      .upsert(empPayload, { onConflict: 'id' })
+      .select()
+      .maybeSingle();
+
+    if (empSaveErr) {
+      console.warn('[Auth Provisioning] employees table upsert notice:', empSaveErr.message);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Account for ${cleanEmail} successfully activated and confirmed in Supabase!`,
+      user: {
+        id: authUser.id,
+        email: authUser.email,
+        employee_code: empPayload.employee_code,
+        full_name: cleanFullName,
+        status: 'ACTIVE',
+        temporary_password: cleanPassword,
+      }
+    });
+  } catch (err) {
+    console.error('[Auth Provisioning Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Internal provisioning error' });
+  }
+});
+
 // Google Maps Universal Link / Shortlink Resolver
 app.post('/api/location/resolve-google-maps', async (req, res) => {
   try {

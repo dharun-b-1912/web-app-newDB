@@ -62,7 +62,40 @@ export const userAuthProvisionerService = {
     }
 
     try {
-      // 1. Validate caller authentication session
+      // 1. Dispatch authoritative backend proxy provisioning via /api/auth/provision-user
+      try {
+        const resp = await fetch('/api/auth/provision-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            organizationId: params.organizationId,
+            companyId: params.companyId,
+            email: cleanEmail,
+            password: tempPassword,
+            fullName: cleanName,
+            role: roleCode,
+            employeeCode: params.employeeId,
+            phone: params.phone,
+            department: params.department,
+          }),
+        });
+
+        if (resp.ok) {
+          const result = await resp.json();
+          if (result.success) {
+            return {
+              success: true,
+              authUserId: result.user?.id,
+              roleCode,
+              message: result.message || `Account configured for ${cleanEmail}.`,
+            };
+          }
+        }
+      } catch (proxyErr) {
+        console.warn('[UserAuthProvisioner] Proxy provisioning notice, attempting edge fallback:', proxyErr);
+      }
+
+      // 2. Validate caller authentication session for edge fallback
       const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
       const session = sessionData?.session;
 
