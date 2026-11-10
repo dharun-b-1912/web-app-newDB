@@ -223,7 +223,7 @@ class AttendanceDeviationService {
         await ensureSupabaseSession();
 
         const abortCtrl = new AbortController();
-        const timeoutId = setTimeout(() => abortCtrl.abort(), 3500);
+        const timeoutId = setTimeout(() => abortCtrl.abort(), 15000);
 
         const [{ data: dailyRows }, { data: empList }] = await Promise.all([
           supabase

@@ -1529,7 +1529,7 @@ export const api = {
             if (empIds.length > 0 && !skipEnrichment) {
               try {
                 const enrichAbort = new AbortController();
-                const enrichTimer = setTimeout(() => enrichAbort.abort(), 12000);
+                const enrichTimer = setTimeout(() => enrichAbort.abort(), 25000);
                 const mgrIds = [...new Set(data.map((e: any) => e.reporting_manager_id).filter((id: any) => Boolean(id) && isValidUUID(id)))];
 
                 const [

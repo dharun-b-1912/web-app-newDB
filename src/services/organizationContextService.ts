@@ -274,7 +274,7 @@ class OrganizationContextService {
             }
 
             const abortCtrl = new AbortController();
-            const tid = setTimeout(() => abortCtrl.abort(), 2000);
+            const tid = setTimeout(() => abortCtrl.abort(), 15000);
 
             const [orgRes, compRes] = await Promise.all([
               orgQ.abortSignal(abortCtrl.signal),

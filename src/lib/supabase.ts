@@ -98,7 +98,6 @@ const isTransientNetworkError = (err: any, status?: number): boolean => {
     msg.includes('err_network_changed') ||
     msg.includes('err_internet_disconnected') ||
     msg.includes('err_connection_reset') ||
-    msg.includes('aborted') ||
     msg.includes('timeout')
   );
 };
@@ -108,24 +107,50 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 /**
  * Resilient Supabase Fetch Gateway with Automatic Exponential Backoff & Jitter
  * Handles network throttling, transient socket resets, and ERR_NETWORK_CHANGED gracefully.
+ * Respects caller AbortController cancellation without triggering false retry loops.
  */
 const resilientSupabaseFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  // If the caller already cancelled this request, reject immediately
+  if (init?.signal?.aborted) {
+    const reason = (init.signal as any).reason || new DOMException('The user aborted a request.', 'AbortError');
+    throw reason;
+  }
+
   const maxRetries = 3;
   let lastError: any = null;
   let lastStatus: number | undefined;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // If caller cancelled during backoff delay, abort immediately
+    if (init?.signal?.aborted) {
+      const reason = (init.signal as any).reason || new DOMException('The user aborted a request.', 'AbortError');
+      throw reason;
+    }
+
     const timeoutMs = getResilientTimeoutMs();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let isInternalTimeout = false;
+    const timeoutId = setTimeout(() => {
+      isInternalTimeout = true;
+      controller.abort();
+    }, timeoutMs);
+
+    const onCallerAbort = () => {
+      try {
+        controller.abort((init?.signal as any)?.reason || new DOMException('The user aborted a request.', 'AbortError'));
+      } catch {}
+    };
 
     if (init?.signal) {
-      init.signal.addEventListener('abort', () => controller.abort(), { once: true });
+      init.signal.addEventListener('abort', onCallerAbort, { once: true });
     }
 
     try {
       const res = await fetch(input, { ...init, signal: controller.signal });
       clearTimeout(timeoutId);
+      if (init?.signal) {
+        init.signal.removeEventListener('abort', onCallerAbort);
+      }
 
       // Reset circuit breaker on successful HTTP response
       if (res.ok || (res.status >= 200 && res.status < 500)) {
@@ -145,22 +170,36 @@ const resilientSupabaseFetch = async (input: RequestInfo | URL, init?: RequestIn
       return res;
     } catch (err: any) {
       clearTimeout(timeoutId);
+      if (init?.signal) {
+        init.signal.removeEventListener('abort', onCallerAbort);
+      }
       lastError = err;
 
-      const isRetryable = isTransientNetworkError(err);
+      // Caller intentionally cancelled this request — do NOT retry, do NOT warn, bubble cancellation immediately
+      if (init?.signal?.aborted || (err?.name === 'AbortError' && !isInternalTimeout)) {
+        throw err;
+      }
+
+      const isRetryable = isTransientNetworkError(err) || isInternalTimeout;
       if (isRetryable && attempt < maxRetries) {
         // If offline, wait briefly for connection stabilization
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           await delay(1000);
         }
         const backoffMs = Math.min(3500, 450 * Math.pow(2, attempt)) + Math.floor(Math.random() * 300);
-        console.warn(`[Supabase Fetch] Network fluctuation (${err?.message || 'ERR_NETWORK_CHANGED'}) on attempt ${attempt + 1}/${maxRetries + 1}. Retrying in ${backoffMs}ms...`);
+        const reason = isInternalTimeout ? 'Request timed out' : (err?.message || 'ERR_NETWORK_CHANGED');
+        console.warn(`[Supabase Fetch] Network fluctuation (${reason}) on attempt ${attempt + 1}/${maxRetries + 1}. Retrying in ${backoffMs}ms...`);
         await delay(backoffMs);
         continue;
       }
 
       break;
     }
+  }
+
+  // If caller signal was aborted, rethrow the cancellation
+  if (init?.signal?.aborted || (lastError?.name === 'AbortError' && !lastError?.isInternalTimeout)) {
+    throw lastError;
   }
 
   console.warn('[Supabase Fetch] Network request exhausted retries:', lastError?.message || lastStatus);

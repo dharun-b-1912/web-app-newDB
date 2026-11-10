@@ -104,11 +104,13 @@ export const PeopleView: React.FC = () => {
       } catch {}
 
       try {
-        const { count } = await (supabaseAdmin || supabase)
+        const { count, error } = await (supabaseAdmin || supabase)
           .from('employee_separations')
           .select('id', { count: 'exact', head: true })
-          .in('exit_status', ['INITIATED', 'PENDING_APPROVAL', 'CLEARANCE_IN_PROGRESS']);
-        setExitsCount(count || 0);
+          .in('status', ['INITIATED', 'PENDING_APPROVAL', 'CLEARANCE_IN_PROGRESS']);
+        if (!error && typeof count === 'number') {
+          setExitsCount(count);
+        }
       } catch {}
     } catch (err) {
       console.warn('[PeopleView] Failed to load employees:', err);

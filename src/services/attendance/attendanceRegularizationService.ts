@@ -265,7 +265,7 @@ class AttendanceRegularizationService {
       try {
         // Fast bounded query with 3.5s timeout
         const abortCtrl = new AbortController();
-        const timeoutId = setTimeout(() => abortCtrl.abort(), 3500);
+        const timeoutId = setTimeout(() => abortCtrl.abort(), 15000);
 
         // 1. Primary: Fetch from canonical 'attendance_regularizations' table with strict multi-tenant isolation
         let query = supabase

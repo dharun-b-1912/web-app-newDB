@@ -109,7 +109,7 @@ export const roleResolutionService = {
     if (isSupabaseEnabled && !isPlatformAdmin) {
       try {
         const profAbort = new AbortController();
-        const profTimer = setTimeout(() => profAbort.abort(), 4000);
+        const profTimer = setTimeout(() => profAbort.abort(), 15000);
 
         // First try finding by auth_user_id
         if (authUserId) {
