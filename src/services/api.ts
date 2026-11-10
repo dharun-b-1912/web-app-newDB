@@ -4069,6 +4069,7 @@ export const api = {
         }
 
         const isAuth = await hasAuthenticatedSession();
+        let backendSucceeded = false;
 
         // Apply employee updates and location assignment via backend gateway with service role
         try {
@@ -4078,6 +4079,14 @@ export const api = {
             location_id: (data as any).location_id || (data.employment as any)?.location_id,
             work_location: (data as any).work_location || (data.employment as any)?.work_location,
             work_location_name: (data as any).work_location_name || (data.employment as any)?.work_location_name,
+            profile: data.profile || (data as any).profile,
+            blood_group: (data as any).blood_group || data.profile?.blood_group,
+            marital_status: (data as any).marital_status || data.profile?.marital_status,
+            nationality: (data as any).nationality || data.profile?.nationality,
+            salary: (data as any).salary,
+            annual_ctc: candidateAnnualCtc,
+            monthly_ctc: candidateMonthlyCtc,
+            salary_structure_id: (data as any).salary_structure_id || (data as any).salary?.salary_structure_id,
           };
           const updateRes = await fetch(syncUrl, {
             method: 'POST',
@@ -4088,6 +4097,7 @@ export const api = {
             const resData = await updateRes.json();
             if (resData.success && resData.employee) {
               canonicalRecord = resData.employee;
+              backendSucceeded = true;
             }
           }
         } catch (backendErr) {
@@ -4208,7 +4218,7 @@ export const api = {
         }
 
         // Upsert Employee Profile Details (blood_group, marital_status, nationality)
-        if (isAuth && (data.profile || (data as any).blood_group || (data as any).marital_status)) {
+        if (!backendSucceeded && isAuth && (data.profile || (data as any).blood_group || (data as any).marital_status)) {
           const prof = data.profile || (data as any);
           try {
             await supabase.from('employee_profiles').upsert({
@@ -4218,9 +4228,9 @@ export const api = {
               marital_status: prof.marital_status || null,
               nationality: prof.nationality || 'Indian',
               updated_at: new Date().toISOString(),
-            }, { onConflict: 'employee_id' });
+            }, { onConflict: 'employee_id' }).catch(() => {});
           } catch (e) {
-            console.warn('[API] Profile update warning:', e);
+            // Ignore non-fatal profile update warning on unprivileged clients
           }
         }
 
@@ -4295,7 +4305,7 @@ export const api = {
           // Upsert/Update Employee Salary Assignment if provided
           const candidateAnnualCtc = (data as any).annual_ctc !== undefined ? (data as any).annual_ctc : data.employment?.annual_ctc;
           const candidateMonthlyCtc = (data as any).monthly_ctc !== undefined ? (data as any).monthly_ctc : data.employment?.monthly_ctc;
-          if (isAuth && (candidateAnnualCtc !== undefined || candidateMonthlyCtc !== undefined)) {
+          if (!backendSucceeded && isAuth && (candidateAnnualCtc !== undefined || candidateMonthlyCtc !== undefined)) {
             try {
               const annCtc = Number(candidateAnnualCtc) || 0;
               const monGross = Number(candidateMonthlyCtc) || (annCtc > 0 ? Math.round(annCtc / 12) : 0);
@@ -4305,14 +4315,14 @@ export const api = {
                 const { data: stRow } = await dbClient.from('salary_structures').select('id').ilike('code', rawStructCode).limit(1).maybeSingle();
                 structId = stRow?.id;
               }
-              if (!structId) {
+              if (!structId || !isValidUUID(structId)) {
                 const { data: firstSt } = await dbClient.from('salary_structures').select('id').limit(1).maybeSingle();
                 structId = firstSt?.id || null;
               }
 
               const { data: existingSal } = await dbClient
                 .from('employee_salary_assignments')
-                .select('id')
+                .select('id, salary_structure_id')
                 .eq('employee_id', id)
                 .limit(1)
                 .maybeSingle();
@@ -4321,18 +4331,21 @@ export const api = {
               const effDate = (data as any).salary_effective_from || data.employment?.salary_effective_from || data.employment?.doj || existing.doj || new Date().toISOString().split('T')[0];
 
               if (existingSal?.id) {
+                const salPatch: any = {
+                  annual_ctc: annCtc,
+                  monthly_gross: monGross,
+                  effective_from: effDate,
+                  is_active: true,
+                  updated_at: new Date().toISOString(),
+                };
+                if (structId && isValidUUID(structId)) {
+                  salPatch.salary_structure_id = structId;
+                }
                 await dbClient
                   .from('employee_salary_assignments')
-                  .update({
-                    annual_ctc: annCtc,
-                    monthly_gross: monGross,
-                    salary_structure_id: structId,
-                    effective_from: effDate,
-                    is_active: true,
-                    updated_at: new Date().toISOString(),
-                  })
+                  .update(salPatch)
                   .eq('id', existingSal.id);
-              } else {
+              } else if (structId && isValidUUID(structId)) {
                 await dbClient
                   .from('employee_salary_assignments')
                   .insert({
@@ -4346,7 +4359,7 @@ export const api = {
                   });
               }
             } catch (salErr) {
-              console.warn('[API] updateEmployee salary assignment notice:', salErr);
+              // Ignore non-fatal salary notice
             }
           }
 

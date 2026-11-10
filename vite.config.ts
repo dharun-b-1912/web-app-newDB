@@ -548,7 +548,8 @@ export default defineConfig(({ mode }) => {
               pathname === '/api/auth/provision-user' ||
               pathname === '/api/workforce/update-employee' ||
               pathname === '/api/employees/update' ||
-              pathname === '/api/workforce/assign-location'
+              pathname === '/api/workforce/assign-location' ||
+              pathname === '/api/audit/log'
             )) {
               let body = '';
               req.on('data', chunk => { body += chunk; });
@@ -678,9 +679,86 @@ export default defineConfig(({ mode }) => {
                       } catch (_) {}
                     }
 
+                    // Upsert employee_profiles (blood_group, marital_status, nationality) with service role
+                    if (patch.profile || patch.blood_group || patch.marital_status || patch.nationality) {
+                      const prof = patch.profile || {};
+                      const profPayload: any = {
+                        employee_id: id,
+                        organization_id: updatedEmp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+                        updated_at: now
+                      };
+                      if (prof.blood_group !== undefined || patch.blood_group !== undefined) profPayload.blood_group = prof.blood_group || patch.blood_group || null;
+                      if (prof.marital_status !== undefined || patch.marital_status !== undefined) profPayload.marital_status = prof.marital_status || patch.marital_status || null;
+                      if (prof.nationality !== undefined || patch.nationality !== undefined) profPayload.nationality = prof.nationality || patch.nationality || 'Indian';
+
+                      await supabaseAdmin.from('employee_profiles').upsert(profPayload, { onConflict: 'employee_id' }).catch(() => {});
+                    }
+
+                    // Upsert/Update employee_salary_assignments with service role
+                    if (patch.salary || patch.annual_ctc !== undefined || patch.monthly_ctc !== undefined) {
+                      try {
+                        const sal = patch.salary || {};
+                        const annCtc = Number(sal.annual_ctc ?? patch.annual_ctc ?? 0);
+                        const monGross = Number(sal.monthly_ctc ?? patch.monthly_ctc ?? (annCtc > 0 ? Math.round(annCtc / 12) : 0));
+                        let structId = sal.salary_structure_id || patch.salary_structure_id;
+                        if (!structId || !isUUID(structId)) {
+                          const { data: stRow } = await supabaseAdmin.from('salary_structures').select('id').limit(1).maybeSingle();
+                          structId = stRow?.id;
+                        }
+
+                        const { data: exSal } = await supabaseAdmin.from('employee_salary_assignments').select('id').eq('employee_id', id).maybeSingle();
+                        const effDate = updatedEmp.doj || new Date().toISOString().split('T')[0];
+
+                        if (exSal?.id) {
+                          const salUpdate: any = {
+                            annual_ctc: annCtc,
+                            monthly_gross: monGross,
+                            effective_from: effDate,
+                            is_active: true,
+                            updated_at: now
+                          };
+                          if (structId && isUUID(structId)) salUpdate.salary_structure_id = structId;
+                          await supabaseAdmin.from('employee_salary_assignments').update(salUpdate).eq('id', exSal.id);
+                        } else if (structId && isUUID(structId)) {
+                          await supabaseAdmin.from('employee_salary_assignments').insert({
+                            organization_id: updatedEmp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+                            employee_id: id,
+                            salary_structure_id: structId,
+                            annual_ctc: annCtc,
+                            monthly_gross: monGross,
+                            effective_from: effDate,
+                            is_active: true
+                          });
+                        }
+                      } catch (salErr) {
+                        console.warn('[Vite Dev Gateway] Salary assignment notice:', salErr);
+                      }
+                    }
+
                     res.statusCode = 200;
                     res.setHeader('Content-Type', 'application/json');
                     return res.end(JSON.stringify({ success: true, employee: updatedEmp }));
+                  }
+
+                  if (pathname === '/api/audit/log') {
+                    const isUUID = (s: any) => typeof s === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+                    const orgId = isUUID(payload.organization_id) ? payload.organization_id : '0c621892-e938-4707-9957-13534ea32c19';
+                    const entityId = isUUID(payload.entity_id) ? payload.entity_id : orgId;
+
+                    const { data, error } = await supabaseAdmin.from('audit_logs').insert({
+                      organization_id: orgId,
+                      entity_type: payload.entity_type || 'AUTH_IDENTITY',
+                      entity_id: entityId,
+                      action: payload.action || 'PROFILE_UPDATED',
+                      new_values: payload.new_values || {},
+                      ip_address: payload.ip_address || (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1').toString().split(',')[0].trim(),
+                      user_agent: payload.user_agent || req.headers['user-agent'] || null,
+                      created_at: payload.created_at || new Date().toISOString()
+                    });
+
+                    res.statusCode = 200;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: !error, warning: error?.message, data }));
                   }
 
                   if (pathname === '/api/workforce/assign-location') {
