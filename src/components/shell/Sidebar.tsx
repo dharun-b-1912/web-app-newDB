@@ -90,6 +90,9 @@ import {
   Calculator,
   Upload,
   ShoppingCart,
+  Factory,
+  Scissors,
+  Wallet,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { usePermission } from '../../hooks/usePermission';
@@ -104,6 +107,7 @@ import { hrEventBus } from '../../services/hrEventBus';
 import { supabase } from '../../lib/supabase';
 import { canUseFeature, featureEntitlementService } from '../../services/tenant/featureEntitlementService';
 import { moduleRegistryService } from '../../services/platform/moduleRegistryService';
+import { garmentEntitlementService } from '../../services/garment/garmentEntitlementService';
 import { isActiveRoute } from '../../lib/router/routeRegistry';
 import { JoyLogo } from '../common/JoyLogo';
 
@@ -327,6 +331,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   const { canViewModule, primaryRole, filterAccessibleEmployees, user } = usePermission();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const activeItemRef = useRef<HTMLButtonElement>(null);
+  const [garmentEnabled, setGarmentEnabled] = useState<boolean>(false);
+
+  useEffect(() => {
+    let active = true;
+    const syncEntitlement = () => {
+      garmentEntitlementService
+        .isEnabled()
+        .then((enabled) => {
+          if (active) setGarmentEnabled(enabled);
+        })
+        .catch(() => {});
+    };
+    syncEntitlement();
+    const handler = () => syncEntitlement();
+    window.addEventListener('garment:entitlement-changed', handler);
+    return () => {
+      active = false;
+      window.removeEventListener('garment:entitlement-changed', handler);
+    };
+  }, [user]);
 
   // Each role gets its own isolated collapse-state key so Super Admin and
   // Company Admin (or any other role switch) never share or overwrite each other.
@@ -558,6 +582,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     },
   ];
 
+  const garmentAdminGroup: NavGroup = {
+    groupName: 'GARMENT WORKFORCE',
+    items: [
+      { id: 'garment-dashboard', label: 'Garment Command', icon: Factory, badge: 'Add-On', badgeVariant: 'info' },
+      { id: 'garment-units', label: 'Units, Lines & Teams', icon: Layers },
+      { id: 'garment-wages', label: 'Worker Wages & Grades', icon: Users },
+      { id: 'garment-catalog', label: 'Styles, Ops & Rates', icon: Scissors },
+      { id: 'garment-operations', label: 'Floor Attendance & QC', icon: CheckSquare },
+      { id: 'garment-advances', label: 'Incentives & Advances', icon: Wallet },
+      { id: 'garment-payroll', label: 'Piece-Rate Payroll', icon: CircleDollarSign },
+      { id: 'garment-reports', label: 'Factory Reports', icon: BarChart3 },
+    ],
+  };
+
   const standardGroups: NavGroup[] = [
     {
       groupName: 'MY WORKSPACE',
@@ -681,6 +719,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
       ],
     },
+    garmentAdminGroup,
     {
       groupName: 'CLOCKING & DEVICES',
       items: [
@@ -967,6 +1006,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
       ],
     },
+    garmentAdminGroup,
     {
       groupName: 'CLOCKING & DEVICES',
       items: [
@@ -1126,6 +1166,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
+      groupName: 'GARMENT WORKFORCE',
+      items: [
+        { id: 'garment-dashboard', label: 'Garment Command', icon: Factory },
+        { id: 'garment-operations', label: 'Floor Ops & QC', icon: CheckSquare },
+        { id: 'garment-payroll', label: 'Payroll Approvals', icon: CircleDollarSign },
+        { id: 'garment-reports', label: 'Line Reports', icon: BarChart3 },
+      ],
+    },
+    {
       groupName: 'PERFORMANCE',
       items: [
         { id: 'performance-dashboard', label: 'Performance Dashboard', icon: LayoutDashboard },
@@ -1182,6 +1231,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
+      groupName: 'GARMENT WORKFORCE',
+      items: [
+        { id: 'garment-dashboard', label: 'Garment Floor Hub', icon: Factory },
+        { id: 'garment-operations', label: 'Floor Attendance & QC', icon: CheckSquare },
+        { id: 'garment-reports', label: 'Line Reports', icon: BarChart3 },
+      ],
+    },
+    {
       groupName: 'EMPLOYEE SELF-SERVICE',
       items: [
         { id: 'ess-dashboard', label: 'ESS Home', icon: LayoutDashboard },
@@ -1213,6 +1270,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'ess-documents', label: 'My Documents', icon: FileText },
         { id: 'ess-communication', label: 'Communication', icon: Megaphone },
         { id: 'ess-profile', label: 'My Profile', icon: UserCheck },
+      ],
+    },
+    {
+      groupName: 'GARMENT WORKFORCE',
+      items: [
+        { id: 'garment-my-earnings', label: 'My Piece Earnings', icon: Scissors },
       ],
     },
   ];
@@ -1309,6 +1372,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   // Dynamic tenant-level subscription and feature entitlement resolution
   const filteredNavGroups = navGroups
     .filter((group) => {
+      if (group.groupName === 'GARMENT WORKFORCE' && !garmentEnabled && !isPlatformAdmin) {
+        return false;
+      }
+
       // 1. Centralized Module Registry Group Visibility (Launch Scope / Paused Status)
       if (!moduleRegistryService.isNavGroupVisible(group.groupName, primaryRole)) {
         return false;

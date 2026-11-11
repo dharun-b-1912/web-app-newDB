@@ -4,6 +4,10 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { handleGarmentRequest } = require('./server/garmentRoutes.cjs');
 
 let _supabaseAdminInstance: any = null;
 async function getSupabaseAdmin(env: Record<string, string>) {
@@ -511,6 +515,32 @@ export default defineConfig(({ mode }) => {
             if (!req.url) return next();
             const parsedUrl = new URL(req.url, 'http://localhost');
             const pathname = parsedUrl.pathname;
+
+            if (pathname.startsWith('/api/garment/')) {
+              try {
+                const supabaseAdmin = await getSupabaseAdmin(env);
+                if (req.method === 'GET' || req.method === 'HEAD') {
+                  return await handleGarmentRequest(req, res, pathname, {}, supabaseAdmin);
+                }
+                let gBody = '';
+                req.on('data', chunk => { gBody += chunk; });
+                req.on('end', async () => {
+                  try {
+                    const gPayload = gBody ? JSON.parse(gBody) : {};
+                    return await handleGarmentRequest(req, res, pathname, gPayload, supabaseAdmin);
+                  } catch (e: any) {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: false, error: e.message }));
+                  }
+                });
+                return;
+              } catch (err: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({ success: false, error: err.message }));
+              }
+            }
 
             if (req.method === 'GET' && (pathname === '/api/workforce/sync' || pathname === '/api/employees/sync')) {
               try {

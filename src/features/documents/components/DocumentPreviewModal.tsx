@@ -5,6 +5,7 @@ import { useToast } from '../../../components/ui/Toast';
 import { documentVerificationService } from '../../../services/document/documentVerificationService';
 import { documentAuditService } from '../../../services/document/documentAuditService';
 import { documentSecurityService } from '../../../services/document/documentSecurityService';
+import { supabaseStorageEngine } from '../../../services/document/supabaseStorageEngine';
 import { DocumentMaster } from '../../../types';
 import { supabase } from '../../../lib/supabase';
 import { getSecureDocumentUrl } from '../../../lib/storage/secureStorage';
@@ -125,14 +126,25 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       });
       setSession(sess);
 
-      // 4. Resolve the ACTUAL newest file from Supabase Storage
+      // 4. Resolve the ACTUAL file from Supabase Storage across canonical & fallback buckets
       const resolveFile = async () => {
         let resolved = '';
         let fileName = document.current_version?.file_name || document.file_name || `${document.title}.pdf`;
         let fileSizeStr = '';
         const empId = document.employee_id || document.subject_id;
+        const knownStoragePath = document.current_version?.storage_path || document.storage_path;
+        const preferredBucket = document.storage_bucket || 'peoplehr-employee-documents';
 
-        if (empId) {
+        if (knownStoragePath) {
+          try {
+            const signedRes = await supabaseStorageEngine.createSignedUrl(preferredBucket, knownStoragePath, 3600);
+            if (signedRes.signedUrl) {
+              resolved = signedRes.signedUrl;
+            }
+          } catch (_) {}
+        }
+
+        if (!resolved && empId) {
           try {
             const folderPath = `employees/${empId}/documents/${document.id}`;
             const { data: files } = await supabase.storage.from('employee-documents').list(folderPath, {
@@ -163,18 +175,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           } catch (_) {}
         }
 
-        // Fallback to direct document file_url or storage_path
-        if (!resolved) {
+        // Fallback to direct HTTP file_url if stored
+        if (!resolved && (document.file_url?.startsWith('http') || document.current_version?.file_url?.startsWith('http'))) {
           resolved = document.file_url || document.current_version?.file_url || '';
-          const storagePath = document.current_version?.storage_path || document.storage_path;
-          if (storagePath) {
-            try {
-              const secureUrl = await getSecureDocumentUrl('employee-documents', storagePath, 3600);
-              if (secureUrl) {
-                resolved = secureUrl;
-              }
-            } catch (_) {}
-          }
         }
 
         setFileUrl(resolved);

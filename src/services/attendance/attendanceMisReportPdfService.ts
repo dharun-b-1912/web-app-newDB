@@ -10,8 +10,24 @@ import {
   AttendanceExceptionItem,
   HierarchicalDepartmentGroup,
 } from './attendanceMisReportService';
+import {
+  generateMisPdf,
+  type MisExportArtifact,
+  type MisExportRequest,
+  type MisSourceDataset,
+} from './misReportExportEngine';
 
 export class AttendanceMisReportPdfService {
+  /**
+   * Generates a report-specific, filter-reconciled branded A4 PDF artifact
+   */
+  public static async generateReportSpecificPdf(
+    request: MisExportRequest,
+    source: MisSourceDataset
+  ): Promise<MisExportArtifact> {
+    return generateMisPdf(request, source);
+  }
+
   /**
    * Generates a complete vector A4 jsPDF instance ready for download, print, or email attachment
    */
@@ -769,9 +785,9 @@ export class AttendanceMisReportPdfService {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(51, 65, 85);
-    doc.text(`• Missing Check-Ins: ${dData.missingCheckInCount || 2} employee(s) arrived with unrecorded entry punch.`, margin + 4, y + 12);
-    doc.text(`• Missing Check-Outs: ${dData.missingCheckOutCount || 3} employee(s) departed without final shift punch.`, margin + 4, y + 18);
-    doc.text(`• Pending Regularization Requests: ${dData.regularizationPendingCount || 4} awaiting Team Lead review.`, margin + 4, y + 24);
+    doc.text(`• Missing Check-Ins: ${dData.missingCheckInCount || 0} employee(s) arrived with unrecorded entry punch.`, margin + 4, y + 12);
+    doc.text(`• Missing Check-Outs: ${dData.missingCheckOutCount || 0} employee(s) departed without final shift punch.`, margin + 4, y + 18);
+    doc.text(`• Pending Regularization Requests: ${dData.regularizationPendingCount || 0} awaiting Team Lead review.`, margin + 4, y + 24);
     doc.text(`• Action Required: Supervisors must review and resolve regularization tickets prior to pay period cutoff.`, margin + 4, y + 30);
 
     // =========================================================================
@@ -799,29 +815,45 @@ export class AttendanceMisReportPdfService {
     doc.text('RECORDED OT (h)', margin + 172, y + 4.8, { align: 'right' });
     y += 7;
 
-    const deptList = (otSumm.departmentRollups || [
-      { department: 'Engineering & Technology', totalEmployees: 8, totalApprovedOtHours: 18.5, employeesApproachingThreshold: 2, employeesExceededThreshold: 1 },
-      { department: 'Operations & Fulfillment', totalEmployees: 6, totalApprovedOtHours: 24.0, employeesApproachingThreshold: 1, employeesExceededThreshold: 1 },
-      { department: 'People & HR Operations', totalEmployees: 4, totalApprovedOtHours: 4.5, employeesApproachingThreshold: 0, employeesExceededThreshold: 0 },
-      { department: 'Finance & Accounts', totalEmployees: 3, totalApprovedOtHours: 6.0, employeesApproachingThreshold: 0, employeesExceededThreshold: 0 },
-    ]);
+    const deptList = dData.departmentBreakdown && dData.departmentBreakdown.length > 0
+      ? dData.departmentBreakdown
+      : (otSumm.departmentRollups || []).map((r: any) => ({
+          department: r.department,
+          totalEmployees: r.totalEmployees || 0,
+          presentCount: r.totalEmployees || 0,
+          turnoutPct: 0,
+          lateCount: r.employeesApproachingThreshold || 0,
+          otHours: r.totalApprovedOtHours || 0,
+        }));
 
-    deptList.forEach((d: any, i: number) => {
-      doc.setFillColor(i % 2 === 0 ? 255 : 248, 250, 252);
-      doc.rect(margin, y, contentWidth, 6, 'F');
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.8);
-      doc.setTextColor(30, 41, 59);
+    if (deptList.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('No department attendance data recorded for the selected period.', margin + 3, y + 6);
+      y += 10;
+    } else {
+      deptList.forEach((d: any, i: number) => {
+        doc.setFillColor(i % 2 === 0 ? 255 : 248, 250, 252);
+        doc.rect(margin, y, contentWidth, 6, 'F');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.8);
+        doc.setTextColor(30, 41, 59);
 
-      doc.text(d.department, margin + 3, y + 4.2);
-      doc.text(String(d.totalEmployees || 0), margin + 65, y + 4.2);
-      doc.text(String(Math.round((d.totalEmployees || 0) * 0.92)), margin + 92, y + 4.2);
-      doc.text('92.0%', margin + 118, y + 4.2);
-      doc.text(String(d.employeesApproachingThreshold || 0), margin + 145, y + 4.2);
-      doc.text(`${Number(d.totalApprovedOtHours || 0).toFixed(1)}h`, margin + 172, y + 4.2, { align: 'right' });
+        const total = Number(d.totalEmployees ?? d.total ?? 0);
+        const present = Number(d.presentCount ?? d.present ?? 0);
+        const pct = typeof d.turnoutPct === 'number' ? d.turnoutPct : (total > 0 ? Number(((present / total) * 100).toFixed(1)) : 0);
 
-      y += 6;
-    });
+        doc.text(String(d.department || 'Operations'), margin + 3, y + 4.2);
+        doc.text(String(total), margin + 65, y + 4.2);
+        doc.text(String(present), margin + 92, y + 4.2);
+        doc.text(`${pct}%`, margin + 118, y + 4.2);
+        doc.text(String(d.lateCount ?? d.late ?? d.employeesApproachingThreshold ?? 0), margin + 145, y + 4.2);
+        doc.text(`${Number(d.otHours ?? d.totalApprovedOtHours ?? 0).toFixed(1)}h`, margin + 172, y + 4.2, { align: 'right' });
+
+        y += 6;
+      });
+    }
 
     y += 12;
 
@@ -838,31 +870,41 @@ export class AttendanceMisReportPdfService {
     doc.setFontSize(6.8);
     doc.setTextColor(71, 85, 105);
     doc.text('SHIFT SCHEDULE', margin + 3, y + 4.8);
-    doc.text('TIMINGS', margin + 70, y + 4.8);
+    doc.text('PRESENT', margin + 75, y + 4.8);
     doc.text('ASSIGNED WORKFORCE', margin + 115, y + 4.8);
     doc.text('TURNOUT %', margin + 172, y + 4.8, { align: 'right' });
     y += 7;
 
-    const shifts = [
-      { name: 'General Corporate Shift', time: '09:00 - 18:00', count: 14, turnout: 93.5 },
-      { name: 'Morning Plant Shift (A)', time: '06:00 - 14:00', count: 4, turnout: 100 },
-      { name: 'Evening Plant Shift (B)', time: '14:00 - 22:00', count: 3, turnout: 91.0 },
-    ];
+    const shifts = dData.shiftBreakdown && dData.shiftBreakdown.length > 0
+      ? dData.shiftBreakdown
+      : [];
 
-    shifts.forEach((s, i) => {
-      doc.setFillColor(i % 2 === 0 ? 255 : 248, 250, 252);
-      doc.rect(margin, y, contentWidth, 6, 'F');
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.8);
-      doc.setTextColor(30, 41, 59);
+    if (shifts.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('No shift roster breakdown recorded for the selected period.', margin + 3, y + 6);
+      y += 10;
+    } else {
+      shifts.forEach((s: any, i: number) => {
+        doc.setFillColor(i % 2 === 0 ? 255 : 248, 250, 252);
+        doc.rect(margin, y, contentWidth, 6, 'F');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.8);
+        doc.setTextColor(30, 41, 59);
 
-      doc.text(s.name, margin + 3, y + 4.2);
-      doc.text(s.time, margin + 70, y + 4.2);
-      doc.text(String(s.count), margin + 115, y + 4.2);
-      doc.text(`${s.turnout}%`, margin + 172, y + 4.2, { align: 'right' });
+        const total = Number(s.totalEmployees ?? s.total ?? 0);
+        const present = Number(s.presentCount ?? s.present ?? 0);
+        const pct = typeof s.turnoutPct === 'number' ? s.turnoutPct : (total > 0 ? Number(((present / total) * 100).toFixed(1)) : 0);
 
-      y += 6;
-    });
+        doc.text(String(s.shift || s.name || 'General Shift'), margin + 3, y + 4.2);
+        doc.text(String(present), margin + 75, y + 4.2);
+        doc.text(String(total), margin + 115, y + 4.2);
+        doc.text(`${pct}%`, margin + 172, y + 4.2, { align: 'right' });
+
+        y += 6;
+      });
+    }
 
     // =========================================================================
     // PAGE 4: OVERTIME GOVERNANCE & 4-MONTH PERIOD ALLOCATION
@@ -878,14 +920,18 @@ export class AttendanceMisReportPdfService {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
     doc.setTextColor(15, 23, 42);
-    doc.text('CURRENT 4-MONTH PERIOD: PERIOD 3 (SEP 1 – DEC 31, 2026)', margin + 3.5, y + 5);
+    doc.text(
+      `CURRENT 4-MONTH PERIOD: ${otSumm.currentPeriod?.label || 'ACTIVE PERIOD'}`,
+      margin + 3.5,
+      y + 5
+    );
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.8);
     doc.setTextColor(71, 85, 105);
     doc.text(`• Individual Period Allocation: 20.00 Hours | Annual Allocation: 60.00 Hours`, margin + 3.5, y + 10);
-    doc.text(`• Overall Period Approved OT: ${otSumm.totalPeriodApprovedHours || 48.5} Hours across ${otSumm.employeesWithOtInPeriod || 8} employees.`, margin + 3.5, y + 14.5);
-    doc.text(`• Total Period Capacity: ${(otSumm.totalWorkforce || 21) * 20} Hours | Utilization: ${otSumm.overallPeriodUtilizationPct || 11.5}%`, margin + 3.5, y + 19);
+    doc.text(`• Overall Period Approved OT: ${otSumm.totalPeriodApprovedHours ?? 0} Hours across ${otSumm.employeesWithOtInPeriod ?? 0} employees.`, margin + 3.5, y + 14.5);
+    doc.text(`• Total Period Capacity: ${(otSumm.totalWorkforce ?? 0) * 20} Hours | Utilization: ${otSumm.overallPeriodUtilizationPct ?? 0}%`, margin + 3.5, y + 19);
 
     y += 26;
 
@@ -911,9 +957,14 @@ export class AttendanceMisReportPdfService {
     doc.text('STATUS', margin + 178, y + 4.8, { align: 'right' });
     y += 7;
 
-    const empOtList = (otSumm.employeeRecords || []).slice(0, 16);
+    const empOtList = otSumm.employeeRecords || [];
 
     empOtList.forEach((rec: any, idx: number) => {
+      if (y > pageHeight - 25) {
+        doc.addPage();
+        y = drawHeader('Page 4 — Overtime Governance (Continued)', '4-Month Period Allocation Ledger');
+        y += 4;
+      }
       doc.setFillColor(idx % 2 === 0 ? 255 : 248, 250, 252);
       doc.rect(margin, y, contentWidth, 5.8, 'F');
 
@@ -976,14 +1027,14 @@ export class AttendanceMisReportPdfService {
     doc.text('EXCEPTION DESCRIPTION & REQUIRED ACTION', margin + 115, y + 4.8);
     y += 7;
 
-    const excList = (params.exceptions && params.exceptions.length > 0)
-      ? params.exceptions.slice(0, 10)
-      : [
-          { employeeName: 'Dharun B', ruleCategory: 'OVERTIME_EXCEEDED', severity: 'CRITICAL', description: 'Overtime 21.5h exceeded 20h 4-month limit by 1.5h. Review required.' },
-          { employeeName: 'Praveen K', ruleCategory: 'OVERTIME_APPROACHING', severity: 'HIGH', description: 'Overtime 18.5h is at 92.5% of 20h limit. 1.5h remaining.' },
-          { employeeName: 'Rajesh M', ruleCategory: 'MISSING_PUNCH', severity: 'MEDIUM', description: 'Missing check-out punch for shift ending at 18:00. Regularization ticket pending.' },
-          { employeeName: 'Karthik S', ruleCategory: 'REPEATED_LATE', severity: 'MEDIUM', description: 'Accumulated 3 late arrivals exceeding 15 min grace window.' },
-        ];
+    const excList = params.exceptions || [];
+    if (excList.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('No unresolved HR exceptions matched the current reporting period.', margin + 3, y + 6);
+      y += 10;
+    }
 
     excList.forEach((e: any, idx: number) => {
       doc.setFillColor(idx % 2 === 0 ? 255 : 248, 250, 252);

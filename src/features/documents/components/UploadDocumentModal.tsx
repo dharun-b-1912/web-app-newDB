@@ -58,26 +58,43 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileHashPreview, setFileHashPreview] = useState<string>('');
+  const [isTitleManuallyEdited, setIsTitleManuallyEdited] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
-      const types = documentService.getDocumentTypes();
-      setDocumentTypes(types);
+      setSelectedFile(null);
+      setFileHashPreview('');
+      setDescription('');
+      setIssuedAt('');
+      setExpiresAt('');
+      setIsTitleManuallyEdited(false);
+      setTitle('');
 
-      const fetchEmps = async () => {
+      const loadModalData = async () => {
+        try {
+          const types = await documentService.fetchDocumentTypes();
+          setDocumentTypes(types);
+          if (types.length > 0 && !types.some(t => t.code === selectedDocTypeCode)) {
+            setSelectedDocTypeCode(types[0].code);
+          }
+        } catch {
+          setDocumentTypes(documentService.getDocumentTypes());
+        }
+
         try {
           const emps = await api.getEmployees();
-          setEmployees(Array.isArray(emps) ? emps : []);
-          if (!selectedSubjectId && emps.length > 0) {
-            setSelectedSubjectId(emps[0].id);
-            setSelectedSubjectName(`${emps[0].first_name} ${emps[0].last_name}`);
+          const list = Array.isArray(emps) ? emps : [];
+          setEmployees(list);
+          if (!selectedSubjectId && list.length > 0) {
+            setSelectedSubjectId(list[0].id);
+            setSelectedSubjectName(`${list[0].first_name} ${list[0].last_name}`);
           }
         } catch {
           setEmployees([]);
         }
       };
-      fetchEmps();
+      loadModalData();
     }
   }, [isOpen]);
 
@@ -86,11 +103,11 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
   useEffect(() => {
     if (activeDocType) {
       setClassification(activeDocType.default_classification);
-      if (!title || title.trim() === '') {
+      if (!isTitleManuallyEdited) {
         setTitle(`${selectedSubjectName ? `${selectedSubjectName} - ` : ''}${activeDocType.name}`);
       }
     }
-  }, [selectedDocTypeCode, selectedSubjectName]);
+  }, [selectedDocTypeCode, selectedSubjectName, activeDocType, isTitleManuallyEdited]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -113,13 +130,19 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
       return;
     }
 
+    const activeOrgId =
+      (typeof window !== 'undefined' && localStorage.getItem('workforce_active_org_id')) ||
+      api.getCurrentUser()?.organization_id ||
+      '0c621892-e938-4707-9957-13534ea32c19';
+
     setIsSubmitting(true);
     try {
       await documentService.uploadDocument({
         subjectType,
-        subjectId: selectedSubjectId || 'comp-joy-01',
+        subjectId: selectedSubjectId || activeOrgId,
         subjectName: selectedSubjectName || 'Company Record',
         documentTypeCode: selectedDocTypeCode,
+        documentTypeId: activeDocType?.id,
         categoryCode: activeDocType?.category_id || 'IDENTITY',
         title: title || `${selectedDocTypeCode} Record`,
         description,
@@ -256,7 +279,10 @@ export const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
             type="text"
             required
             value={title}
-            onChange={e => setTitle(e.target.value)}
+            onChange={e => {
+              setIsTitleManuallyEdited(true);
+              setTitle(e.target.value);
+            }}
             placeholder="Official document title"
             className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
           />

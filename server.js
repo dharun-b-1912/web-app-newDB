@@ -27,6 +27,10 @@ import { Ratelimit } from '@upstash/ratelimit';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { handleGarmentRequest } = require('./server/garmentRoutes.cjs');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2050,6 +2054,17 @@ app.post(['/api/razorpay/webhook', '/api/webhooks/razorpay'], async (req, res) =
   } catch (err) {
     console.error('[Razorpay Webhook Error]:', err.message);
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// Garment Workforce Add-on API Gateway
+app.use('/api/garment', async (req, res) => {
+  try {
+    const pathname = req.originalUrl.split('?')[0];
+    return await handleGarmentRequest(req, res, pathname, req.body || {}, supabaseAdminClient);
+  } catch (err) {
+    console.error('[Garment API Gateway Error]:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Internal Server Error' });
   }
 });
 

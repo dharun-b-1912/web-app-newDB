@@ -1241,7 +1241,7 @@ class EmployeeAuthService {
           body: JSON.stringify(auditPayload),
         }).catch(() => {
           // Fallback to direct client insert with silent catch
-          supabase.from('audit_logs').insert(auditPayload).then(() => {}).catch(() => {});
+          supabase.from('audit_logs').insert(auditPayload).then(() => {}, () => {});
         });
       }
     } catch {}

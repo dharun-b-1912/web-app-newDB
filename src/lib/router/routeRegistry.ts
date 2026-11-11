@@ -134,6 +134,17 @@ export const APP_ROUTES = {
     payslips: '/payroll/payslips',
     fnf: '/payroll/fnf',
   },
+  garment: {
+    dashboard: '/garment',
+    units: '/garment/units',
+    wages: '/garment/wages',
+    catalog: '/garment/catalog',
+    operations: '/garment/operations',
+    advances: '/garment/advances',
+    payroll: '/garment/payroll',
+    reports: '/garment/reports',
+    myEarnings: '/garment/my-earnings',
+  },
   performance: {
     root: '/performance',
     goals: '/performance/goals',
@@ -350,6 +361,18 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
   { id: 'payroll-reports', label: 'Payroll Reports & ECR', canonicalPath: '/payroll/reports', section: 'PAYROLL', aliases: ['/payroll-reports'] },
   { id: 'payroll-documents', label: 'Digital Payslips & Docs', canonicalPath: '/payroll/payslips', section: 'PAYROLL', aliases: ['/payroll-documents', '/payroll/documents'] },
   { id: 'payroll-fnf', label: 'Full & Final (F&F)', canonicalPath: '/payroll/fnf', section: 'PAYROLL', aliases: ['/payroll-fnf'] },
+
+  // ── GARMENT WORKFORCE ADD-ON ──
+  { id: 'garment', label: 'Garment Command', canonicalPath: '/garment', section: 'GARMENT WORKFORCE', aliases: ['/garment-dashboard'], exact: true },
+  { id: 'garment-dashboard', label: 'Garment Floor Dashboard', canonicalPath: '/garment', section: 'GARMENT WORKFORCE', aliases: ['/garment-dashboard'], exact: true },
+  { id: 'garment-units', label: 'Units, Lines & Teams', canonicalPath: '/garment/units', section: 'GARMENT WORKFORCE', aliases: ['/garment-units'] },
+  { id: 'garment-wages', label: 'Worker Categories & Wages', canonicalPath: '/garment/wages', section: 'GARMENT WORKFORCE', aliases: ['/garment-wages'] },
+  { id: 'garment-catalog', label: 'Styles, Ops, Orders & Rates', canonicalPath: '/garment/catalog', section: 'GARMENT WORKFORCE', aliases: ['/garment-catalog'] },
+  { id: 'garment-operations', label: 'Floor Attendance & QC Entry', canonicalPath: '/garment/operations', section: 'GARMENT WORKFORCE', aliases: ['/garment-operations'] },
+  { id: 'garment-advances', label: 'Incentives & Advances', canonicalPath: '/garment/advances', section: 'GARMENT WORKFORCE', aliases: ['/garment-advances'] },
+  { id: 'garment-payroll', label: 'Piece-Rate Payroll Runs', canonicalPath: '/garment/payroll', section: 'GARMENT WORKFORCE', aliases: ['/garment-payroll'] },
+  { id: 'garment-reports', label: 'Production & Cost Reports', canonicalPath: '/garment/reports', section: 'GARMENT WORKFORCE', aliases: ['/garment-reports'] },
+  { id: 'garment-my-earnings', label: 'My Garment Earnings', canonicalPath: '/garment/my-earnings', section: 'GARMENT WORKFORCE', aliases: ['/garment-my-earnings'] },
 
   // ── VENDOR & PROCUREMENT GOVERNANCE ──
   { id: 'vendor-portal', label: 'Vendor Governance Overview', canonicalPath: '/vendor-portal', section: 'VENDOR & PROCUREMENT GOVERNANCE', aliases: ['/vendor', '/vendor/portal', '/vendor-dashboard', '/vendor/dashboard'] },

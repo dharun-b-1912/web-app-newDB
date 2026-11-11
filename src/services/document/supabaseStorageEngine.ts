@@ -195,8 +195,9 @@ class SupabaseStorageEngine {
         }
       }
 
-      if (lastError && !lastError.message?.includes('Bucket not found')) {
-        console.warn('[SupabaseStorageEngine] Storage upload warning:', lastError.message);
+      if (lastError) {
+        console.warn('[SupabaseStorageEngine] Storage upload failed across all buckets:', lastError.message || lastError);
+        throw new Error(`Storage upload failed: ${lastError.message || 'Check authentication and bucket permissions.'}`);
       }
     }
 
@@ -243,9 +244,17 @@ class SupabaseStorageEngine {
           }
         } catch (_) {}
       }
+
+      // In live Supabase mode, do not fabricate fake internal URLs when object cannot be signed
+      return {
+        signedUrl: '',
+        expiresAt: expiryDate,
+        storageBucket: bucket,
+        storagePath: cleanPath,
+      };
     }
 
-    // Deterministic mock preview URL for local sandbox testing
+    // Deterministic preview URL only when running purely offline / without Supabase
     return {
       signedUrl: `https://storage.joypeoplehr.internal/${bucket}/${cleanPath}?expires=${Date.now() + expiresInSeconds * 1000}`,
       expiresAt: expiryDate,

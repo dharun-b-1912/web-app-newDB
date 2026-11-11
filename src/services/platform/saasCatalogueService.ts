@@ -3827,6 +3827,20 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     isActive: true,
     iconName: 'Sparkles',
   },
+  {
+    id: 'addon-garment-workforce',
+    addonKey: 'garment_workforce',
+    moduleKey: 'garment_workforce',
+    name: 'Garment & Clothing Workforce Management & Piece-Rate Payroll',
+    description: 'Factory/line production tracking, supervisor mobile batch entry, QC inspection ledger, and daily/hourly/piece-rate/hybrid garment payroll engine.',
+    category: 'Workforce',
+    monthlyPrice: 4999,
+    billingUnit: 'Per Factory / Month',
+    pricingModel: 'FIXED',
+    availableForPlans: ['PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+    isActive: true,
+    iconName: 'Factory',
+  },
 ];
 
 class SaasCatalogueService {

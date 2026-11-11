@@ -116,7 +116,7 @@ export const RequestDocumentModal: React.FC<RequestDocumentModalProps> = ({
         correlationId,
       });
 
-      // 2. Persist to documentRequestService (for mobile request feed)
+      // 2. Persist to documentRequestService & sync to Supabase document_requests table (for mobile request feed)
       await documentRequestService.createRequest({
         employeeId: selectedEmployeeId,
         employeeName: selectedEmployeeName,
@@ -128,23 +128,6 @@ export const RequestDocumentModal: React.FC<RequestDocumentModalProps> = ({
         dueDate,
         message: description || `Please upload a clear copy of your ${selectedDocType.displayName}.`,
       });
-
-      // 3. Persist to Supabase document_requests table (Flutter sync)
-      try {
-        await supabase.from('document_requests').insert({
-          document_type_id: selectedDocType.code,
-          document_title: title,
-          category: selectedDocType.category,
-          employee_id: selectedEmployeeId,
-          is_required: isRequired,
-          status: 'REQUESTED',
-          due_date: dueDate || null,
-          request_message: description || null,
-        });
-      } catch (dbErr) {
-        // Non-fatal: local store + documentRequestService already have the record
-        console.warn('[RequestDocumentModal] Supabase insert warning:', dbErr);
-      }
 
       showToast(
         `✓ Document request created & in-app notification delivered to ${selectedEmployeeName}'s mobile app.`,

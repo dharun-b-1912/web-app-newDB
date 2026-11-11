@@ -28,6 +28,7 @@ const OperationsWorkspace = lazy(() => import('./features/operations/OperationsW
 const AttendanceModuleMaster = lazy(() => import('./features/attendance/AttendanceModuleMaster').then(m => ({ default: m.AttendanceModuleMaster })));
 const LeaveManagementModule = lazy(() => import('./features/leave/LeaveManagementModule').then(m => ({ default: m.LeaveManagementModule })));
 const PayrollMasterModule = lazy(() => import('./features/payroll/PayrollMasterModule').then(m => ({ default: m.PayrollMasterModule })));
+const GarmentMasterModule = lazy(() => import('./features/garment/GarmentMasterModule').then(m => ({ default: m.GarmentMasterModule })));
 
 // Secondary & on-demand modules lazy-loaded
 const SuperAdminLoginPage = lazy(() => import('./features/auth/SuperAdminLoginPage').then(m => ({ default: m.SuperAdminLoginPage })));
@@ -1081,6 +1082,25 @@ const AppContent: React.FC = () => {
       case 'payroll-settings':
       case 'payroll/settings':
         return <PayrollMasterModule initialTab={currentRoute} onNavigateTab={handleNavigate} />;
+      case 'garment':
+      case 'garment-dashboard':
+      case 'garment-units':
+      case 'garment-wages':
+      case 'garment-catalog':
+      case 'garment-operations':
+      case 'garment-advances':
+      case 'garment-payroll':
+      case 'garment-reports':
+      case 'garment-my-earnings':
+      case 'garment/units':
+      case 'garment/wages':
+      case 'garment/catalog':
+      case 'garment/operations':
+      case 'garment/advances':
+      case 'garment/payroll':
+      case 'garment/reports':
+      case 'garment/my-earnings':
+        return <GarmentMasterModule initialTab={currentRoute} onNavigateTab={handleNavigate} />;
       case 'other':
       case 'other-dashboard':
       case 'other-travel':

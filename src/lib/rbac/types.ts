@@ -181,6 +181,17 @@ export type ModuleId =
   | 'payroll-fnf'
   | 'payroll-reports'
   | 'payroll-settings'
+  // Garment Workforce Add-On
+  | 'garment'
+  | 'garment-dashboard'
+  | 'garment-units'
+  | 'garment-wages'
+  | 'garment-catalog'
+  | 'garment-operations'
+  | 'garment-advances'
+  | 'garment-payroll'
+  | 'garment-reports'
+  | 'garment-my-earnings'
   // Recruitment & ATS
   | 'recruitment'
   | 'recruitment-dashboard'

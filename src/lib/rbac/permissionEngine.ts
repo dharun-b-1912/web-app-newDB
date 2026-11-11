@@ -173,6 +173,17 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'company-onboarding',
   'trust-legal',
   'breaks',
+  // Garment Workforce Add-On
+  'garment',
+  'garment-dashboard',
+  'garment-units',
+  'garment-wages',
+  'garment-catalog',
+  'garment-operations',
+  'garment-advances',
+  'garment-payroll',
+  'garment-reports',
+  'garment-my-earnings',
   // Performance
   'performance',
   'performance-dashboard',
@@ -362,6 +373,8 @@ const MANAGER_MODULE_IDS: ModuleId[] = [
   'lms', 'lms-dashboard', 'lms-enrollment',
   // Communication
   'helpdesk', 'other-communication', 'requests',
+  // Garment Workforce (Supervisor / Manager operations & reporting)
+  'garment', 'garment-dashboard', 'garment-units', 'garment-operations', 'garment-payroll', 'garment-reports',
   // Analytics (department-scoped)
   'analytics', 'analytics-overview', 'analytics-attendance', 'analytics-leave', 'analytics-performance',
   // ESS (own personal data)
@@ -377,6 +390,8 @@ const TEAM_LEAD_MODULE_IDS: ModuleId[] = [
   'tl-dashboard', 'tl-my-team', 'tl-attendance', 'tl-leave',
   'tl-approvals', 'tl-tasks', 'tl-performance', 'tl-training',
   'tl-communication', 'tl-reports',
+  // Garment Floor Supervisor / TL operations
+  'garment', 'garment-dashboard', 'garment-operations', 'garment-reports', 'garment-my-earnings',
   // ESS (own personal data)
   'ess-dashboard', 'ess-attendance', 'ess-leave', 'ess-payroll',
   'ess-requests', 'ess-performance', 'ess-learning', 'ess-documents',
@@ -389,6 +404,7 @@ const EMPLOYEE_MODULE_IDS: ModuleId[] = [
   'ess-dashboard', 'ess-attendance', 'ess-leave', 'ess-payroll',
   'ess-requests', 'ess-performance', 'ess-learning', 'ess-documents',
   'ess-communication', 'ess-profile',
+  'garment-my-earnings',
 ] as ModuleId[];
 
 // Role profiles mapping modules and scopes according to HRMS specifications
@@ -509,6 +525,14 @@ export const ROLE_PROFILES: Record<string, RoleAccessProfile> = {
       'vendor-360',
       'helpdesk',
       'requests',
+      'garment',
+      'garment-dashboard',
+      'garment-units',
+      'garment-wages',
+      'garment-catalog',
+      'garment-operations',
+      'garment-advances',
+      'garment-reports',
     ],
     defaultScope: 'HR',
     moduleScopes: {},
@@ -796,6 +820,7 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
 
   // Sub-module prefix matching (e.g. payroll-processing inherits from payroll)
   if ((module.startsWith('payroll') || module === 'client-billing') && profile.allowedModules.includes('payroll')) return true;
+  if (module.startsWith('garment-') && profile.allowedModules.includes('garment' as ModuleId)) return true;
   if (module.startsWith('leave') && profile.allowedModules.includes('leave')) return true;
   if (module.startsWith('performance') && profile.allowedModules.includes('performance')) return true;
   if (module.startsWith('lms') && profile.allowedModules.includes('lms')) return true;

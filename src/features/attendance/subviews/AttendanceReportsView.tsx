@@ -56,15 +56,30 @@ import {
   MonthlyHrMisReport,
   HrExceptionItem,
   EmployeeAttendanceLedgerRecord,
+  OvertimeRequestDetailRow,
+  DepartmentShiftReportRow,
 } from '../../../services/attendance/hrIntelligenceMisEngine';
 import {
   OvertimeGovernanceSummary,
   EmployeeOvertimeGovernanceRecord,
-  DepartmentOvertimeRollup,
 } from '../../../services/attendance/overtimeGovernanceService';
-import { AttendanceMisReportPdfService } from '../../../services/attendance/attendanceMisReportPdfService';
+import {
+  ALL_CONSOLIDATED_SECTIONS,
+  buildFilteredMisDataset,
+  generateMisCsv,
+  generateMisExcelWorkbook,
+  generateMisPdf,
+  recordMisExportAuditLog,
+  REPORT_DISPLAY_NAMES,
+  triggerArtifactDownload,
+  type MisExportFormat,
+  type MisExportRequest,
+  type MisExportScope,
+  type MisReportType,
+  type MisSingleReportType,
+  type MisSourceDataset,
+} from '../../../services/attendance/misReportExportEngine';
 import { attendanceMisDeliveryService } from '../../../services/attendance/attendanceMisDeliveryService';
-import { attendanceReportExportService } from '../../../services/attendance/attendanceReportExportService';
 import { supabase } from '../../../lib/supabase';
 
 export type MisActiveTab =
@@ -220,8 +235,11 @@ export const AttendanceReportsView: React.FC = () => {
   const { showToast } = useToast();
 
   // Navigation & Date State
+  const todayIso = new Date().toISOString().split('T')[0];
   const [activeTab, setActiveTab] = useState<MisActiveTab>('overview');
-  const [targetDate, setTargetDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [targetDate, setTargetDate] = useState<string>(todayIso);
+  const [dateFrom, setDateFrom] = useState<string>(todayIso);
+  const [dateTo, setDateTo] = useState<string>(todayIso);
   const [selectedPreset, setSelectedPreset] = useState<PeriodPreset>('today');
   const [loading, setLoading] = useState<boolean>(true);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string>('');
@@ -251,6 +269,8 @@ export const AttendanceReportsView: React.FC = () => {
   const [weeklyData, setWeeklyData] = useState<WeeklyHrMisReport | null>(null);
   const [monthlyData, setMonthlyData] = useState<MonthlyHrMisReport | null>(null);
   const [overtimeSummary, setOvertimeSummary] = useState<OvertimeGovernanceSummary | null>(null);
+  const [overtimeLedger, setOvertimeLedger] = useState<OvertimeRequestDetailRow[]>([]);
+  const [departmentShifts, setDepartmentShifts] = useState<DepartmentShiftReportRow[]>([]);
   const [exceptions, setExceptions] = useState<HrExceptionItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
@@ -259,11 +279,15 @@ export const AttendanceReportsView: React.FC = () => {
   const [selectedOtEmployee, setSelectedOtEmployee] = useState<EmployeeOvertimeGovernanceRecord | null>(null);
   const [selectedException, setSelectedException] = useState<HrExceptionItem | null>(null);
 
-  // Export Scope Modal State
+  // Export Scope Modal State (Default: Current Report only, 1 focused sheet)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [exportTargetFormat, setExportTargetFormat] = useState<'EXCEL' | 'CSV'>('EXCEL');
-  const [exportScope, setExportScope] = useState<'ALL' | 'PAGE'>('ALL');
+  const [exportTargetFormat, setExportTargetFormat] = useState<MisExportFormat>('EXCEL');
+  const [exportScope, setExportScope] = useState<MisExportScope>('CURRENT_REPORT');
+  const [consolidatedSections, setConsolidatedSections] = useState<MisSingleReportType[]>(
+    ALL_CONSOLIDATED_SECTIONS.map((s) => s.id)
+  );
   const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Dispatch Modals
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
@@ -278,34 +302,53 @@ export const AttendanceReportsView: React.FC = () => {
     setOtPage(1);
     setExcPage(1);
     setHistPage(1);
-  }, [searchQuery, filterDepartment, filterShift, filterStatus, targetDate]);
+  }, [searchQuery, filterDepartment, filterShift, filterStatus, targetDate, dateFrom, dateTo]);
+
+  const fetchAuditLogs = async () => {
+    try {
+      const { data: logs } = await supabase
+        .from('mis_delivery_audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (logs) setAuditLogs(logs);
+    } catch (_) {}
+  };
 
   // Load All Authoritative Live Data progressively so UI never blanks out
   const loadMisData = async () => {
     setLoading(true);
     try {
+      const effectiveEnd = dateTo || targetDate;
+      const effectiveStart = dateFrom || targetDate;
+
       // 1. Authoritative Daily MIS loaded directly and set immediately
-      const d = await hrIntelligenceMisEngine.compileDailyMis(targetDate);
+      const d = await hrIntelligenceMisEngine.compileDailyMis(effectiveEnd);
       setDailyData(d);
 
-      // 2. Overtime Governance & HR Exceptions loaded in parallel
-      const [ot, exc] = await Promise.all([
-        hrIntelligenceMisEngine.compileOvertimeGovernance(targetDate),
-        hrIntelligenceMisEngine.compileHrExceptions(targetDate),
+      // 2. Overtime Governance, Ledger, Dept-Shift Matrix & HR Exceptions loaded in parallel
+      const [ot, exc, otLedger, deptShiftRows] = await Promise.all([
+        hrIntelligenceMisEngine.compileOvertimeGovernance(effectiveEnd),
+        hrIntelligenceMisEngine.compileHrExceptions(effectiveEnd, effectiveStart, effectiveEnd),
+        hrIntelligenceMisEngine.compileOvertimeRequestLedger(effectiveStart, effectiveEnd),
+        hrIntelligenceMisEngine.compileDepartmentShiftMatrix(effectiveStart, effectiveEnd),
       ]);
       setOvertimeSummary(ot);
       setExceptions(exc);
+      setOvertimeLedger(otLedger);
+      setDepartmentShifts(deptShiftRows);
 
       setLastRefreshedAt(
         new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
       );
 
       // 3. Weekly & Monthly trend loaded safely without blocking primary UI
+      const refDateObj = new Date(`${effectiveEnd}T00:00:00`);
       Promise.allSettled([
-        hrIntelligenceMisEngine.compileWeeklyMis(targetDate),
+        hrIntelligenceMisEngine.compileWeeklyMis(effectiveEnd),
         hrIntelligenceMisEngine.compileMonthlyMis(
-          new Date(targetDate).getFullYear(),
-          new Date(targetDate).getMonth() + 1
+          refDateObj.getFullYear(),
+          refDateObj.getMonth() + 1
         ),
       ]).then(([wRes, mRes]) => {
         if (wRes.status === 'fulfilled') setWeeklyData(wRes.value);
@@ -313,14 +356,7 @@ export const AttendanceReportsView: React.FC = () => {
       });
 
       // 4. Fetch audit logs
-      try {
-        const { data: logs } = await supabase
-          .from('mis_delivery_audit_logs')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(100);
-        if (logs) setAuditLogs(logs);
-      } catch (_) {}
+      await fetchAuditLogs();
     } catch (err: any) {
       console.warn('[HR MIS Intelligence Error]:', err.message);
     } finally {
@@ -330,74 +366,177 @@ export const AttendanceReportsView: React.FC = () => {
 
   useEffect(() => {
     loadMisData();
-  }, [targetDate]);
+  }, [targetDate, dateFrom, dateTo]);
 
   // Handle Preset Changes
   const handleApplyPreset = (preset: PeriodPreset) => {
     setSelectedPreset(preset);
-    const today = new Date();
+    const now = new Date();
+    const toIso = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
     if (preset === 'today') {
-      setTargetDate(today.toISOString().split('T')[0]);
+      const t = toIso(now);
+      setTargetDate(t);
+      setDateFrom(t);
+      setDateTo(t);
     } else if (preset === 'this_week') {
-      setTargetDate(today.toISOString().split('T')[0]);
+      const day = now.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      const mon = new Date(now);
+      mon.setDate(now.getDate() - diffToMonday);
+      const t = toIso(now);
+      setTargetDate(t);
+      setDateFrom(toIso(mon));
+      setDateTo(t);
     } else if (preset === 'this_month') {
-      setTargetDate(today.toISOString().split('T')[0]);
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const t = toIso(now);
+      setTargetDate(t);
+      setDateFrom(toIso(start));
+      setDateTo(t);
     } else if (preset === 'prev_month') {
-      const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      setTargetDate(prevMonth.toISOString().split('T')[0]);
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), 0);
+      const endStr = toIso(end);
+      setTargetDate(endStr);
+      setDateFrom(toIso(start));
+      setDateTo(endStr);
     }
   };
 
-  // PDF Download Handler
-  const handleDownloadPdf = () => {
+  const activeReportType: MisSingleReportType = useMemo(() => {
+    switch (activeTab) {
+      case 'daily':
+        return 'DAILY_ATTENDANCE';
+      case 'weekly':
+        return 'WEEKLY_MIS';
+      case 'monthly':
+        return 'MONTHLY_HR_MIS';
+      case 'overtime':
+        return 'OVERTIME_GOVERNANCE';
+      case 'departments':
+        return 'DEPARTMENTS_SHIFTS';
+      case 'exceptions':
+        return 'HR_EXCEPTIONS';
+      default:
+        return 'OVERVIEW';
+    }
+  }, [activeTab]);
+
+  const misSourceDataset: MisSourceDataset = useMemo(
+    () => ({
+      organizationId:
+        dailyData?.organizationId ||
+        weeklyData?.organizationId ||
+        monthlyData?.organizationId ||
+        '0c621892-e938-4707-9957-13534ea32c19',
+      companyName:
+        dailyData?.companyName ||
+        weeklyData?.companyName ||
+        monthlyData?.companyName ||
+        'Joy Corporate Solutions Pvt. Ltd.',
+      daily: dailyData,
+      weekly: weeklyData,
+      monthly: monthlyData,
+      overtimeSummary,
+      overtimeLedger,
+      departmentShifts,
+      exceptions,
+    }),
+    [dailyData, weeklyData, monthlyData, overtimeSummary, overtimeLedger, departmentShifts, exceptions]
+  );
+
+  const buildCurrentExportRequest = (
+    format: MisExportFormat,
+    scope: MisExportScope = 'CURRENT_REPORT'
+  ): MisExportRequest => ({
+    report_type: scope === 'CONSOLIDATED_WORKBOOK' ? 'CONSOLIDATED_MIS' : activeReportType,
+    date_from: dateFrom || targetDate,
+    date_to: dateTo || targetDate,
+    department_id: filterDepartment,
+    shift_id: filterShift,
+    attendance_status: filterStatus,
+    search_query: searchQuery,
+    company_id: misSourceDataset.organizationId,
+    company_name: misSourceDataset.companyName,
+    generated_by: 'Authorized HR Operations',
+    requested_format: format,
+    requested_scope: scope,
+    consolidated_sections: scope === 'CONSOLIDATED_WORKBOOK' ? consolidatedSections : undefined,
+  });
+
+  const activeFilteredMisDataset = useMemo(() => {
+    const req = buildCurrentExportRequest(exportTargetFormat, exportScope);
+    return buildFilteredMisDataset(req, misSourceDataset);
+  }, [
+    activeReportType,
+    dateFrom,
+    dateTo,
+    targetDate,
+    filterDepartment,
+    filterShift,
+    filterStatus,
+    searchQuery,
+    exportTargetFormat,
+    exportScope,
+    consolidatedSections,
+    misSourceDataset,
+  ]);
+
+  // Direct PDF Download Handler (Strictly scoped to active report + filters)
+  const handleDownloadPdf = async () => {
+    setIsExporting(true);
+    setExportError(null);
     try {
-      const doc = AttendanceMisReportPdfService.generateComprehensiveHrMisPdf({
-        organizationName: dailyData?.companyName || 'Joy Corporate Solutions Pvt. Ltd.',
-        reportTitle: 'HR INTELLIGENCE MIS & WORKFORCE GOVERNANCE REPORT',
-        reportingPeriod: targetDate,
-        daily: dailyData,
-        weekly: weeklyData,
-        monthly: monthlyData,
-        overtime: overtimeSummary,
-        exceptions,
+      const req = buildCurrentExportRequest('PDF', 'CURRENT_REPORT');
+      const artifact = await generateMisPdf(req, misSourceDataset);
+      triggerArtifactDownload(artifact);
+
+      await recordMisExportAuditLog({
+        organizationId: misSourceDataset.organizationId,
+        reportType: artifact.reportType,
+        reportingDate: req.date_to,
+        channel: 'PDF_DOWNLOAD',
+        recipientTarget: 'Local HR User',
+        sha256Checksum: artifact.sha256Checksum,
+        fileName: artifact.fileName,
+        metadata: {
+          scope: req.requested_scope,
+          recordCount: artifact.recordCount,
+          pageCount: artifact.pageCount,
+          dateFrom: req.date_from,
+          dateTo: req.date_to,
+          filters: activeFilteredMisDataset.filtersAppliedText,
+        },
       });
-      const fileName = `JoyPeopleHR_HR_Intelligence_MIS_${targetDate}.pdf`;
-      doc.save(fileName);
+      await fetchAuditLogs();
+
       showToast({
-        title: 'PDF Downloaded',
-        message: `Saved ${fileName} (5-page vector executive report)`,
+        title: `${artifact.reportTitle} PDF Downloaded`,
+        message:
+          artifact.recordCount === 0
+            ? `Saved ${artifact.fileName} (Empty report notice included)`
+            : `Saved ${artifact.fileName} (${artifact.recordCount} records, ${artifact.pageCount} page(s))`,
         type: 'success',
       });
     } catch (err: any) {
+      const msg = err.message || 'Could not generate report PDF';
+      setExportError(msg);
       showToast({
-        title: 'Export Failed',
-        message: err.message || 'Could not generate PDF',
+        title: 'PDF Export Failed',
+        message: msg,
         type: 'error',
       });
+    } finally {
+      setIsExporting(false);
     }
   };
 
-  // Filtered Daily Records (Complete matching set)
-  const filteredDailyRecords = useMemo(() => {
-    if (!dailyData?.employeeRecords) return [];
-    return dailyData.employeeRecords.filter((rec) => {
-      const q = searchQuery.toLowerCase().trim();
-      const matchesSearch =
-        !q ||
-        rec.employeeName.toLowerCase().includes(q) ||
-        rec.employeeCode.toLowerCase().includes(q) ||
-        rec.department.toLowerCase().includes(q);
-      const matchesDept = filterDepartment === 'ALL' || rec.department === filterDepartment;
-      const matchesShift = filterShift === 'ALL' || rec.shift === filterShift;
-      const matchesStatus =
-        filterStatus === 'ALL'
-          ? true
-          : filterStatus === 'EXCEPTIONS'
-          ? rec.exceptionStatus !== 'None' && rec.exceptionStatus !== 'Normal'
-          : rec.status === filterStatus;
-      return matchesSearch && matchesDept && matchesShift && matchesStatus;
-    });
-  }, [dailyData, searchQuery, filterDepartment, filterShift, filterStatus]);
+  // Unified Filtered Records (Reconciled 1:1 with Excel, PDF, and CSV Exports)
+  const filteredDailyRecords = activeFilteredMisDataset.dailyRows;
+  const filteredOtRecords = activeFilteredMisDataset.overtimeGovernanceRows;
+  const filteredExceptions = activeFilteredMisDataset.exceptionRows;
 
   // Paginated Daily Records (Current active page window)
   const paginatedDailyRecords = useMemo(() => {
@@ -407,29 +546,6 @@ export const AttendanceReportsView: React.FC = () => {
 
   const totalDailyPages = Math.max(1, Math.ceil(filteredDailyRecords.length / dailyPageSize));
 
-  // Filtered Overtime Records
-  const filteredOtRecords = useMemo(() => {
-    if (!overtimeSummary) return [];
-    return overtimeSummary.employeeRecords.filter((rec) => {
-      const q = searchQuery.toLowerCase().trim();
-      const matchesSearch =
-        !q ||
-        rec.employeeName.toLowerCase().includes(q) ||
-        rec.employeeCode.toLowerCase().includes(q) ||
-        rec.department.toLowerCase().includes(q);
-      const matchesDept = filterDepartment === 'ALL' || rec.department === filterDepartment;
-      const matchesStatus =
-        filterStatus === 'ALL'
-          ? true
-          : filterStatus === 'EXCEEDED'
-          ? rec.warningStatus === 'EXCEEDED'
-          : filterStatus === 'APPROACHING'
-          ? rec.warningStatus === 'APPROACHING' || rec.warningStatus === 'HIGH_PRIORITY'
-          : true;
-      return matchesSearch && matchesDept && matchesStatus;
-    });
-  }, [overtimeSummary, searchQuery, filterDepartment, filterStatus]);
-
   // Paginated Overtime Records
   const paginatedOtRecords = useMemo(() => {
     const start = (otPage - 1) * otPageSize;
@@ -437,20 +553,6 @@ export const AttendanceReportsView: React.FC = () => {
   }, [filteredOtRecords, otPage, otPageSize]);
 
   const totalOtPages = Math.max(1, Math.ceil(filteredOtRecords.length / otPageSize));
-
-  // Filtered Exceptions
-  const filteredExceptions = useMemo(() => {
-    return exceptions.filter((e) => {
-      const q = searchQuery.toLowerCase().trim();
-      const matchesSearch =
-        !q ||
-        e.employeeName.toLowerCase().includes(q) ||
-        e.department.toLowerCase().includes(q) ||
-        e.description.toLowerCase().includes(q);
-      const matchesDept = filterDepartment === 'ALL' || e.department === filterDepartment;
-      return matchesSearch && matchesDept;
-    });
-  }, [exceptions, searchQuery, filterDepartment]);
 
   const paginatedExceptions = useMemo(() => {
     const start = (excPage - 1) * excPageSize;
@@ -467,102 +569,97 @@ export const AttendanceReportsView: React.FC = () => {
 
   const totalHistPages = Math.max(1, Math.ceil(auditLogs.length / histPageSize));
 
-  // Executive Export Trigger (Honoring Complete Dataset vs Current Paginated View)
+  // Executive Export Trigger (Report-Specific Single Sheet by default, or Explicit Consolidated Workbook)
   const executeExport = async () => {
     setIsExporting(true);
+    setExportError(null);
     try {
+      const req = buildCurrentExportRequest(exportTargetFormat, exportScope);
+      let artifact;
+
       if (exportTargetFormat === 'EXCEL') {
-        const { attendanceReportSchedulerService } = await import(
-          '../../../services/attendance/attendanceReportSchedulerService'
-        );
-        const assembled = await attendanceReportSchedulerService.assembleReportDataAsync(targetDate);
-        
-        // Scope rows: complete filtered set vs current page slice
-        let exportRows = assembled.rows;
-        if (exportScope === 'PAGE') {
-          const pageCodes = new Set(paginatedDailyRecords.map((r) => r.employeeCode));
-          exportRows = assembled.rows.filter((r) => pageCodes.has(r.emp?.employee_code || r.emp?.employeeCode));
-        } else if (filteredDailyRecords.length < (dailyData?.employeeRecords?.length || 0)) {
-          const filterCodes = new Set(filteredDailyRecords.map((r) => r.employeeCode));
-          exportRows = assembled.rows.filter((r) => filterCodes.has(r.emp?.employee_code || r.emp?.employeeCode));
-        }
-
-        const res = await attendanceReportExportService.generateExcelWorkbook(
-          exportRows,
-          assembled.punches,
-          {
-            companyName: dailyData?.companyName || 'Joy Corporate Solutions Pvt. Ltd.',
-            reportDate: targetDate,
-            reportType: 'FULL_CONSOLIDATED',
-            cutoffTime: dailyData?.cutoffTime,
-          }
-        );
-
-        const scopeLabel = exportScope === 'PAGE' ? `_Page${dailyPage}` : '_FullDataset';
-        const xlsxFilename = `JoyPeopleHR_Attendance_MIS_${targetDate}${scopeLabel}.xlsx`;
-        attendanceReportExportService.downloadFile(
-          res.buffer,
-          xlsxFilename,
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        );
-
+        artifact = await generateMisExcelWorkbook(req, misSourceDataset);
+        triggerArtifactDownload(artifact);
+        await recordMisExportAuditLog({
+          organizationId: misSourceDataset.organizationId,
+          reportType: artifact.reportType,
+          reportingDate: req.date_to,
+          channel: 'EXCEL_DOWNLOAD',
+          recipientTarget: 'Local HR User',
+          sha256Checksum: artifact.sha256Checksum,
+          fileName: artifact.fileName,
+          metadata: {
+            scope: req.requested_scope,
+            worksheets: artifact.worksheetNames,
+            recordCount: artifact.recordCount,
+            dateFrom: req.date_from,
+            dateTo: req.date_to,
+            filters: activeFilteredMisDataset.filtersAppliedText,
+          },
+        });
         showToast({
-          title: 'Excel MIS Exported',
-          message: `Saved ${exportRows.length} employee records to ${xlsxFilename}`,
+          title: 'Excel Report Exported',
+          message: `Saved ${artifact.fileName} (${artifact.worksheetNames?.length || 1} sheet(s): ${artifact.worksheetNames?.join(', ')})`,
+          type: 'success',
+        });
+      } else if (exportTargetFormat === 'PDF') {
+        artifact = await generateMisPdf(req, misSourceDataset);
+        triggerArtifactDownload(artifact);
+        await recordMisExportAuditLog({
+          organizationId: misSourceDataset.organizationId,
+          reportType: artifact.reportType,
+          reportingDate: req.date_to,
+          channel: 'PDF_DOWNLOAD',
+          recipientTarget: 'Local HR User',
+          sha256Checksum: artifact.sha256Checksum,
+          fileName: artifact.fileName,
+          metadata: {
+            scope: req.requested_scope,
+            pageCount: artifact.pageCount,
+            recordCount: artifact.recordCount,
+            dateFrom: req.date_from,
+            dateTo: req.date_to,
+            filters: activeFilteredMisDataset.filtersAppliedText,
+          },
+        });
+        showToast({
+          title: 'PDF Report Exported',
+          message: `Saved ${artifact.fileName} (${artifact.pageCount} page(s), ${artifact.recordCount} records)`,
           type: 'success',
         });
       } else {
-        // CSV Export
-        const rowsToExport = exportScope === 'PAGE' ? paginatedDailyRecords : filteredDailyRecords;
-        const headers = [
-          'Emp ID',
-          'Employee Name',
-          'Department',
-          'Shift',
-          'First In',
-          'Last Out',
-          'Working Duration',
-          'Late Minutes',
-          'Source',
-          'Exception Status',
-          'Attendance Status',
-        ];
-
-        const rows = rowsToExport.map((r) => [
-          `"${r.employeeCode}"`,
-          `"${r.employeeName}"`,
-          `"${r.department}"`,
-          `"${r.shift}"`,
-          `"${r.firstCheckIn}"`,
-          `"${r.lastCheckOut}"`,
-          `"${r.workingDuration}"`,
-          r.lateDurationMinutes,
-          `"${r.attendanceSource}"`,
-          `"${r.exceptionStatus}"`,
-          `"${r.status}"`,
-        ]);
-
-        const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement('a');
-        link.setAttribute('href', encodedUri);
-        const scopeLabel = exportScope === 'PAGE' ? `_Page${dailyPage}` : '_Full';
-        link.setAttribute('download', `JoyPeopleHR_Attendance_${targetDate}${scopeLabel}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
+        artifact = await generateMisCsv(req, misSourceDataset);
+        triggerArtifactDownload(artifact);
+        await recordMisExportAuditLog({
+          organizationId: misSourceDataset.organizationId,
+          reportType: artifact.reportType,
+          reportingDate: req.date_to,
+          channel: 'CSV_DOWNLOAD',
+          recipientTarget: 'Local HR User',
+          sha256Checksum: artifact.sha256Checksum,
+          fileName: artifact.fileName,
+          metadata: {
+            recordCount: artifact.recordCount,
+            dateFrom: req.date_from,
+            dateTo: req.date_to,
+            filters: activeFilteredMisDataset.filtersAppliedText,
+          },
+        });
         showToast({
           title: 'CSV Exported',
-          message: `Saved ${rowsToExport.length} employee records`,
+          message: `Saved ${artifact.fileName} (${artifact.recordCount} rows)`,
           type: 'success',
         });
       }
+
+      await fetchAuditLogs();
       setIsExportModalOpen(false);
     } catch (err: any) {
+      const msg = err.message || 'Could not compile export file';
+      setExportError(msg);
       showToast({
         title: 'Export Failed',
-        message: err.message || 'Could not compile export file',
+        message: msg,
         type: 'error',
       });
     } finally {
@@ -570,20 +667,62 @@ export const AttendanceReportsView: React.FC = () => {
     }
   };
 
-  // Email Dispatch Trigger
+  // Email Dispatch Trigger (Respects active report type + date range + filters)
   const handleSendEmail = async () => {
     setIsDispatching(true);
     try {
+      const req = buildCurrentExportRequest('PDF', 'CURRENT_REPORT');
+      const pdfArtifact = await generateMisPdf(req, misSourceDataset);
+      const base64 = btoa(
+        Array.from(pdfArtifact.bytes)
+          .map((b) => String.fromCharCode(b))
+          .join('')
+      );
+
       const res = await attendanceMisDeliveryService.deliverUnifiedMisReport({
         rows: [],
-        reportDate: targetDate,
+        reportDate: req.date_to,
+        dateFrom: req.date_from,
+        dateTo: req.date_to,
+        department: req.department_id,
+        shift: req.shift_id,
+        status: req.attendance_status,
+        searchQuery: req.search_query,
         emailRecipients: [customEmail],
-        reportType: 'EVENING_FINAL',
+        reportType: req.report_type,
+        companyName: req.company_name,
+        organizationId: req.company_id,
+        preGeneratedArtifact: {
+          runId: `mis-${Date.now()}`,
+          organizationId: req.company_id,
+          companyName: req.company_name,
+          reportDate: req.date_to,
+          reportType: 'EVENING_FINAL',
+          cutoffTime: dailyData?.cutoffTime || '18:30 IST',
+          filename: pdfArtifact.fileName,
+          buffer: pdfArtifact.bytes,
+          base64,
+          sizeBytes: pdfArtifact.bytes.length,
+          sha256Checksum: pdfArtifact.sha256Checksum,
+          storagePath: `attendance-reports/${pdfArtifact.fileName}`,
+          documentUrl: '',
+          pageCount: pdfArtifact.pageCount || 1,
+          stats: {
+            totalWorkforce: activeFilteredMisDataset.summaryTotals.headcount,
+            presentCount: activeFilteredMisDataset.summaryTotals.present,
+            turnoutPct: activeFilteredMisDataset.summaryTotals.attendanceRatePct,
+            lateCount: activeFilteredMisDataset.summaryTotals.late,
+            weeklyOffLeave: activeFilteredMisDataset.summaryTotals.onLeave,
+            cumulativeHours: `${activeFilteredMisDataset.summaryTotals.approvedOtHours}h`,
+            presentTurnout: `${activeFilteredMisDataset.summaryTotals.present} (${activeFilteredMisDataset.summaryTotals.attendanceRatePct}%)`,
+          },
+        },
       });
+      await fetchAuditLogs();
       if (res.success) {
         showToast({
           title: 'Email Dispatched',
-          message: `Sent MIS Report to ${customEmail}`,
+          message: `Sent ${pdfArtifact.reportTitle} to ${customEmail}`,
           type: 'success',
         });
         setIsEmailModalOpen(false);
@@ -601,20 +740,62 @@ export const AttendanceReportsView: React.FC = () => {
     }
   };
 
-  // WhatsApp Document Dispatch Trigger
+  // WhatsApp Document Dispatch Trigger (Respects active report type + date range + filters)
   const handleSendWhatsApp = async () => {
     setIsDispatching(true);
     try {
+      const req = buildCurrentExportRequest('PDF', 'CURRENT_REPORT');
+      const pdfArtifact = await generateMisPdf(req, misSourceDataset);
+      const base64 = btoa(
+        Array.from(pdfArtifact.bytes)
+          .map((b) => String.fromCharCode(b))
+          .join('')
+      );
+
       const res = await attendanceMisDeliveryService.deliverUnifiedMisReport({
         rows: [],
-        reportDate: targetDate,
+        reportDate: req.date_to,
+        dateFrom: req.date_from,
+        dateTo: req.date_to,
+        department: req.department_id,
+        shift: req.shift_id,
+        status: req.attendance_status,
+        searchQuery: req.search_query,
         whatsAppRecipients: [customPhone],
-        reportType: 'EVENING_FINAL',
+        reportType: req.report_type,
+        companyName: req.company_name,
+        organizationId: req.company_id,
+        preGeneratedArtifact: {
+          runId: `mis-${Date.now()}`,
+          organizationId: req.company_id,
+          companyName: req.company_name,
+          reportDate: req.date_to,
+          reportType: 'EVENING_FINAL',
+          cutoffTime: dailyData?.cutoffTime || '18:30 IST',
+          filename: pdfArtifact.fileName,
+          buffer: pdfArtifact.bytes,
+          base64,
+          sizeBytes: pdfArtifact.bytes.length,
+          sha256Checksum: pdfArtifact.sha256Checksum,
+          storagePath: `attendance-reports/${pdfArtifact.fileName}`,
+          documentUrl: '',
+          pageCount: pdfArtifact.pageCount || 1,
+          stats: {
+            totalWorkforce: activeFilteredMisDataset.summaryTotals.headcount,
+            presentCount: activeFilteredMisDataset.summaryTotals.present,
+            turnoutPct: activeFilteredMisDataset.summaryTotals.attendanceRatePct,
+            lateCount: activeFilteredMisDataset.summaryTotals.late,
+            weeklyOffLeave: activeFilteredMisDataset.summaryTotals.onLeave,
+            cumulativeHours: `${activeFilteredMisDataset.summaryTotals.approvedOtHours}h`,
+            presentTurnout: `${activeFilteredMisDataset.summaryTotals.present} (${activeFilteredMisDataset.summaryTotals.attendanceRatePct}%)`,
+          },
+        },
       });
+      await fetchAuditLogs();
       if (res.success) {
         showToast({
           title: 'WhatsApp PDF Dispatched',
-          message: `Sent PDF document attachment to +${customPhone}`,
+          message: `Sent ${pdfArtifact.reportTitle} attachment to +${customPhone}`,
           type: 'success',
         });
         setIsWhatsAppModalOpen(false);
@@ -747,14 +928,40 @@ export const AttendanceReportsView: React.FC = () => {
           {/* Primary Action: Download PDF */}
           <Button
             size="sm"
+            disabled={isExporting}
             onClick={handleDownloadPdf}
             className="gap-1.5 text-xs h-8.5 bg-[#07563D] hover:bg-[#064a34] text-white font-medium shadow-xs cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5" />
-            Download PDF
+            <Download className={`w-3.5 h-3.5 ${isExporting ? 'animate-spin' : ''}`} />
+            {isExporting ? 'Generating...' : 'Download PDF'}
           </Button>
         </div>
       </div>
+
+      {/* Export Error Retry Banner */}
+      {exportError && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>
+              <strong>Export Error:</strong> {exportError}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleDownloadPdf}
+              className="h-7 text-[11px] border-rose-300 text-rose-700 hover:bg-rose-100 cursor-pointer"
+            >
+              Retry PDF
+            </Button>
+            <button onClick={() => setExportError(null)} className="text-rose-500 hover:text-rose-700 cursor-pointer">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── 2. COMPACT REPORT CONTROL BAR (FILTER TOOLBAR) ── */}
       <div className="bg-white rounded-xl p-3 border border-slate-200 shadow-2xs space-y-2.5 text-xs">
@@ -783,15 +990,30 @@ export const AttendanceReportsView: React.FC = () => {
 
           {/* Controls Cluster */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Target Date Picker */}
-            <div className="flex items-center bg-white border border-slate-300 rounded-lg px-2 py-1 text-slate-700 shadow-2xs">
-              <Calendar className="w-3.5 h-3.5 mr-1 text-slate-400" />
-              <span className="text-[11px] font-medium text-slate-500 mr-1.5">Date:</span>
+            {/* Date / Period Range Picker */}
+            <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2 py-1 text-slate-700 shadow-2xs">
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-[11px] font-medium text-slate-500">From:</span>
               <input
                 type="date"
-                value={targetDate}
+                value={dateFrom}
                 onChange={(e) => {
-                  setTargetDate(e.target.value);
+                  const val = e.target.value;
+                  setDateFrom(val);
+                  if (val > dateTo) setDateTo(val);
+                  setSelectedPreset('custom');
+                }}
+                className="outline-none bg-transparent font-medium cursor-pointer text-slate-800 text-xs"
+              />
+              <span className="text-[11px] font-medium text-slate-400">to</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDateTo(val);
+                  setTargetDate(val);
+                  if (val < dateFrom) setDateFrom(val);
                   setSelectedPreset('custom');
                 }}
                 className="outline-none bg-transparent font-medium cursor-pointer text-slate-800 text-xs"
@@ -843,9 +1065,13 @@ export const AttendanceReportsView: React.FC = () => {
                 <option value="ALL">All Statuses</option>
                 <option value="PRESENT">Present</option>
                 <option value="ABSENT">Absent</option>
+                <option value="LATE">Late Arrivals</option>
+                <option value="MISSING_PUNCH">Missing Punches</option>
                 <option value="ON_LEAVE">On Leave</option>
                 <option value="HALF_DAY">Half Day</option>
-                <option value="EXCEPTIONS">With Exceptions</option>
+                <option value="APPROVED">Approved (OT/Reg)</option>
+                <option value="PENDING">Pending Approval</option>
+                <option value="REJECTED">Rejected</option>
               </select>
             </div>
 
@@ -969,7 +1195,7 @@ export const AttendanceReportsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ── 4. SIX TO EIGHT PRIMARY FOCUSED KPI CARDS ── */}
+      {/* ── 4. SIX TO EIGHT PRIMARY FOCUSED KPI CARDS (RECONCILED WITH FILTERS & EXPORTS) ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
         {/* KPI 1: Scheduled Workforce */}
         <Card
@@ -981,9 +1207,9 @@ export const AttendanceReportsView: React.FC = () => {
             <Users className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-700" />
           </div>
           <div className="text-lg font-bold text-slate-900 mt-1">
-            {dailyData ? dailyData.scheduledHeadcount : (loading ? '...' : 21)}
+            {loading ? '...' : activeFilteredMisDataset.summaryTotals.headcount}
           </div>
-          <span className="text-[10px] text-slate-500 font-medium">Scheduled Staff</span>
+          <span className="text-[10px] text-slate-500 font-medium">Filtered Scope</span>
         </Card>
 
         {/* KPI 2: Present */}
@@ -996,7 +1222,7 @@ export const AttendanceReportsView: React.FC = () => {
             <UserCheck className="w-3.5 h-3.5 text-emerald-600 group-hover:text-emerald-700" />
           </div>
           <div className="text-lg font-bold text-emerald-700 mt-1">
-            {dailyData ? dailyData.presentCount : (loading ? '...' : 18)}
+            {loading ? '...' : activeFilteredMisDataset.summaryTotals.present}
           </div>
           <span className="text-[10px] text-emerald-800 font-medium">Verified On-Duty</span>
         </Card>
@@ -1011,7 +1237,7 @@ export const AttendanceReportsView: React.FC = () => {
             <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
           </div>
           <div className="text-lg font-bold text-rose-600 mt-1">
-            {dailyData ? dailyData.absentCount : (loading ? '...' : 3)}
+            {loading ? '...' : activeFilteredMisDataset.summaryTotals.absent}
           </div>
           <span className="text-[10px] text-slate-500 font-medium">Unexcused</span>
         </Card>
@@ -1026,7 +1252,7 @@ export const AttendanceReportsView: React.FC = () => {
             <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
           </div>
           <div className="text-lg font-bold text-slate-900 mt-1">
-            {dailyData ? `${dailyData.attendanceTurnoutPct}%` : (loading ? '...' : '85.7%')}
+            {loading ? '...' : `${activeFilteredMisDataset.summaryTotals.attendanceRatePct}%`}
           </div>
           <span className="text-[10px] text-slate-500 font-medium">Turnout Index</span>
         </Card>
@@ -1041,9 +1267,9 @@ export const AttendanceReportsView: React.FC = () => {
             <Clock className="w-3.5 h-3.5 text-amber-500" />
           </div>
           <div className="text-lg font-bold text-amber-600 mt-1">
-            {dailyData ? dailyData.lateArrivalsCount : (loading ? '...' : 7)}
+            {loading ? '...' : activeFilteredMisDataset.summaryTotals.late}
           </div>
-          <span className="text-[10px] text-slate-500 font-medium">&gt; 15m Grace</span>
+          <span className="text-[10px] text-slate-500 font-medium">&gt; Shift Grace</span>
         </Card>
 
         {/* KPI 6: Missing Punches */}
@@ -1056,7 +1282,7 @@ export const AttendanceReportsView: React.FC = () => {
             <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
           </div>
           <div className="text-lg font-bold text-amber-700 mt-1">
-            {dailyData ? dailyData.missingCheckInCount + dailyData.missingCheckOutCount : (loading ? '...' : 3)}
+            {loading ? '...' : activeFilteredMisDataset.summaryTotals.missingPunches}
           </div>
           <span className="text-[10px] text-slate-500 font-medium">In/Out Incomplete</span>
         </Card>
@@ -1071,9 +1297,9 @@ export const AttendanceReportsView: React.FC = () => {
             <TrendingUp className="w-3.5 h-3.5 text-emerald-700" />
           </div>
           <div className="text-lg font-bold text-emerald-800 mt-1">
-            {overtimeSummary ? `${overtimeSummary.totalPeriodApprovedHours}h` : (loading ? '...' : '43.5h')}
+            {loading ? '...' : `${activeFilteredMisDataset.summaryTotals.approvedOtHours}h`}
           </div>
-          <span className="text-[10px] text-slate-500 font-medium">Period Cumulative</span>
+          <span className="text-[10px] text-slate-500 font-medium">Period Approved</span>
         </Card>
 
         {/* KPI 8: HR Exceptions */}
@@ -1086,7 +1312,7 @@ export const AttendanceReportsView: React.FC = () => {
             <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
           </div>
           <div className="text-lg font-bold text-rose-600 mt-1">
-            {exceptions.length || (loading ? '...' : 5)}
+            {loading ? '...' : activeFilteredMisDataset.summaryTotals.exceptionCount}
           </div>
           <span className="text-[10px] text-rose-600 font-medium">Review Needed</span>
         </Card>
@@ -1125,7 +1351,7 @@ export const AttendanceReportsView: React.FC = () => {
                 <div className="text-right">
                   <span className="text-[10px] text-slate-400 uppercase font-medium">Overtime Allocation</span>
                   <div className="text-sm font-bold text-emerald-400">
-                    {overtimeSummary ? `${overtimeSummary.totalPeriodApprovedHours}h / ${overtimeSummary.totalWorkforce * 20}h` : '43.5h'}
+                    {overtimeSummary ? `${overtimeSummary.totalPeriodApprovedHours}h / ${overtimeSummary.totalWorkforce * 20}h` : '0h'}
                   </div>
                   <span className="text-[9px] text-slate-500">20h / 4-Month Period</span>
                 </div>
@@ -2212,14 +2438,14 @@ export const AttendanceReportsView: React.FC = () => {
         </div>
       )}
 
-      {/* ── MODAL 1: EXPORT SCOPE SELECTION (COMPLETE DATASET VS CURRENT PAGE) ── */}
+      {/* ── MODAL 1: REPORT-SPECIFIC & CONSOLIDATED EXPORT MODAL ── */}
       {isExportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <Card className="w-full max-w-md p-5 bg-white shadow-xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+          <Card className="w-full max-w-lg p-5 bg-white shadow-xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
-                Configure MIS Export Scope
+                Export HR Intelligence MIS Report
               </h3>
               <button
                 onClick={() => setIsExportModalOpen(false)}
@@ -2229,14 +2455,30 @@ export const AttendanceReportsView: React.FC = () => {
               </button>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Select whether you want to export the entire authorized workforce dataset matching active filters, or strictly the current visible page slice.
-            </p>
+            {/* Pre-Export Verification Summary */}
+            <div className="rounded-lg bg-emerald-50/70 border border-emerald-200/80 p-3 text-[11px] space-y-1 text-emerald-950">
+              <div className="flex items-center justify-between">
+                <span className="font-bold">
+                  {exportScope === 'CONSOLIDATED_WORKBOOK'
+                    ? REPORT_DISPLAY_NAMES.CONSOLIDATED_MIS
+                    : REPORT_DISPLAY_NAMES[activeReportType]}
+                </span>
+                <Badge className="bg-emerald-700 text-white text-[10px]">
+                  {activeFilteredMisDataset.recordCount} Matched Rows
+                </Badge>
+              </div>
+              <div className="text-emerald-800">{activeFilteredMisDataset.filtersAppliedText}</div>
+              {activeFilteredMisDataset.recordCount === 0 && (
+                <div className="text-amber-800 font-semibold pt-1">
+                  Notice: 0 records match current filters. Export will generate headers with an empty-state notice.
+                </div>
+              )}
+            </div>
 
             {/* Format Selection */}
             <div className="space-y-1.5 text-xs">
               <label className="font-semibold text-slate-700">Export Format:</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setExportTargetFormat('EXCEL')}
@@ -2247,11 +2489,28 @@ export const AttendanceReportsView: React.FC = () => {
                   }`}
                 >
                   <div className="font-bold">Excel (.xlsx)</div>
-                  <div className="text-[10px] text-slate-500">7-Sheet Executive Workbook</div>
+                  <div className="text-[10px] text-slate-500">
+                    {exportScope === 'CURRENT_REPORT' ? 'Single Focused Sheet' : 'Multi-Sheet Workbook'}
+                  </div>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setExportTargetFormat('CSV')}
+                  onClick={() => setExportTargetFormat('PDF')}
+                  className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all ${
+                    exportTargetFormat === 'PDF'
+                      ? 'border-emerald-600 bg-emerald-50/50 text-emerald-950 font-semibold'
+                      : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <div className="font-bold">PDF (.pdf)</div>
+                  <div className="text-[10px] text-slate-500">Branded A4 Landscape</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExportTargetFormat('CSV');
+                    setExportScope('CURRENT_REPORT');
+                  }}
                   className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all ${
                     exportTargetFormat === 'CSV'
                       ? 'border-emerald-600 bg-emerald-50/50 text-emerald-950 font-semibold'
@@ -2259,54 +2518,89 @@ export const AttendanceReportsView: React.FC = () => {
                   }`}
                 >
                   <div className="font-bold">CSV (.csv)</div>
-                  <div className="text-[10px] text-slate-500">Raw Data Audit Ledger</div>
+                  <div className="text-[10px] text-slate-500">Active Report Flat Data</div>
                 </button>
               </div>
             </div>
 
             {/* Scope Selection */}
             <div className="space-y-1.5 text-xs">
-              <label className="font-semibold text-slate-700">Records Scope:</label>
+              <label className="font-semibold text-slate-700">Export Scope:</label>
               <div className="space-y-2">
                 <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
                   <input
                     type="radio"
                     name="exportScope"
-                    value="ALL"
-                    checked={exportScope === 'ALL'}
-                    onChange={() => setExportScope('ALL')}
+                    value="CURRENT_REPORT"
+                    checked={exportScope === 'CURRENT_REPORT'}
+                    onChange={() => setExportScope('CURRENT_REPORT')}
                     className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
                   />
                   <div>
                     <div className="font-semibold text-slate-900">
-                      Complete Filtered Dataset ({filteredDailyRecords.length} Employees)
+                      Current Report Only — {REPORT_DISPLAY_NAMES[activeReportType]} (Default)
                     </div>
                     <div className="text-[11px] text-slate-500">
-                      Exports all active records matching the selected date, department, shift, and status filters.
+                      Exports strictly the active report with its dedicated columns and active filters.
                     </div>
                   </div>
                 </label>
 
-                <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="exportScope"
-                    value="PAGE"
-                    checked={exportScope === 'PAGE'}
-                    onChange={() => setExportScope('PAGE')}
-                    className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <div>
-                    <div className="font-semibold text-slate-900">
-                      Current Visible Page ({paginatedDailyRecords.length} Employees)
+                {exportTargetFormat !== 'CSV' && (
+                  <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="exportScope"
+                      value="CONSOLIDATED_WORKBOOK"
+                      checked={exportScope === 'CONSOLIDATED_WORKBOOK'}
+                      onChange={() => setExportScope('CONSOLIDATED_WORKBOOK')}
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div className="w-full">
+                      <div className="font-semibold text-slate-900">
+                        Consolidated MIS Workbook (Custom Sections)
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        Bundle selected MIS sections into separate worksheets / PDF sections.
+                      </div>
+                      {exportScope === 'CONSOLIDATED_WORKBOOK' && (
+                        <div className="mt-2 grid grid-cols-2 gap-1.5 pt-2 border-t border-slate-100">
+                          {ALL_CONSOLIDATED_SECTIONS.map((sec) => {
+                            const checked = consolidatedSections.includes(sec.id);
+                            return (
+                              <label
+                                key={sec.id}
+                                className="flex items-center gap-1.5 text-[11px] text-slate-700 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setConsolidatedSections((prev) =>
+                                      checked
+                                        ? prev.filter((id) => id !== sec.id)
+                                        : [...prev, sec.id]
+                                    )
+                                  }
+                                  className="rounded text-emerald-600 focus:ring-emerald-500"
+                                />
+                                <span>{sec.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-[11px] text-slate-500">
-                      Exports strictly the {paginatedDailyRecords.length} records currently shown on Page {dailyPage}.
-                    </div>
-                  </div>
-                </label>
+                  </label>
+                )}
               </div>
             </div>
+
+            {exportError && (
+              <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2">
+                {exportError}
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <Button
@@ -2320,7 +2614,10 @@ export const AttendanceReportsView: React.FC = () => {
               <Button
                 size="sm"
                 onClick={executeExport}
-                disabled={isExporting}
+                disabled={
+                  isExporting ||
+                  (exportScope === 'CONSOLIDATED_WORKBOOK' && consolidatedSections.length === 0)
+                }
                 className="bg-[#07563D] hover:bg-[#064a34] text-white text-xs gap-1.5 cursor-pointer"
               >
                 <Download className={`w-3.5 h-3.5 ${isExporting ? 'animate-spin' : ''}`} />

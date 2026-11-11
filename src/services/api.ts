@@ -3147,20 +3147,68 @@ export const api = {
     } else if (stepNumber === 6) {
       // Step 6: Documents
       const isAuth = await hasAuthenticatedSession();
-      if (isAuth && Array.isArray(formData.documents) && formData.documents.length > 0) {
+      if (isAuth && isValidUUID(employeeId) && Array.isArray(formData.documents) && formData.documents.length > 0) {
         try {
-          const docPayloads = formData.documents.map((doc: any, i: number) => ({
-            id: doc.id || `doc-${employeeId}-${i}`,
-            employee_id: employeeId,
-            document_category: doc.category || doc.document_category || 'Identity',
-            document_type: doc.type || doc.document_type || 'ID_CARD',
-            file_name: doc.name || doc.file_name || 'document.pdf',
-            file_url: doc.url || doc.file_url || '',
-            file_size_bytes: doc.size || doc.file_size_bytes || 0,
-            verification_status: doc.status || 'Verified',
-            uploaded_at: doc.uploaded_at || new Date().toISOString(),
-          }));
-          await supabase.from('employee_documents').upsert(docPayloads, { onConflict: 'id' });
+          const resolvedOrgId = isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19';
+          const { data: docTypes } = await supabase
+            .from('document_types')
+            .select('id, code, name');
+          const typeList = docTypes || [];
+          const findTypeUuid = (rawType?: string, rawId?: string): string | null => {
+            if (isValidUUID(rawId)) return rawId;
+            const upper = (rawType || '').toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+            const aliasMap: Record<string, string> = {
+              PAN_CARD: 'PAN',
+              AADHAAR_CARD: 'AADHAAR',
+              BANK_DOCUMENT: 'BANK_DETAILS',
+              BANK_PASSBOOK: 'BANK_DETAILS',
+              CANCELLED_CHEQUE: 'BANK_DETAILS',
+            };
+            const target = aliasMap[upper] || upper;
+            const match = typeList.find(
+              (t: any) => (t.code || '').toUpperCase() === target || (t.code || '').toUpperCase() === upper
+            );
+            if (match?.id) return match.id;
+            const other = typeList.find((t: any) => (t.code || '').toUpperCase() === 'OTHER');
+            return other?.id || typeList[0]?.id || null;
+          };
+
+          const docPayloads = formData.documents
+            .map((doc: any) => {
+              const docTypeUuid = findTypeUuid(doc.type || doc.document_type, doc.document_type_id);
+              if (!docTypeUuid) return null;
+              const fileName = doc.name || doc.file_name || 'document.pdf';
+              const storagePath =
+                doc.storage_path ||
+                doc.object_path ||
+                doc.file_url ||
+                doc.url ||
+                `${resolvedOrgId}/${employeeId}/${fileName}`;
+              const rawStatus = (doc.status || doc.verification_status || 'VERIFIED').toString().toUpperCase();
+              const verificationStatus =
+                rawStatus === 'REJECTED' ? 'REJECTED' : rawStatus === 'PENDING' ? 'PENDING' : 'VERIFIED';
+              return {
+                id: isValidUUID(doc.id) ? doc.id : crypto.randomUUID(),
+                organization_id: resolvedOrgId,
+                employee_id: employeeId,
+                document_type_id: docTypeUuid,
+                file_name: fileName,
+                storage_path: storagePath,
+                file_size_bytes: Number(doc.size || doc.file_size_bytes) || 0,
+                mime_type: doc.mime_type || 'application/pdf',
+                verification_status: verificationStatus,
+              };
+            })
+            .filter(Boolean);
+
+          if (docPayloads.length > 0) {
+            const { error: docErr } = await supabase
+              .from('employee_documents')
+              .upsert(docPayloads, { onConflict: 'id' });
+            if (docErr) {
+              console.warn('[API] Documents upsert notice:', docErr);
+            }
+          }
         } catch (docErr) {
           console.warn('[API] Documents upsert notice:', docErr);
         }
@@ -4084,8 +4132,8 @@ export const api = {
             marital_status: (data as any).marital_status || data.profile?.marital_status,
             nationality: (data as any).nationality || data.profile?.nationality,
             salary: (data as any).salary,
-            annual_ctc: candidateAnnualCtc,
-            monthly_ctc: candidateMonthlyCtc,
+            annual_ctc: (data as any).annual_ctc ?? (data as any).salary?.annual_ctc ?? (data as any).compensation?.annual_ctc,
+            monthly_ctc: (data as any).monthly_ctc ?? (data as any).salary?.monthly_ctc ?? (data as any).compensation?.monthly_ctc,
             salary_structure_id: (data as any).salary_structure_id || (data as any).salary?.salary_structure_id,
           };
           const updateRes = await fetch(syncUrl, {
@@ -4228,7 +4276,7 @@ export const api = {
               marital_status: prof.marital_status || null,
               nationality: prof.nationality || 'Indian',
               updated_at: new Date().toISOString(),
-            }, { onConflict: 'employee_id' }).catch(() => {});
+            }, { onConflict: 'employee_id' }).then(() => {}, () => {});
           } catch (e) {
             // Ignore non-fatal profile update warning on unprivileged clients
           }

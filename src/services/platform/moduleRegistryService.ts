@@ -654,6 +654,37 @@ export const CANONICAL_MODULES: ModuleRegistryItem[] = [
     associated_routes: ['analytics-reports'],
     associated_nav_ids: ['analytics-reports'],
   },
+  // ─── ADD-ON DOMAIN: GARMENT WORKFORCE & PIECE-RATE PAYROLL ────────────────
+  {
+    module_key: 'garment_workforce',
+    module_name: 'Garment & Piece-Rate Workforce Management',
+    category: 'PAYROLL_FINANCE',
+    status: 'LIVE',
+    launch_scope: true,
+    launch_scope_category: 'LAUNCH_CRITICAL',
+    navigation_visible: true,
+    route_accessible: true,
+    required_plan: 'Professional',
+    required_permissions: ['garment.view'],
+    dependencies: ['people', 'attendance'],
+    web_enabled: true,
+    mobile_enabled: true,
+    certification_status: 'LAUNCH_CERTIFIED',
+    planned_phase: 'Add-On Live',
+    priority: 'HIGH_P1',
+    completion_percentage: 100,
+    development_notes: 'Tenant-entitled SaaS add-on for apparel/garment manufacturing workforce, QC production ledger, and multi-method wage payroll.',
+    associated_routes: [
+      'garment', 'garment-dashboard', 'garment-units', 'garment-wages',
+      'garment-catalog', 'garment-operations', 'garment-advances',
+      'garment-payroll', 'garment-reports', 'garment-my-earnings'
+    ],
+    associated_nav_ids: [
+      'garment', 'garment-dashboard', 'garment-units', 'garment-wages',
+      'garment-catalog', 'garment-operations', 'garment-advances',
+      'garment-payroll', 'garment-reports', 'garment-my-earnings'
+    ],
+  },
 ];
 
 class ModuleRegistryService {

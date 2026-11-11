@@ -1304,6 +1304,7 @@ export interface DocumentMaster {
   file_name?: string;
   file_url?: string;
   storage_path?: string;
+  storage_bucket?: string;
   file_size?: string;
   version?: number;
   uploaded_at?: string;

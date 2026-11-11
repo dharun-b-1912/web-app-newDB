@@ -673,6 +673,13 @@ export class AttendanceMisDeliveryService {
     rows: AttendanceReportRow[];
     punches?: ClassifiedPunchEvent[];
     reportDate: string;
+    dateFrom?: string;
+    dateTo?: string;
+    department?: string;
+    shift?: string;
+    status?: string;
+    searchQuery?: string;
+    consolidatedSections?: string[];
     reportType?: 'MORNING_CHECKIN' | 'EVENING_FINAL' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | string;
     companyName?: string;
     organizationId?: string;
@@ -749,12 +756,22 @@ export class AttendanceMisDeliveryService {
         },
         body: JSON.stringify({
           slot,
+          reportType,
           mode: 'MANUAL_DISPATCH',
           organization_id: organizationId,
           companyName,
           recipients: authorizedEmails,
           whatsAppRecipients: authorizedWhatsApp.map(w => w.phone),
           date: dateStr,
+          dateFrom: params.dateFrom || dateStr,
+          dateTo: params.dateTo || dateStr,
+          filters: {
+            department: params.department || 'ALL',
+            shift: params.shift || 'ALL',
+            status: params.status || 'ALL',
+            searchQuery: params.searchQuery || '',
+          },
+          consolidatedSections: params.consolidatedSections,
           customNote: params.customNote,
           attachExcel: params.attachExcel !== false,
           attachCsv: params.attachCsv !== false,
@@ -833,8 +850,8 @@ export class AttendanceMisDeliveryService {
       }
     }
 
-    // STRICT EMPTY DATA GUARD: Never dispatch empty / 0-staff reports to executive leadership or WhatsApp
-    if (!rows || rows.length === 0) {
+    // STRICT EMPTY DATA GUARD: Never dispatch empty / 0-staff reports unless a pre-generated report artifact was explicitly built
+    if (!params.preGeneratedArtifact && (!rows || rows.length === 0)) {
       console.warn(`[UnifiedMIS] Guard Triggered: Refusing to dispatch report for ${dateStr} because workforce headcount is 0. Aborting dispatch to prevent empty report delivery.`);
       return {
         runId: `abort-${Date.now()}`,

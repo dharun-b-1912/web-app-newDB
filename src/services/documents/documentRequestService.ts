@@ -65,16 +65,79 @@ export interface EmployeeDocumentRequest {
 }
 
 const STORAGE_KEY = 'joy_employee_document_requests_v1';
+const DEFAULT_ORG_UUID = '0c621892-e938-4707-9957-13534ea32c19';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value?: string | null): value is string {
+  return typeof value === 'string' && UUID_REGEX.test(value.trim());
+}
+
+function generateRequestUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function normalizeRequestCategory(
+  cat?: string
+): 'IDENTITY' | 'EMPLOYMENT' | 'EDUCATION' | 'STATUTORY' | 'PAYROLL' | 'VENDOR_COMPLIANCE' | 'WORKFORCE_PROOF' {
+  const upper = (cat || 'IDENTITY').toUpperCase();
+  if (upper === 'EMPLOYMENT') return 'EMPLOYMENT';
+  if (upper === 'EDUCATION') return 'EDUCATION';
+  if (upper === 'STATUTORY') return 'STATUTORY';
+  if (upper === 'PAYROLL' || upper === 'BANK_PAYROLL') return 'PAYROLL';
+  if (upper === 'VENDOR_WORKFORCE' || upper === 'VENDOR_COMPLIANCE' || upper === 'VENDOR') return 'VENDOR_COMPLIANCE';
+  if (upper === 'WORKFORCE_PROOF') return 'WORKFORCE_PROOF';
+  return 'IDENTITY';
+}
+
+function isMockSeedRequest(item: Partial<EmployeeDocumentRequest>): boolean {
+  if (!item) return false;
+  return (
+    item.id === 'dreq-101' ||
+    item.id === 'dreq-102' ||
+    item.id === 'dreq-103' ||
+    item.employee_id === 'emp-101' ||
+    (typeof item.file_url === 'string' && item.file_url.includes('placehold.co'))
+  );
+}
 
 class DocumentRequestService {
+  private getActiveOrgUuid(): string {
+    try {
+      const currentUser = api.getCurrentUser();
+      if (isUuid(currentUser?.organization_id)) return currentUser.organization_id;
+    } catch {
+      // ignore
+    }
+    return DEFAULT_ORG_UUID;
+  }
+
   private getStore(): EmployeeDocumentRequest[] {
     try {
       if (typeof localStorage === 'undefined') return [];
       const data = localStorage.getItem(STORAGE_KEY);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed = JSON.parse(data) as EmployeeDocumentRequest[];
+        if (!Array.isArray(parsed)) return [];
+        if (isSupabaseEnabled) {
+          const sanitized = parsed.filter((item) => !isMockSeedRequest(item));
+          if (sanitized.length !== parsed.length) {
+            this.setStore(sanitized);
+          }
+          return sanitized;
+        }
+        return parsed;
+      }
     } catch {
       // fallback
     }
+    if (isSupabaseEnabled) return [];
     return this.getInitialSeedRequests();
   }
 
@@ -196,10 +259,16 @@ class DocumentRequestService {
         (r.document_code === params.documentCode || r.document_type_id === params.documentTypeId)
     );
 
+    const activeOrgUuid = this.getActiveOrgUuid();
+    const requestUuid =
+      existingIndex >= 0 && isUuid(items[existingIndex].id)
+        ? items[existingIndex].id
+        : generateRequestUuid();
+
     const newReq: EmployeeDocumentRequest = {
-      id: existingIndex >= 0 ? items[existingIndex].id : `dreq-${Date.now()}`,
-      tenant_id: 'org-joy-01',
-      organization_id: '0c621892-e938-4707-9957-13534ea32c19',
+      id: requestUuid,
+      tenant_id: activeOrgUuid,
+      organization_id: activeOrgUuid,
       employee_id: params.employeeId,
       employee_name: params.employeeName || 'Employee',
       employee_code: params.employeeCode || params.employeeId,
@@ -226,19 +295,31 @@ class DocumentRequestService {
 
     this.setStore(items);
 
-    // If Supabase is connected, attempt sync
-    if (isSupabaseEnabled) {
+    // Sync with live Supabase document_requests table
+    if (isSupabaseEnabled && isUuid(newReq.id) && isUuid(newReq.employee_id)) {
       try {
-        await supabase.from('employee_document_requests').upsert({
+        const dbPayload: Record<string, any> = {
           id: newReq.id,
+          tenant_id: activeOrgUuid,
+          organization_id: activeOrgUuid,
           employee_id: newReq.employee_id,
-          document_type_id: newReq.document_type_id,
-          status: newReq.status,
-          request_message: newReq.request_message,
-          due_date: newReq.due_date,
-          created_at: newReq.created_at,
-          updated_at: newReq.updated_at,
-        });
+          document_type_id: newReq.document_code || newReq.document_type_id,
+          document_title: newReq.document_title,
+          category: normalizeRequestCategory(newReq.category),
+          is_required: newReq.is_required,
+          status: 'REQUESTED',
+          due_date: newReq.due_date || null,
+          request_message: newReq.request_message || null,
+        };
+        if (isUuid(currentUser?.id)) {
+          dbPayload.requested_by = currentUser.id;
+        }
+        const { error } = await supabase
+          .from('document_requests')
+          .upsert(dbPayload, { onConflict: 'id' });
+        if (error) {
+          console.warn('[DocumentRequestService] Supabase upsert error:', error);
+        }
       } catch (err) {
         console.warn('[DocumentRequestService] Supabase sync notice:', err);
       }
@@ -308,6 +389,20 @@ class DocumentRequestService {
 
     this.setStore(items);
 
+    if (isSupabaseEnabled && isUuid(items[idx].id)) {
+      try {
+        const { error } = await supabase
+          .from('document_requests')
+          .update({ status: 'SUBMITTED' })
+          .eq('id', items[idx].id);
+        if (error) {
+          console.warn('[DocumentRequestService] Supabase submit update warning:', error);
+        }
+      } catch (err) {
+        console.warn('[DocumentRequestService] Supabase submit sync notice:', err);
+      }
+    }
+
     hrEventBus.publish('document.submitted', {
       requestId: items[idx].id,
       employeeId: items[idx].employee_id,
@@ -351,6 +446,21 @@ class DocumentRequestService {
     }
 
     this.setStore(items);
+
+    if (isSupabaseEnabled && isUuid(items[idx].id)) {
+      try {
+        const dbStatus = params.status === 'REPLACEMENT_REQUIRED' ? 'REJECTED' : params.status;
+        const { error } = await supabase
+          .from('document_requests')
+          .update({ status: dbStatus })
+          .eq('id', items[idx].id);
+        if (error) {
+          console.warn('[DocumentRequestService] Supabase review update warning:', error);
+        }
+      } catch (err) {
+        console.warn('[DocumentRequestService] Supabase review sync notice:', err);
+      }
+    }
 
     if (params.status === 'VERIFIED') {
       hrEventBus.publish('document.verified', {
@@ -403,14 +513,15 @@ class DocumentRequestService {
 
     const items = this.getStore();
     const now = new Date().toISOString();
+    const activeOrgUuid = this.getActiveOrgUuid();
 
     for (const item of defaultChecklist) {
       const exists = items.some((r) => r.employee_id === employeeId && r.document_code === item.code);
       if (!exists) {
         items.push({
-          id: `dreq-${employeeId}-${item.code.toLowerCase()}`,
-          tenant_id: 'org-joy-01',
-          organization_id: '0c621892-e938-4707-9957-13534ea32c19',
+          id: generateRequestUuid(),
+          tenant_id: activeOrgUuid,
+          organization_id: activeOrgUuid,
           employee_id: employeeId,
           employee_name: employeeName,
           employee_code: employeeCode,

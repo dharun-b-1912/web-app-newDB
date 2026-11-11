@@ -2,15 +2,22 @@ import { DocumentMaster, DocumentVerificationStatus } from '../../types';
 import { api } from '../api';
 import { hrEventBus } from '../hrEventBus';
 import { documentAuditService } from './documentAuditService';
+import { documentService, isValidDocumentUuid } from './documentService';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { notificationService } from '../notification/notificationService';
 
 const DOCUMENTS_STORAGE_KEY = 'workforce_document_master_v2';
-const REQUIREMENTS_STORAGE_KEY = 'workforce_document_requirements_v2';
 
 class DocumentVerificationService {
+  private getTenantStorageKey(): string {
+    const orgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || '0c621892-e938-4707-9957-13534ea32c19') : '0c621892-e938-4707-9957-13534ea32c19';
+    return `${DOCUMENTS_STORAGE_KEY}_${orgId}`;
+  }
+
   private getDocuments(): DocumentMaster[] {
     try {
+      const tenantData = localStorage.getItem(this.getTenantStorageKey());
+      if (tenantData) return JSON.parse(tenantData);
       const data = localStorage.getItem(DOCUMENTS_STORAGE_KEY);
       if (!data) return [];
       return JSON.parse(data);
@@ -21,7 +28,9 @@ class DocumentVerificationService {
 
   private setDocuments(docs: DocumentMaster[]): void {
     try {
-      localStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(docs));
+      const json = JSON.stringify(docs);
+      localStorage.setItem(this.getTenantStorageKey(), json);
+      localStorage.setItem(DOCUMENTS_STORAGE_KEY, json);
     } catch (e) {
       console.warn('[DocumentVerificationService] Failed to persist documents:', e);
     }
@@ -30,13 +39,19 @@ class DocumentVerificationService {
   // Verify / Approve a document
   async verifyDocument(documentId: string, comments?: string): Promise<DocumentMaster> {
     const docs = this.getDocuments();
-    const idx = docs.findIndex(d => d.id === documentId);
-    if (idx === -1) throw new Error('Document not found.');
+    let idx = docs.findIndex(d => d.id === documentId);
+    if (idx === -1) {
+      const fallback = documentService.getDocumentById(documentId);
+      if (!fallback) throw new Error('Document not found.');
+      docs.unshift(fallback);
+      idx = 0;
+    }
 
     const currentUser = api.getCurrentUser();
     const now = new Date().toISOString();
     const prevStatus = docs[idx].verification_status;
-    const adminName = currentUser.name || 'Hari priya (HR Head)';
+    const adminName = currentUser.name || currentUser.email || 'HR Reviewer';
+    const verifierUuid = isValidDocumentUuid(currentUser.id) ? currentUser.id : null;
 
     docs[idx].verification_status = 'VERIFIED';
     docs[idx].verified_by = adminName;
@@ -47,31 +62,39 @@ class DocumentVerificationService {
 
     this.setDocuments(docs);
 
-    // Persist to Supabase
-    if (isSupabaseEnabled) {
-      // 1. Direct table updates to ensure both employee_documents and document_requirements are synced
+    // Persist to Supabase for valid UUID records
+    if (isSupabaseEnabled && isValidDocumentUuid(documentId)) {
       try {
-        const { error } = await supabase
-          .from('employee_documents')
-          .update({
-            verification_status: 'Verified',
-          })
-          .eq('id', documentId);
-
-        if (error) {
-          // If title-case failed or table expects uppercase, try VERIFIED
-          await supabase
+        const [{ error: empErr }, { error: docErr }] = await Promise.all([
+          supabase
             .from('employee_documents')
             .update({
               verification_status: 'VERIFIED',
+              verified_by: verifierUuid,
+              verified_at: now,
+              rejection_reason: null,
+              updated_at: now,
             })
-            .eq('id', documentId);
+            .eq('id', documentId),
+          supabase
+            .from('documents')
+            .update({
+              status: 'VERIFIED',
+              verified_by: verifierUuid,
+              verified_at: now,
+              rejection_reason: null,
+              updated_at: now,
+            })
+            .eq('id', documentId),
+        ]);
+        if (empErr && docErr) {
+          console.warn('[DocumentVerificationService] verify update:', empErr.message, docErr.message);
         }
       } catch (docErr) {
         console.warn('[DocumentVerificationService] employee_documents verify update:', docErr);
       }
 
-      // 3. Notify Flutter App via notification_events
+      // Notify Flutter App via notification_events
       notificationService.emitEmployeeNotification({
         employeeId: docs[idx].subject_id,
         title: `Document Verified: ${docs[idx].title}`,
@@ -109,13 +132,19 @@ class DocumentVerificationService {
     }
 
     const docs = this.getDocuments();
-    const idx = docs.findIndex(d => d.id === documentId);
-    if (idx === -1) throw new Error('Document not found.');
+    let idx = docs.findIndex(d => d.id === documentId);
+    if (idx === -1) {
+      const fallback = documentService.getDocumentById(documentId);
+      if (!fallback) throw new Error('Document not found.');
+      docs.unshift(fallback);
+      idx = 0;
+    }
 
     const currentUser = api.getCurrentUser();
     const now = new Date().toISOString();
     const prevStatus = docs[idx].verification_status;
-    const adminName = currentUser.name || 'Hari priya (HR Head)';
+    const adminName = currentUser.name || currentUser.email || 'HR Reviewer';
+    const verifierUuid = isValidDocumentUuid(currentUser.id) ? currentUser.id : null;
 
     docs[idx].verification_status = 'REJECTED';
     docs[idx].verified_by = adminName;
@@ -125,30 +154,39 @@ class DocumentVerificationService {
 
     this.setDocuments(docs);
 
-    // Persist to Supabase
-    if (isSupabaseEnabled) {
-      // 1. Direct updates
+    // Persist to Supabase for valid UUID records
+    if (isSupabaseEnabled && isValidDocumentUuid(documentId)) {
       try {
-        const { error } = await supabase
-          .from('employee_documents')
-          .update({
-            verification_status: 'Rejected',
-          })
-          .eq('id', documentId);
-
-        if (error) {
-          await supabase
+        const [{ error: empErr }, { error: docErr }] = await Promise.all([
+          supabase
             .from('employee_documents')
             .update({
               verification_status: 'REJECTED',
+              verified_by: verifierUuid,
+              verified_at: now,
+              rejection_reason: reason,
+              updated_at: now,
             })
-            .eq('id', documentId);
+            .eq('id', documentId),
+          supabase
+            .from('documents')
+            .update({
+              status: 'REJECTED',
+              verified_by: verifierUuid,
+              verified_at: now,
+              rejection_reason: reason,
+              updated_at: now,
+            })
+            .eq('id', documentId),
+        ]);
+        if (empErr && docErr) {
+          console.warn('[DocumentVerificationService] reject update:', empErr.message, docErr.message);
         }
       } catch (docErr) {
         console.warn('[DocumentVerificationService] employee_documents reject update:', docErr);
       }
 
-      // 3. Notify Flutter App
+      // Notify Flutter App
       notificationService.emitEmployeeNotification({
         employeeId: docs[idx].subject_id,
         title: `Document Rejected: ${docs[idx].title}`,

@@ -29,6 +29,74 @@ const CATEGORIES_STORAGE_KEY = 'workforce_document_categories_v2';
 const TYPES_STORAGE_KEY = 'workforce_document_types_v2';
 const REQUIREMENTS_STORAGE_KEY = 'workforce_document_requirements_v2';
 
+const DEFAULT_ORG_UUID = '0c621892-e938-4707-9957-13534ea32c19';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const isValidDocumentUuid = (value?: string | null): value is string =>
+  typeof value === 'string' && UUID_REGEX.test(value.trim());
+
+const generateDocumentUuid = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+};
+
+const isMockSeedRecord = (item: any): boolean => {
+  if (!item || typeof item !== 'object') return false;
+  const id = String(item.id || '');
+  const sub = String(item.subject_id || item.employee_id || '');
+  return (
+    /^req-(pan|aadhaar|bank)-emp101$/i.test(id) ||
+    /^doc-seed-/i.test(id) ||
+    /^ver-seed-/i.test(id) ||
+    sub === 'emp-101'
+  );
+};
+
+const normalizeCategoryCode = (rawCategory?: string | null, code?: string | null): string => {
+  const c = (rawCategory || code || '').toUpperCase();
+  if (c.includes('IDENTITY') || c.includes('PAN') || c.includes('AADHAAR') || c.includes('PASSPORT') || c.includes('VOTER') || c.includes('DRIVING')) {
+    return 'IDENTITY';
+  }
+  if (c.includes('BANK') || c.includes('PAY') || c.includes('TAX') || c.includes('SALARY')) {
+    return 'PAYROLL';
+  }
+  if (c.includes('EDU') || c.includes('DEGREE') || c.includes('CERT')) {
+    return 'EDUCATION';
+  }
+  if (c.includes('STAT') || c.includes('PF') || c.includes('ESI') || c.includes('COMPLIANCE') || c.includes('WORKFORCE')) {
+    return 'STATUTORY';
+  }
+  if (c.includes('POLICY') || c.includes('HANDBOOK') || c.includes('COMPANY')) {
+    return 'COMPANY_POLICY';
+  }
+  if (c.includes('EXIT') || c.includes('RELIEVING') || c.includes('APPRAISAL')) {
+    return 'PERFORMANCE_EXIT';
+  }
+  if (c.includes('EMPLOY') || c.includes('OFFER') || c.includes('NDA') || c.includes('CONTRACT') || c.includes('EXPERIENCE')) {
+    return 'EMPLOYMENT';
+  }
+  return 'IDENTITY';
+};
+
+const DOC_TYPE_CODE_ALIASES: Record<string, string[]> = {
+  PAN_CARD: ['PAN_CARD', 'PAN'],
+  PAN: ['PAN', 'PAN_CARD'],
+  AADHAAR_CARD: ['AADHAAR_CARD', 'AADHAAR'],
+  AADHAAR: ['AADHAAR', 'AADHAAR_CARD'],
+  BANK_DOCUMENT: ['BANK_DOCUMENT', 'BANK_DETAILS', 'BANK_PASSBOOK', 'CANCELLED_CHEQUE'],
+  BANK_DETAILS: ['BANK_DETAILS', 'BANK_DOCUMENT', 'BANK_PASSBOOK'],
+  BANK_PASSBOOK: ['BANK_PASSBOOK', 'BANK_DETAILS', 'BANK_DOCUMENT'],
+  OFFER_LETTER: ['OFFER_LETTER', 'APPOINTMENT_LETTER', 'EXPERIENCE_LETTER', 'OTHER'],
+  NDA_AGREEMENT: ['NDA_AGREEMENT', 'CONTRACT', 'OTHER'],
+  COMPANY_POLICY: ['COMPANY_POLICY', 'OTHER'],
+  OTHER: ['OTHER'],
+};
+
 const DEFAULT_CATEGORIES: DocumentCategory[] = [
   { id: 'cat-01', tenant_id: 'org-joy-01', code: 'IDENTITY', name: 'Identity & KYC', description: 'National IDs, PAN, Aadhaar, Passport', icon: 'Shield' },
   { id: 'cat-02', tenant_id: 'org-joy-01', code: 'EMPLOYMENT', name: 'Employment & Contracts', description: 'Offer, Appointment, NDA, SOW', icon: 'Briefcase' },
@@ -378,30 +446,67 @@ const DEFAULT_MASTER_VERSIONS: DocumentVersion[] = [
 ];
 
 class DocumentService {
+  private resolveOrgUuid(): string {
+    try {
+      const currentUser = api.getCurrentUser();
+      if (isValidDocumentUuid(currentUser?.organization_id)) {
+        return currentUser.organization_id;
+      }
+      if (typeof window !== 'undefined') {
+        const storedOrg = localStorage.getItem('workforce_active_org_id');
+        if (isValidDocumentUuid(storedOrg)) return storedOrg;
+      }
+    } catch {
+      // ignore fallback
+    }
+    return DEFAULT_ORG_UUID;
+  }
+
   private getTenantStorageKey(baseKey: string): string {
-    const orgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-01') : 'org-joy-01';
+    const orgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || DEFAULT_ORG_UUID) : DEFAULT_ORG_UUID;
     return `${baseKey}_${orgId}`;
   }
 
   private getStore<T>(baseKey: string, fallback: T[] = []): T[] {
+    const sanitize = (arr: any[]): T[] => {
+      if (!isSupabaseEnabled) return arr as T[];
+      if (
+        baseKey === DOCUMENTS_STORAGE_KEY ||
+        baseKey === VERSIONS_STORAGE_KEY ||
+        baseKey === REQUIREMENTS_STORAGE_KEY
+      ) {
+        return arr.filter(item => !isMockSeedRecord(item)) as T[];
+      }
+      return arr as T[];
+    };
+
     try {
       const tenantKey = this.getTenantStorageKey(baseKey);
       const data = localStorage.getItem(tenantKey);
       if (data) {
         const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          return sanitize(parsed);
+        }
       }
 
       const legacy = localStorage.getItem(baseKey);
       if (legacy) {
         const parsed = JSON.parse(legacy);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          localStorage.setItem(tenantKey, legacy);
-          return parsed;
+        if (Array.isArray(parsed)) {
+          const clean = sanitize(parsed);
+          localStorage.setItem(tenantKey, JSON.stringify(clean));
+          return clean;
         }
       }
 
-      // Default seed data for documents, versions, and requirements
+      // Never seed mock demo records when Supabase production mode is active
+      if (isSupabaseEnabled) {
+        if (baseKey === CATEGORIES_STORAGE_KEY) return (DEFAULT_CATEGORIES as unknown) as T[];
+        if (baseKey === TYPES_STORAGE_KEY) return (DEFAULT_DOCUMENT_TYPES as unknown) as T[];
+        return fallback;
+      }
+
       if (baseKey === DOCUMENTS_STORAGE_KEY) {
         return (DEFAULT_MASTER_DOCS as unknown) as T[];
       }
@@ -414,6 +519,11 @@ class DocumentService {
 
       return fallback;
     } catch {
+      if (isSupabaseEnabled) {
+        if (baseKey === CATEGORIES_STORAGE_KEY) return (DEFAULT_CATEGORIES as unknown) as T[];
+        if (baseKey === TYPES_STORAGE_KEY) return (DEFAULT_DOCUMENT_TYPES as unknown) as T[];
+        return fallback;
+      }
       if (baseKey === DOCUMENTS_STORAGE_KEY) {
         return (DEFAULT_MASTER_DOCS as unknown) as T[];
       }
@@ -433,10 +543,91 @@ class DocumentService {
       const str = JSON.stringify(items);
       localStorage.setItem(tenantKey, str);
       localStorage.setItem(baseKey, str);
-      localStorage.setItem(`${baseKey}_org-joy-01`, str);
     } catch (e) {
       console.warn(`[DocumentService] Failed to persist ${baseKey}:`, e);
     }
+  }
+
+  private mapDbDocTypeRow(row: any): DocumentTypeMaster {
+    const code = row.code || String(row.name || 'OTHER').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+    const applicable = Array.isArray(row.applicable_to)
+      ? row.applicable_to.map((a: string) => (a.toLowerCase() === 'vendor' ? 'vendor' : 'employee'))
+      : ['employee', 'vendor_worker', 'vendor', 'candidate'];
+    return {
+      id: row.id,
+      tenant_id: row.organization_id || row.tenant_id || DEFAULT_ORG_UUID,
+      category_id: normalizeCategoryCode(row.category, code),
+      code,
+      name: row.display_name || row.name || code,
+      description: row.description || undefined,
+      allowed_subject_types: [...new Set([...applicable, 'company'])] as DocumentSubjectType[],
+      allowed_file_types: Array.isArray(row.allowed_mime_types) && row.allowed_mime_types.length > 0
+        ? row.allowed_mime_types
+        : ['application/pdf', 'image/jpeg', 'image/png'],
+      max_size_bytes: Number(row.max_size_bytes) || 10485760,
+      requires_expiry: false,
+      requires_verification: row.requires_verification ?? row.is_review_required ?? true,
+      requires_signature: false,
+      default_classification: normalizeCategoryCode(row.category, code) === 'COMPANY_POLICY' ? 'internal' : 'restricted',
+      retention_period_years: 10,
+      is_active: row.is_active !== false,
+    };
+  }
+
+  async fetchDocumentTypes(): Promise<DocumentTypeMaster[]> {
+    if (!isSupabaseEnabled) {
+      return this.getDocumentTypes();
+    }
+    try {
+      const { data, error } = await supabase
+        .from('document_types')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const mapped = data.map(r => this.mapDbDocTypeRow(r));
+        this.setStore(TYPES_STORAGE_KEY, mapped);
+        return mapped;
+      }
+    } catch (e) {
+      console.warn('[DocumentService] fetchDocumentTypes fallback:', e);
+    }
+    return this.getDocumentTypes();
+  }
+
+  private async resolveDocumentTypeUuid(docTypeCode: string, preferredId?: string): Promise<string> {
+    if (isValidDocumentUuid(preferredId)) return preferredId;
+
+    const types = await this.fetchDocumentTypes();
+    const candidates = DOC_TYPE_CODE_ALIASES[docTypeCode] || [docTypeCode];
+
+    for (const candidate of candidates) {
+      const hit = types.find(t => t.code === candidate && isValidDocumentUuid(t.id));
+      if (hit) return hit.id;
+    }
+
+    // Fallback: direct live lookup for ANY active document_type (preferring OTHER)
+    try {
+      const { data } = await supabase
+        .from('document_types')
+        .select('id, code')
+        .eq('is_active', true)
+        .limit(20);
+      if (Array.isArray(data) && data.length > 0) {
+        for (const candidate of candidates) {
+          const match = data.find((r: any) => String(r.code || '').toUpperCase() === candidate.toUpperCase());
+          if (match && isValidDocumentUuid(match.id)) return match.id;
+        }
+        const otherRow = data.find((r: any) => String(r.code || '').toUpperCase() === 'OTHER');
+        if (otherRow && isValidDocumentUuid(otherRow.id)) return otherRow.id;
+        if (isValidDocumentUuid(data[0]?.id)) return data[0].id;
+      }
+    } catch {
+      // ignore
+    }
+
+    throw new Error('No active document type configuration found in database.');
   }
 
   // ==========================================================================
@@ -446,15 +637,32 @@ class DocumentService {
   async syncWithDatabase(): Promise<void> {
     if (!isSupabaseEnabled) return;
     try {
-      const [docsRes, empsRes] = await Promise.all([
-        supabase.from('employee_documents').select('*, document_types(id, name, code)'),
-        supabase.from('employees').select('*'),
+      const orgUuid = this.resolveOrgUuid();
+
+      // Purge any legacy mock/seed entries from localStorage immediately
+      const existingReqs = this.getStore<DocumentRequirement>(REQUIREMENTS_STORAGE_KEY, []);
+      this.setStore(REQUIREMENTS_STORAGE_KEY, existingReqs);
+
+      const [docsRes, generalDocsRes, typesRes, empsRes] = await Promise.all([
+        supabase.from('employee_documents').select('*, document_types(id, name, display_name, code, category, requires_verification)'),
+        supabase.from('documents').select('*'),
+        supabase.from('document_types').select('*').eq('is_active', true).order('display_order', { ascending: true }),
+        supabase.from('employees').select('id, employee_code, first_name, last_name, organization_id'),
       ]);
 
       let docsData = docsRes.data;
       if (!docsData && docsRes.error) {
         const fallbackDocs = await supabase.from('employee_documents').select('*');
         docsData = fallbackDocs.data;
+      }
+
+      const dbTypesById = new Map<string, DocumentTypeMaster>();
+      if (!typesRes.error && Array.isArray(typesRes.data) && typesRes.data.length > 0) {
+        const mappedTypes = typesRes.data.map(r => this.mapDbDocTypeRow(r));
+        this.setStore(TYPES_STORAGE_KEY, mappedTypes);
+        for (const t of mappedTypes) {
+          dbTypesById.set(t.id, t);
+        }
       }
 
       const empsMap = new Map<string, any>();
@@ -465,20 +673,21 @@ class DocumentService {
         }
       }
 
-      // Build DocumentMaster records from employee_documents
       const masterDocs: DocumentMaster[] = [];
       const versions: DocumentVersion[] = [];
 
-      if (docsData && docsData.length > 0) {
+      // 1. Map canonical public.employee_documents rows
+      if (Array.isArray(docsData)) {
         for (const doc of docsData) {
           const emp = empsMap.get(doc.employee_id);
-          const empName = emp ? `${emp.first_name} ${emp.last_name} (${emp.employee_code || emp.id})` : doc.employee_id;
-          const dtMap = doc.document_types;
+          const empName = emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() + (emp.employee_code ? ` (${emp.employee_code})` : '') : doc.employee_id;
+          const dtMap = doc.document_types || dbTypesById.get(doc.document_type_id);
           const docTypeCode = dtMap?.code || doc.document_type || 'DOCUMENT';
-          const docTypeName = dtMap?.name || doc.file_name || 'Document';
+          const docTypeName = dtMap?.display_name || dtMap?.name || doc.file_name || 'Document';
+          const catCode = normalizeCategoryCode(dtMap?.category, docTypeCode);
           const matchingType = this.getDocumentTypeByCode(docTypeCode);
 
-          let filePublicUrl = (doc.file_url && doc.file_url.startsWith('http'))
+          const filePublicUrl = (doc.file_url && doc.file_url.startsWith('http'))
             ? doc.file_url
             : (doc.storage_path || doc.file_url || '');
 
@@ -488,7 +697,7 @@ class DocumentService {
             document_id: doc.id,
             version_number: 1,
             file_name: doc.file_name || `${docTypeName}.pdf`,
-            file_size_bytes: doc.file_size_bytes || 1024 * 1024,
+            file_size_bytes: doc.file_size_bytes || 0,
             mime_type: doc.mime_type || 'application/pdf',
             storage_path: doc.storage_path || '',
             content_hash: 'sha256-verified',
@@ -502,16 +711,21 @@ class DocumentService {
 
           masterDocs.push({
             id: doc.id,
-            tenant_id: doc.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+            tenant_id: doc.organization_id || orgUuid,
             subject_type: 'employee',
             subject_id: doc.employee_id,
             subject_name: empName,
             document_type_code: docTypeCode,
-            category_code: matchingType?.code || 'IDENTITY',
-            title: docTypeName,
+            category_code: catCode,
+            title: doc.title || docTypeName,
             classification: (matchingType?.default_classification as any) || 'restricted',
             status: 'active',
-            verification_status: doc.verification_status?.toUpperCase() === 'VERIFIED' ? 'VERIFIED' : (doc.verification_status?.toUpperCase() === 'REJECTED' ? 'REJECTED' : 'PENDING_VERIFICATION'),
+            verification_status: doc.verification_status?.toUpperCase() === 'VERIFIED'
+              ? 'VERIFIED'
+              : (doc.verification_status?.toUpperCase() === 'REJECTED' ? 'REJECTED' : 'PENDING_VERIFICATION'),
+            verified_by: doc.verified_by || undefined,
+            verified_at: doc.verified_at || undefined,
+            rejection_reason: doc.rejection_reason || undefined,
             current_version_id: versionId,
             current_version: curVer,
             versions: [curVer],
@@ -522,114 +736,87 @@ class DocumentService {
             file_url: filePublicUrl,
             file_name: doc.file_name,
             storage_path: doc.storage_path || doc.file_path || '',
+            storage_bucket: doc.storage_bucket || 'employee-documents',
             employee_id: doc.employee_id,
             employee_name: empName,
             document_type: docTypeName,
-          });
+          } as DocumentMaster);
         }
       }
 
-      // Also merge requirements so HR can see submitted mobile documents
-      const localReqs = this.getStore<DocumentRequirement>(REQUIREMENTS_STORAGE_KEY, []);
-      if (localReqs.length > 0) {
-        for (const req of localReqs) {
-          const emp = empsMap.get(req.employee_id);
-          const empName = emp ? `${emp.first_name} ${emp.last_name} (${emp.employee_code || emp.id})` : req.employee_id;
-          const matchingType = this.getDocumentTypeByCode(req.document_type);
+      // 2. Also include public.documents rows (e.g. Company Policy / Vendor / Non-employee records)
+      if (!generalDocsRes.error && Array.isArray(generalDocsRes.data)) {
+        for (const doc of generalDocsRes.data) {
+          if (masterDocs.some(m => m.id === doc.id)) continue;
+          const emp = doc.employee_id ? empsMap.get(doc.employee_id) : null;
+          const subjectType: DocumentSubjectType = doc.employee_id
+            ? 'employee'
+            : (doc.vendor_id ? 'vendor' : 'company');
+          const subjectId = doc.employee_id || doc.vendor_id || doc.organization_id || orgUuid;
+          const subjectName = emp
+            ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() + (emp.employee_code ? ` (${emp.employee_code})` : '')
+            : (subjectType === 'company' ? 'Company Record' : subjectId);
+          const docTypeCode = doc.document_type_id || 'OTHER';
+          const matchingType = this.getDocumentTypeByCode(docTypeCode);
+          const catCode = normalizeCategoryCode(undefined, docTypeCode);
 
-          // Find if there is a matching uploaded file in employee_documents or storage
-          const matchingDoc = docsRes.data?.find(d => 
-            d.id === req.document_id || 
-            d.document_type_id === req.id ||
-            ((d.employee_id === req.employee_id || (emp && (d.employee_id === emp.id || d.employee_id === emp.employee_code))) && 
-             (d.document_type === req.document_type || d.document_type === req.title))
-          );
-
-          let reqFileUrl = matchingDoc?.file_url || '';
-          let reqStoragePath = matchingDoc?.storage_path || '';
-          let reqFileName = matchingDoc?.file_name || `${req.title || 'Document'}.pdf`;
-
-          // If no doc record yet, check storage folder
-          if (!reqFileUrl && (req.status === 'SUBMITTED' || req.status === 'VERIFIED')) {
-            try {
-              const folderPath = `employees/${req.employee_id}/documents/${req.id}`;
-              const { data: files } = await supabase.storage.from('employee-documents').list(folderPath, {
-                limit: 50,
-              });
-              if (files && files.length > 0) {
-                const realFiles = files.filter(f => f.name && !f.name.startsWith('.'));
-                if (realFiles.length > 0) {
-                  realFiles.sort((a, b) => {
-                    const timeA = parseInt(a.name.split('_')[0]) || new Date(a.created_at || 0).getTime();
-                    const timeB = parseInt(b.name.split('_')[0]) || new Date(b.created_at || 0).getTime();
-                    return timeB - timeA; // Descending (newest first)
-                  });
-                  const latest = realFiles[0];
-                  reqStoragePath = `${folderPath}/${latest.name}`;
-                  reqFileName = latest.name.replace(/^\d+_/, '');
-                  reqFileUrl = supabase.storage.from('employee-documents').getPublicUrl(reqStoragePath).data.publicUrl;
-                }
-              }
-            } catch (_) {}
-          }
-
-          const versionId = `ver-${req.id}-1`;
+          const versionId = `ver-${doc.id}-1`;
           const curVer: DocumentVersion = {
             id: versionId,
-            document_id: req.id,
+            document_id: doc.id,
             version_number: 1,
-            file_name: reqFileName,
-            file_size_bytes: matchingDoc?.file_size_bytes || 1024 * 512,
-            mime_type: matchingDoc?.mime_type || (reqFileName.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
-            storage_path: reqStoragePath,
-            file_url: reqFileUrl,
+            file_name: doc.original_filename || 'document.pdf',
+            file_size_bytes: doc.file_size_bytes || 0,
+            mime_type: doc.mime_type || 'application/pdf',
+            storage_path: doc.object_path || '',
             content_hash: 'sha256-verified',
             encryption_algorithm: 'AES-256-GCM',
             malware_scan_status: 'SAFE',
-            uploaded_by_id: req.employee_id,
-            uploaded_by_name: empName,
-            created_at: req.updated_at || req.created_at || new Date().toISOString(),
+            uploaded_by_id: doc.uploaded_by || orgUuid,
+            uploaded_by_name: subjectName,
+            created_at: doc.created_at || new Date().toISOString(),
           };
           versions.push(curVer);
 
-          const existingMasterIndex = masterDocs.findIndex(d => d.id === req.id || (req.document_id && d.id === req.document_id));
-          const docPayload: DocumentMaster = {
-            id: req.id,
-            tenant_id: req.tenant_id || 'org-joy-01',
-            subject_type: 'employee',
-            subject_id: req.employee_id,
-            subject_name: empName,
-            document_type_code: req.document_type,
-            category_code: matchingType?.code || 'IDENTITY',
-            title: req.title || matchingType?.name || req.document_type,
-            classification: (matchingType?.default_classification as any) || 'restricted',
+          masterDocs.push({
+            id: doc.id,
+            tenant_id: doc.organization_id || orgUuid,
+            subject_type: subjectType,
+            subject_id: subjectId,
+            subject_name: subjectName,
+            document_type_code: docTypeCode,
+            category_code: catCode,
+            title: doc.original_filename || matchingType?.name || docTypeCode,
+            classification: (matchingType?.default_classification as any) || (subjectType === 'company' ? 'internal' : 'restricted'),
             status: 'active',
-            verification_status: req.status?.toUpperCase() === 'VERIFIED' ? 'VERIFIED' : (req.status?.toUpperCase() === 'REJECTED' ? 'REJECTED' : 'PENDING_VERIFICATION'),
+            verification_status: doc.status?.toUpperCase() === 'VERIFIED'
+              ? 'VERIFIED'
+              : (doc.status?.toUpperCase() === 'REJECTED' ? 'REJECTED' : 'PENDING_VERIFICATION'),
+            verified_by: doc.verified_by || undefined,
+            verified_at: doc.verified_at || undefined,
+            rejection_reason: doc.rejection_reason || undefined,
             current_version_id: versionId,
             current_version: curVer,
             versions: [curVer],
             version_count: 1,
-            created_by: req.requested_by || 'HR Head',
-            created_at: req.created_at || new Date().toISOString(),
-            updated_at: req.updated_at || new Date().toISOString(),
-            file_url: reqFileUrl,
-            file_name: reqFileName,
-            storage_path: reqStoragePath,
-            employee_id: req.employee_id,
-            employee_name: empName,
-            document_type: req.title || req.document_type,
-          };
-
-          if (existingMasterIndex >= 0) {
-            masterDocs[existingMasterIndex] = { ...masterDocs[existingMasterIndex], ...docPayload };
-          } else {
-            masterDocs.push(docPayload);
-          }
+            created_by: subjectName,
+            created_at: doc.created_at || new Date().toISOString(),
+            updated_at: doc.updated_at || doc.created_at || new Date().toISOString(),
+            file_name: doc.original_filename,
+            storage_path: doc.object_path || '',
+            storage_bucket: doc.bucket_id || 'peoplehr-employee-documents',
+            employee_id: doc.employee_id || undefined,
+            employee_name: emp ? subjectName : undefined,
+            document_type: matchingType?.name || docTypeCode,
+          } as DocumentMaster);
         }
       }
 
-      this.setStore(DOCUMENTS_STORAGE_KEY, masterDocs);
-      this.setStore(VERSIONS_STORAGE_KEY, versions);
+      // Only replace local store if database queries succeeded cleanly (do not wipe on transient network error)
+      if (!docsRes.error || Array.isArray(docsData) || (!generalDocsRes.error && Array.isArray(generalDocsRes.data))) {
+        this.setStore(DOCUMENTS_STORAGE_KEY, masterDocs);
+        this.setStore(VERSIONS_STORAGE_KEY, versions);
+      }
     } catch (e) {
       console.warn('[DocumentService] syncWithDatabase error:', e);
     }
@@ -826,6 +1013,7 @@ class DocumentService {
     subjectId: string;
     subjectName?: string;
     documentTypeCode: string;
+    documentTypeId?: string;
     categoryCode?: string;
     title: string;
     description?: string;
@@ -838,10 +1026,12 @@ class DocumentService {
     onProgress?: (stage: 'VALIDATING' | 'OPTIMIZING' | 'SECURING' | 'SAVING') => void;
   }): Promise<DocumentMaster> {
     const currentUser = api.getCurrentUser();
-    const docId = `doc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    const versionId = `dver-${Date.now()}-1`;
+    const orgUuid = this.resolveOrgUuid();
+    const docId = generateDocumentUuid();
+    const versionId = generateDocumentUuid();
     const now = new Date().toISOString();
     const originalFileName = params.fileName || (params.file as File).name || `${params.documentTypeCode.toLowerCase()}.pdf`;
+    const resolvedCategory = normalizeCategoryCode(params.categoryCode, params.documentTypeCode);
 
     // Step 1: Validate file & content magic bytes
     params.onProgress?.('VALIDATING');
@@ -857,9 +1047,10 @@ class DocumentService {
     // Step 3: Upload to Private Supabase Storage Bucket
     params.onProgress?.('SECURING');
     const storageResult = await supabaseStorageEngine.uploadFile({
-      tenantId: currentUser.organization_id || 'org-joy-01',
-      organizationId: currentUser.organization_id || 'org-joy-01',
+      tenantId: orgUuid,
+      organizationId: orgUuid,
       employeeId: params.subjectType === 'employee' ? params.subjectId : undefined,
+      vendorId: params.subjectType === 'vendor' ? params.subjectId : undefined,
       subjectType: params.subjectType,
       subjectId: params.subjectId,
       documentId: docId,
@@ -867,7 +1058,7 @@ class DocumentService {
       fileName: originalFileName,
       file: optimized.file,
       classification: params.classification || 'restricted',
-      isCompanyDoc: params.subjectType === 'company' || params.categoryCode === 'COMPANY_POLICY',
+      isCompanyDoc: params.subjectType === 'company' || resolvedCategory === 'COMPANY_POLICY',
     } as any);
 
     // Step 4: Construct Immutable Version Record
@@ -883,38 +1074,108 @@ class DocumentService {
       encryption_algorithm: 'AES-256-GCM',
       encryption_key_id: 'kms-joy-2026-01',
       malware_scan_status: 'SAFE',
-      uploaded_by_id: currentUser.id || (currentUser as any).employee_id || 'user-admin-01',
-      uploaded_by_name: currentUser.name || 'Dharun Joy',
+      uploaded_by_id: currentUser.id || (currentUser as any).employee_id || orgUuid,
+      uploaded_by_name: currentUser.name || currentUser.email || 'HR User',
       created_at: now,
     };
 
-    // Step 5: Construct Canonical Document Master Record
+    // Step 5: Persist Metadata in Live Supabase DB (employee_documents or documents)
+    params.onProgress?.('SAVING');
+
+    const dbVerifStatus = params.requiresVerification ? 'PENDING' : 'VERIFIED';
+
+    if (isSupabaseEnabled) {
+      try {
+        const isEmployeeDoc =
+          (params.subjectType === 'employee' || params.subjectType === 'vendor_worker') &&
+          isValidDocumentUuid(params.subjectId);
+
+        if (isEmployeeDoc) {
+          const docTypeUuid = await this.resolveDocumentTypeUuid(params.documentTypeCode, params.documentTypeId);
+          const { error: empDocErr } = await supabase
+            .from('employee_documents')
+            .insert({
+              id: docId,
+              organization_id: orgUuid,
+              employee_id: params.subjectId,
+              document_type_id: docTypeUuid,
+              file_name: originalFileName,
+              storage_path: storageResult.storagePath,
+              file_size_bytes: optimized.storedSizeBytes,
+              mime_type: optimized.mimeType,
+              verification_status: dbVerifStatus,
+              verified_by: !params.requiresVerification && isValidDocumentUuid(currentUser.id) ? currentUser.id : null,
+              verified_at: !params.requiresVerification ? now : null,
+            });
+
+          if (empDocErr) {
+            throw new Error(empDocErr.message || 'Failed to save employee document metadata.');
+          }
+        } else {
+          const { data: authData } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+          const actorUuid = authData?.user?.id || (isValidDocumentUuid(currentUser.id) ? currentUser.id : undefined);
+          const docPayload: Record<string, any> = {
+            id: docId,
+            tenant_id: orgUuid,
+            organization_id: orgUuid,
+            employee_id: isValidDocumentUuid(params.subjectId) && params.subjectType === 'employee' ? params.subjectId : null,
+            vendor_id: isValidDocumentUuid(params.subjectId) && params.subjectType === 'vendor' ? params.subjectId : null,
+            document_type_id: params.documentTypeCode || 'OTHER',
+            bucket_id: storageResult.storageBucket,
+            object_path: storageResult.storagePath,
+            original_filename: originalFileName,
+            mime_type: optimized.mimeType,
+            file_size_bytes: optimized.storedSizeBytes,
+            status: dbVerifStatus,
+            uploaded_by_role: currentUser.role || 'HR_ADMIN',
+          };
+          if (actorUuid) {
+            docPayload.uploaded_by = actorUuid;
+          }
+
+          const { error: docErr } = await supabase.from('documents').insert(docPayload);
+          if (docErr) {
+            throw new Error(docErr.message || 'Failed to save document metadata.');
+          }
+        }
+      } catch (dbErr: any) {
+        // Roll back orphaned storage object if metadata save failed
+        await supabaseStorageEngine.deleteFile(storageResult.storageBucket, storageResult.storagePath);
+        throw new Error(dbErr?.message || 'Failed to save document record in database.');
+      }
+    }
+
+    // Step 6: Construct Canonical Document Master Record & Cache Locally
     const newDoc: DocumentMaster = {
       id: docId,
-      tenant_id: currentUser.organization_id || 'org-joy-01',
-      legal_entity_id: 'comp-joy-01',
+      tenant_id: orgUuid,
+      legal_entity_id: orgUuid,
       subject_type: params.subjectType,
       subject_id: params.subjectId,
       subject_name: params.subjectName || currentUser.name || 'Employee',
       document_type_code: params.documentTypeCode,
-      category_code: params.categoryCode || 'IDENTITY',
+      category_code: resolvedCategory,
       title: params.title,
       description: params.description,
       classification: params.classification || 'restricted',
       status: 'active',
       verification_status: params.requiresVerification ? 'PENDING_VERIFICATION' : 'VERIFIED',
       current_version_id: versionId,
+      current_version: newVersion,
+      versions: [newVersion],
       version_count: 1,
+      file_name: originalFileName,
+      storage_path: storageResult.storagePath,
+      storage_bucket: storageResult.storageBucket,
+      employee_id: params.subjectType === 'employee' ? params.subjectId : undefined,
+      employee_name: params.subjectName,
       issued_at: params.issuedAt,
       expires_at: params.expiresAt,
-      created_by: currentUser.name || 'Current User',
+      created_by: currentUser.name || currentUser.email || 'Current User',
       created_at: now,
       updated_at: now,
-    };
+    } as DocumentMaster;
 
-    params.onProgress?.('SAVING');
-
-    // Save locally
     const docs = this.getStore<DocumentMaster>(DOCUMENTS_STORAGE_KEY, []);
     docs.unshift(newDoc);
     this.setStore(DOCUMENTS_STORAGE_KEY, docs);
@@ -922,55 +1183,6 @@ class DocumentService {
     const versions = this.getStore<DocumentVersion>(VERSIONS_STORAGE_KEY, []);
     versions.unshift(newVersion);
     this.setStore(VERSIONS_STORAGE_KEY, versions);
-
-    // Save in Supabase PostgreSQL if enabled
-    if (isSupabaseEnabled) {
-      try {
-        await Promise.all([
-          supabase.from('document_master').insert({
-            id: newDoc.id,
-            tenant_id: newDoc.tenant_id,
-            organization_id: newDoc.tenant_id,
-            document_type_code: newDoc.document_type_code,
-            title: newDoc.title,
-            subject_type: newDoc.subject_type,
-            subject_id: newDoc.subject_id,
-            subject_name: newDoc.subject_name,
-            current_version_id: versionId,
-            current_version_number: 1,
-            classification: newDoc.classification,
-            verification_status: newDoc.verification_status,
-            storage_bucket: storageResult.storageBucket,
-            storage_path: storageResult.storagePath,
-            original_filename: originalFileName,
-            original_size_bytes: optimized.originalSizeBytes,
-            stored_size_bytes: optimized.storedSizeBytes,
-            compression_ratio: optimized.compressionRatio,
-            checksum_sha256: optimized.sha256,
-            created_by: newDoc.created_by,
-          }),
-          supabase.from('document_versions').insert({
-            id: versionId,
-            tenant_id: newDoc.tenant_id,
-            organization_id: newDoc.tenant_id,
-            document_id: docId,
-            version_number: 1,
-            storage_bucket: storageResult.storageBucket,
-            storage_path: storageResult.storagePath,
-            original_filename: originalFileName,
-            mime_type: optimized.mimeType,
-            original_size_bytes: optimized.originalSizeBytes,
-            stored_size_bytes: optimized.storedSizeBytes,
-            checksum_sha256: optimized.sha256,
-            compression_ratio: optimized.compressionRatio,
-            uploaded_by: currentUser.name || 'Current User',
-            is_current: true,
-          }),
-        ]);
-      } catch (err) {
-        console.warn('[DocumentService] Postgres insertion background error:', err);
-      }
-    }
 
     // Auto-fulfill matching document requirements
     this.fulfillMatchingRequirement(params.subjectId, params.documentTypeCode, docId);
@@ -986,6 +1198,7 @@ class DocumentService {
         fileName: originalFileName,
         fileSizeBytes: optimized.storedSizeBytes,
         storagePath: storageResult.storagePath,
+        storageBucket: storageResult.storageBucket,
         contentHash: optimized.sha256,
         compressionRatio: `${optimized.compressionRatio}%`,
         classification: newDoc.classification,
@@ -1000,7 +1213,7 @@ class DocumentService {
       title: params.title,
     });
 
-    return this.getDocumentById(docId)!;
+    return this.getDocumentById(docId) || newDoc;
   }
 
   // Upload New Version (Version Control: Preserves v1, creates v2)
@@ -1014,8 +1227,9 @@ class DocumentService {
     if (!doc) throw new Error('Document not found.');
 
     const currentUser = api.getCurrentUser();
+    const orgUuid = isValidDocumentUuid(doc.tenant_id) ? doc.tenant_id : this.resolveOrgUuid();
     const nextVerNumber = (doc.version_count || 1) + 1;
-    const versionId = `dver-${Date.now()}-${nextVerNumber}`;
+    const versionId = generateDocumentUuid();
     const now = new Date().toISOString();
     const actualFileName = fileName || (file as File).name || doc.file_name || 'document_v2.pdf';
 
@@ -1024,8 +1238,8 @@ class DocumentService {
 
     // Upload to Private Supabase Storage
     const storageResult = await supabaseStorageEngine.uploadFile({
-      tenantId: doc.tenant_id,
-      organizationId: doc.tenant_id,
+      tenantId: orgUuid,
+      organizationId: orgUuid,
       employeeId: doc.subject_type === 'employee' ? doc.subject_id : undefined,
       subjectType: doc.subject_type,
       subjectId: doc.subject_id,
@@ -1035,6 +1249,44 @@ class DocumentService {
       file: optimized.file,
       classification: doc.classification,
     } as any);
+
+    if (isSupabaseEnabled && isValidDocumentUuid(documentId)) {
+      try {
+        if (doc.subject_type === 'employee' && isValidDocumentUuid(doc.subject_id)) {
+          const { error: upErr } = await supabase
+            .from('employee_documents')
+            .update({
+              file_name: actualFileName,
+              storage_path: storageResult.storagePath,
+              file_size_bytes: optimized.storedSizeBytes,
+              mime_type: optimized.mimeType,
+              verification_status: 'PENDING',
+              rejection_reason: null,
+              updated_at: now,
+            })
+            .eq('id', documentId);
+          if (upErr) throw upErr;
+        } else {
+          const { error: upErr } = await supabase
+            .from('documents')
+            .update({
+              bucket_id: storageResult.storageBucket,
+              object_path: storageResult.storagePath,
+              original_filename: actualFileName,
+              file_size_bytes: optimized.storedSizeBytes,
+              mime_type: optimized.mimeType,
+              status: 'UPLOADED',
+              rejection_reason: null,
+              updated_at: now,
+            })
+            .eq('id', documentId);
+          if (upErr) throw upErr;
+        }
+      } catch (dbErr: any) {
+        await supabaseStorageEngine.deleteFile(storageResult.storageBucket, storageResult.storagePath);
+        throw new Error(dbErr?.message || 'Failed to save updated document version.');
+      }
+    }
 
     const newVersion: DocumentVersion = {
       id: versionId,
@@ -1048,8 +1300,8 @@ class DocumentService {
       encryption_algorithm: 'AES-256-GCM',
       encryption_key_id: 'kms-joy-2026-01',
       malware_scan_status: 'SAFE',
-      uploaded_by_id: currentUser.id || 'user-admin-01',
-      uploaded_by_name: currentUser.name || 'Dharun Joy',
+      uploaded_by_id: currentUser.id || orgUuid,
+      uploaded_by_name: currentUser.name || currentUser.email || 'HR User',
       change_notes: changeNotes,
       created_at: now,
     };
@@ -1064,7 +1316,11 @@ class DocumentService {
     const docIdx = docs.findIndex(d => d.id === documentId);
     if (docIdx !== -1) {
       docs[docIdx].current_version_id = versionId;
+      docs[docIdx].current_version = newVersion;
       docs[docIdx].version_count = nextVerNumber;
+      docs[docIdx].file_name = actualFileName;
+      docs[docIdx].storage_path = storageResult.storagePath;
+      (docs[docIdx] as any).storage_bucket = storageResult.storageBucket;
       docs[docIdx].verification_status = 'PENDING_VERIFICATION';
       docs[docIdx].rejection_reason = undefined;
       docs[docIdx].updated_at = now;
@@ -1110,13 +1366,41 @@ class DocumentService {
     const prevStatus = docs[idx].verification_status;
 
     docs[idx].verification_status = 'VERIFIED';
-    docs[idx].verified_by = currentUser.name || 'Dharun Joy (HR Head)';
+    docs[idx].verified_by = currentUser.name || 'HR Reviewer';
     docs[idx].verified_at = now;
     docs[idx].rejection_reason = undefined;
     if (comments) docs[idx].notes = comments;
     docs[idx].updated_at = now;
 
     this.setStore(DOCUMENTS_STORAGE_KEY, docs);
+
+    if (isSupabaseEnabled && isValidDocumentUuid(documentId)) {
+      const verifierUuid = isValidDocumentUuid(currentUser.id) ? currentUser.id : null;
+      supabase
+        .from('employee_documents')
+        .update({
+          verification_status: 'VERIFIED',
+          verified_by: verifierUuid,
+          verified_at: now,
+          rejection_reason: null,
+          updated_at: now,
+        })
+        .eq('id', documentId)
+        .then(({ error }) => {
+          if (error) console.warn('[DocumentService] employee_documents verify update:', error.message);
+        });
+      supabase
+        .from('documents')
+        .update({
+          status: 'VERIFIED',
+          verified_by: verifierUuid,
+          verified_at: now,
+          rejection_reason: null,
+          updated_at: now,
+        })
+        .eq('id', documentId)
+        .then(() => {});
+    }
 
     // Update requirement if applicable
     this.updateRequirementStatus(docs[idx].subject_id, docs[idx].document_type_code, 'VERIFIED');
@@ -1157,12 +1441,40 @@ class DocumentService {
     const prevStatus = docs[idx].verification_status;
 
     docs[idx].verification_status = 'REJECTED';
-    docs[idx].verified_by = currentUser.name || 'Dharun Joy (HR Head)';
+    docs[idx].verified_by = currentUser.name || 'HR Reviewer';
     docs[idx].verified_at = now;
     docs[idx].rejection_reason = reason;
     docs[idx].updated_at = now;
 
     this.setStore(DOCUMENTS_STORAGE_KEY, docs);
+
+    if (isSupabaseEnabled && isValidDocumentUuid(documentId)) {
+      const verifierUuid = isValidDocumentUuid(currentUser.id) ? currentUser.id : null;
+      supabase
+        .from('employee_documents')
+        .update({
+          verification_status: 'REJECTED',
+          verified_by: verifierUuid,
+          verified_at: now,
+          rejection_reason: reason,
+          updated_at: now,
+        })
+        .eq('id', documentId)
+        .then(({ error }) => {
+          if (error) console.warn('[DocumentService] employee_documents reject update:', error.message);
+        });
+      supabase
+        .from('documents')
+        .update({
+          status: 'REJECTED',
+          verified_by: verifierUuid,
+          verified_at: now,
+          rejection_reason: reason,
+          updated_at: now,
+        })
+        .eq('id', documentId)
+        .then(() => {});
+    }
 
     // Update requirement status
     this.updateRequirementStatus(docs[idx].subject_id, docs[idx].document_type_code, 'REJECTED', reason);
@@ -1203,8 +1515,13 @@ class DocumentService {
       ? versions.find(v => v.document_id === documentId && v.version_number === versionNumber)
       : doc.current_version || versions.find(v => v.id === doc.current_version_id) || versions.find(v => v.document_id === documentId);
 
-    const bucket: StorageBucketDomain = supabaseStorageEngine.resolveStorageBucket(doc.subject_type === 'company' ? 'documents' : 'documents') as StorageBucketDomain;
-    const storagePath = targetVersion?.storage_path || `tenant/${doc.tenant_id}/employee/${doc.subject_id}/documents/${doc.id}/v1/${doc.file_name || 'document.pdf'}`;
+    const bucket: StorageBucketDomain | string =
+      (doc as any).storage_bucket ||
+      supabaseStorageEngine.resolveStorageBucket('documents', doc.subject_type === 'vendor');
+    const storagePath =
+      targetVersion?.storage_path ||
+      doc.storage_path ||
+      `tenant/${doc.tenant_id}/employee/${doc.subject_id}/documents/${doc.id}/v1/${doc.file_name || 'document.pdf'}`;
 
     return supabaseStorageEngine.createSignedUrl(bucket, storagePath, 900);
   }
@@ -1219,29 +1536,29 @@ class DocumentService {
     const versions = this.getStore<DocumentVersion>(VERSIONS_STORAGE_KEY, []);
 
     const targetDoc = docs.find(d => d.id === documentId);
+    const storagePath = targetDoc?.current_version?.storage_path || targetDoc?.storage_path;
+    const storageBucket = (targetDoc as any)?.storage_bucket || 'peoplehr-employee-documents';
 
-    // 1. Remove from local store
+    // 1. Clean completely from Supabase backend for real persisted UUID records
+    if (isSupabaseEnabled && isValidDocumentUuid(documentId)) {
+      const [empDelRes, docDelRes] = await Promise.all([
+        supabase.from('employee_documents').delete().eq('id', documentId),
+        supabase.from('documents').delete().eq('id', documentId),
+      ]);
+
+      if (empDelRes.error && docDelRes.error) {
+        throw new Error(empDelRes.error.message || docDelRes.error.message || 'Failed to delete document from database.');
+      }
+
+      if (storagePath) {
+        await supabaseStorageEngine.deleteFile(storageBucket, storagePath);
+      }
+    }
+
+    // 2. Remove from local store
     this.setStore(DOCUMENTS_STORAGE_KEY, docs.filter(d => d.id !== documentId));
     this.setStore(REQUIREMENTS_STORAGE_KEY, reqs.filter(r => r.id !== documentId && r.document_id !== documentId));
     this.setStore(VERSIONS_STORAGE_KEY, versions.filter(v => v.document_id !== documentId));
-
-    // 2. Clean completely from Supabase backend
-    if (isSupabaseEnabled) {
-      try {
-        // Delete employee document row
-        await supabase.from('employee_documents').delete().eq('id', documentId);
-
-        // Delete storage file if exists from canonical bucket
-        const storagePath = targetDoc?.current_version?.storage_path;
-        if (storagePath) {
-          try {
-            await supabase.storage.from('employee-documents').remove([storagePath]);
-          } catch (_) {}
-        }
-      } catch (err) {
-        console.warn('[DocumentService] Supabase delete error:', err);
-      }
-    }
 
     hrEventBus.publish('document.deleted', { documentId });
   }
@@ -1292,9 +1609,11 @@ class DocumentService {
   }): Promise<DocumentRequirement> {
     const currentUser = api.getCurrentUser();
     const correlationId = params.correlationId || `WF-DOCREQ-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-    const reqId = `doc-req-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const reqId = generateDocumentUuid();
     const now = new Date().toISOString();
-    const tenantId = currentUser.organization_id || 'org-joy-01';
+    const tenantId = isValidDocumentUuid(currentUser.organization_id)
+      ? currentUser.organization_id
+      : '0c621892-e938-4707-9957-13534ea32c19';
 
     console.log(`[DOC_REQUEST][WEB] CREATE_STARTED employee=${params.employeeId} doc_type=${params.documentTypeCode} correlation=${correlationId}`);
 
@@ -1323,7 +1642,7 @@ class DocumentService {
     if (isSupabaseEnabled) {
       try {
         await supabase.from('notification_events').insert({
-          organization_id: tenantId && tenantId.length === 36 ? tenantId : '00000000-0000-0000-0000-000000000000',
+          organization_id: tenantId,
           channel: 'IN_APP',
           title: `Action Required: Document Upload (${params.title})`,
           message: `HR has requested you to upload: ${params.title}. Please upload before ${params.dueDate || 'due date'}.`,
