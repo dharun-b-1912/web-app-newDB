@@ -723,6 +723,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'CLOCKING & DEVICES',
       items: [
+        { id: 'face-attend-dashboard', label: 'JOY FaceAttend', icon: Camera, badge: 'Add-On', badgeVariant: 'info' },
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
         { id: 'attendance-rules', label: 'Attendance Rules', icon: SlidersHorizontal },
         { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
@@ -1010,6 +1011,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'CLOCKING & DEVICES',
       items: [
+        { id: 'face-attend-dashboard', label: 'JOY FaceAttend', icon: Camera, badge: 'Add-On', badgeVariant: 'info' },
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
         { id: 'attendance-rules', label: 'Biometric Rules & Automation', icon: SlidersHorizontal },
         { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
@@ -1153,6 +1155,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'CLOCKING & DEVICES',
       items: [
+        { id: 'face-attend-dashboard', label: 'JOY FaceAttend', icon: Camera, badge: 'Add-On', badgeVariant: 'info' },
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
         { id: 'attendance-rules', label: 'Biometric Rules & Automation', icon: SlidersHorizontal },
         { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
@@ -1236,6 +1239,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'garment-dashboard', label: 'Garment Floor Hub', icon: Factory },
         { id: 'garment-operations', label: 'Floor Attendance & QC', icon: CheckSquare },
         { id: 'garment-reports', label: 'Line Reports', icon: BarChart3 },
+        { id: 'face-attend-exceptions', label: 'FaceAttend Reviews', icon: Camera },
       ],
     },
     {
@@ -1361,12 +1365,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   const navGroups = (() => {
     if (isPlatformAdmin) return platformGroups;
     if (isVendorRole) return vendorPortalGroups;
-    if (primaryRole === 'Company Admin') return companyAdminGroups;
+    if (primaryRole === 'Company Admin' || primaryRole === 'Organization Admin') return companyAdminGroups;
     if (primaryRole === 'HR Head' || primaryRole === 'HR Admin') return hrHeadGroups;
     if (primaryRole === 'Manager') return managerGroups;
     if (primaryRole === 'Team Lead') return teamLeadGroups;
     if (primaryRole === 'Employee') return employeeGroups;
-    return hrHeadGroups; // fallback
+    return employeeGroups; // fail-safe fallback (never expose HR navigation)
   })();
 
   // Dynamic tenant-level subscription and feature entitlement resolution

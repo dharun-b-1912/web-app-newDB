@@ -46,7 +46,11 @@ import {
   Trash2,
   Edit2,
   PlusCircle,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
+import type { FaceAttendEngineStatus } from '../../../types/faceAttend';
+import { faceAttendService } from '../../../services/faceAttend/faceAttendService';
 import { cn } from '../../../lib/utils';
 import { useToast } from '../../../components/ui/Toast';
 import {
@@ -84,6 +88,33 @@ export const BiometricHubMasterView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SubTabId>('overview');
 
   // Live Service State
+  const [engineStatus, setEngineStatus] = useState<FaceAttendEngineStatus | null>(null);
+  const [isTestingEngine, setIsTestingEngine] = useState(false);
+
+  const testFaceAttendEngine = useCallback(async (notify = false) => {
+    setIsTestingEngine(true);
+    try {
+      const status = await faceAttendService.getEngineStatus();
+      setEngineStatus(status);
+      if (notify) {
+        if (status?.healthy) {
+          showToast(
+            `${status.provider_label} is online${status.latency_ms != null ? ` (${status.latency_ms} ms)` : ''}`,
+            'success'
+          );
+        } else {
+          showToast(status?.message || 'Biometric engine check failed', 'error');
+        }
+      }
+    } finally {
+      setIsTestingEngine(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    testFaceAttendEngine(false);
+  }, [testFaceAttendEngine]);
+
   const [stats, setStats] = useState<BiometricFleetStats>(() => biometricHubService.getFleetStats());
   const [devices, setDevices] = useState<BiometricDevice[]>(() => biometricHubService.getDevices());
   const [connectors, setConnectors] = useState<BiometricConnector[]>(() => biometricHubService.getConnectors());
@@ -106,12 +137,13 @@ export const BiometricHubMasterView: React.FC = () => {
   const [editingDevice, setEditingDevice] = useState<BiometricDevice | null>(null);
 
   // New Device Form State
-  const [newDeviceName, setNewDeviceName] = useState('Factory Gate 02 — Turnstile');
+  const [newDeviceName, setNewDeviceName] = useState('Client Site Terminal — 4G SIM ADMS');
   const [newManufacturer, setNewManufacturer] = useState<BiometricManufacturer>('eSSL');
-  const [newModel, setNewModel] = useState('K90 Pro');
-  const [newSerial, setNewSerial] = useState('K90P-998241');
-  const [newIp, setNewIp] = useState('192.168.1.208');
-  const [newPort, setNewPort] = useState(4370);
+  const [newModel, setNewModel] = useState('AiFace / MB160');
+  const [newSerial, setNewSerial] = useState('');
+  const [newConnMode, setNewConnMode] = useState<'SIM_ADMS' | 'LAN_TCP'>('SIM_ADMS');
+  const [newIp, setNewIp] = useState('100.64.0.1');
+  const [newPort, setNewPort] = useState(443);
 
   // Non-Tech Emergency Mode Toggle
   const [isNonTechEmergencyMode, setIsNonTechEmergencyMode] = useState(false);
@@ -241,11 +273,11 @@ export const BiometricHubMasterView: React.FC = () => {
         deviceName: newDeviceName,
         manufacturer: newManufacturer,
         modelName: newModel,
-        serialNumber: newSerial,
-        ipAddress: newIp,
-        port: Number(newPort),
-        connectionMode: 'Hybrid',
-        siteName: 'HQ Operations Site',
+        serialNumber: newSerial.trim(),
+        ipAddress: newConnMode === 'SIM_ADMS' ? (newIp.trim() || '100.64.0.1') : newIp.trim(),
+        port: newConnMode === 'SIM_ADMS' ? (Number(newPort) || 443) : Number(newPort),
+        connectionMode: newConnMode === 'SIM_ADMS' ? 'Push' : 'Hybrid',
+        siteName: newConnMode === 'SIM_ADMS' ? 'Client Site (4G SIM ADMS)' : 'HQ Operations Site',
         tenantId: '0c621892-e938-4707-9957-13534ea32c19',
       });
       await refreshLiveFleetData();
@@ -456,6 +488,116 @@ export const BiometricHubMasterView: React.FC = () => {
       {/* TAB 1: OVERVIEW DASHBOARD (REALTIME DATABASE METRICS) */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
+          {/* JOY FaceAttend — Biometric Engine & CompreFace Diagnostics */}
+          <div className="bg-white rounded-2xl border border-gray-200/90 shadow-xs p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+              <div className="flex items-start gap-3">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    engineStatus?.healthy && engineStatus.provider_code !== 'SANDBOX_CHALLENGE'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : engineStatus && !engineStatus.healthy
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                  }`}
+                >
+                  <Server className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-bold text-gray-900">
+                      JOY FaceAttend — Biometric Engine Diagnostics
+                    </h3>
+                    {engineStatus && (
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          engineStatus.healthy && engineStatus.provider_code !== 'SANDBOX_CHALLENGE'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : !engineStatus.healthy
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}
+                      >
+                        {engineStatus.healthy && engineStatus.provider_code !== 'SANDBOX_CHALLENGE' ? (
+                          <Wifi className="w-3 h-3" />
+                        ) : !engineStatus.healthy ? (
+                          <WifiOff className="w-3 h-3" />
+                        ) : (
+                          <ShieldCheck className="w-3 h-3" />
+                        )}
+                        {engineStatus.healthy
+                          ? `${engineStatus.provider_code}${
+                              engineStatus.latency_ms != null ? ` • Online (${engineStatus.latency_ms} ms)` : ' • Online'
+                            }`
+                          : `${engineStatus.provider_code} • Offline`}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {engineStatus ? engineStatus.message : 'Querying Edge Function biometric engine health...'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => testFaceAttendEngine(true)}
+                disabled={isTestingEngine}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors shrink-0 cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isTestingEngine ? 'animate-spin' : ''}`} />
+                {isTestingEngine ? 'Testing...' : 'Test Live Connection'}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 pt-4">
+              <div className="rounded-xl bg-gray-50/80 border border-gray-100 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Active Provider</div>
+                <div className="text-sm font-bold text-gray-900 mt-1">
+                  {engineStatus?.provider_label || '—'}
+                </div>
+                <div className="text-[11px] text-gray-500 font-mono mt-0.5">
+                  {engineStatus?.mode || 'Checking...'}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-gray-50/80 border border-gray-100 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Endpoint Host</div>
+                <div className="text-xs font-bold text-gray-900 font-mono mt-1.5 truncate" title={engineStatus?.diagnostics?.endpoint_host || ''}>
+                  {engineStatus?.diagnostics?.endpoint_host || 'Not Configured'}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-0.5">
+                  Secret: <strong>{engineStatus?.diagnostics?.api_key_configured ? 'Configured' : 'Missing'}</strong>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-gray-50/80 border border-gray-100 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Storage & Privacy</div>
+                <div className="text-xs font-bold text-gray-900 font-mono mt-1.5">
+                  {engineStatus?.diagnostics?.storage_bucket || 'faceattend-private'}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-0.5 truncate" title={engineStatus?.diagnostics?.save_images_to_db_policy || ''}>
+                  DB Save: <strong>{engineStatus?.diagnostics?.save_images_to_db_policy || 'false'}</strong>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-gray-50/80 border border-gray-100 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Active Templates</div>
+                <div className="text-xl font-black text-emerald-700 font-mono mt-1">
+                  {engineStatus?.diagnostics?.total_active_templates ?? '—'}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-0.5">Platform-wide enrolled</div>
+              </div>
+
+              <div className="rounded-xl bg-gray-50/80 border border-gray-100 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">24h Verifications</div>
+                <div className="text-xl font-black text-blue-700 font-mono mt-1">
+                  {engineStatus?.diagnostics?.total_attempts_24h ?? '—'}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-0.5">All tenant check-ins</div>
+              </div>
+            </div>
+          </div>
+
           {/* Executive Fleet KPI Ribbon (Real Live Data) */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-xs hover:border-emerald-300 transition-colors">
@@ -1144,16 +1286,53 @@ export const BiometricHubMasterView: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">IP Address</label>
-                <input
-                  type="text"
-                  required
-                  value={newIp}
-                  onChange={(e) => setNewIp(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-300 text-xs font-mono font-bold outline-none"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Connectivity Type</label>
+                  <select
+                    value={newConnMode}
+                    onChange={(e) => {
+                      const mode = e.target.value as 'SIM_ADMS' | 'LAN_TCP';
+                      setNewConnMode(mode);
+                      if (mode === 'SIM_ADMS') {
+                        setNewIp('100.64.0.1');
+                        setNewPort(443);
+                      } else {
+                        setNewIp('192.168.1.208');
+                        setNewPort(4370);
+                      }
+                    }}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-300 text-xs font-bold outline-none"
+                  >
+                    <option value="SIM_ADMS">4G SIM / Cloud ADMS Push</option>
+                    <option value="LAN_TCP">Office LAN TCP/IP (4370)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    {newConnMode === 'SIM_ADMS' ? 'SIM CGNAT / Public IP' : 'IP Address'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newIp}
+                    onChange={(e) => setNewIp(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-300 text-xs font-mono font-bold outline-none"
+                  />
+                </div>
               </div>
+
+              {newConnMode === 'SIM_ADMS' && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-950 space-y-1">
+                  <div className="font-bold">Configure Cloud ADMS on the Client SIM Machine:</div>
+                  <div className="font-mono text-[10px] break-all select-all">
+                    https://ysiajemrqakfngasehhi.supabase.co/functions/v1/adms-gateway
+                  </div>
+                  <div className="text-[10px] text-amber-800">
+                    All punches route by Hardware Serial Number (SN) and trigger Airtel SMS immediately.
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
                 <button

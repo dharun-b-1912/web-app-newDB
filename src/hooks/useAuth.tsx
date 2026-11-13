@@ -67,12 +67,11 @@ const resolveDynamicSessionUser = async (
       );
 
     if (resolvedIdentity.primaryRole === 'Unassigned') {
-      if (cached?.role && cached.role !== 'Unassigned') {
+      if (cached?.id === sbUser.id && cached?.role && cached.role !== 'Unassigned') {
         resolvedIdentity.primaryRole = cached.role as any;
-      } else if (!cached) {
-        console.warn('[useAuth] Role unassigned and no cached role; clearing session');
-        authService.forceClearLocalSession();
-        return null as any;
+      } else {
+        // Never fall back across users or keep Unassigned; default safely to Employee self-service
+        resolvedIdentity.primaryRole = 'Employee';
       }
     }
 
@@ -247,7 +246,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
             const finalUser = await Promise.race([
               resolveDynamicSessionUser(sbUser, null, initialMode),
-              new Promise<AuthSessionUser | null>((resolve) => setTimeout(() => resolve(null), 1500))
+              new Promise<AuthSessionUser | null>((resolve) => setTimeout(() => resolve(null), 5000))
             ]);
 
             if (isMounted && finalUser) {
@@ -353,8 +352,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
 
           const cachedUser = authService.getCurrentSessionUser(isPlatformPath ? 'platform' : 'tenant');
-          if (cachedUser && cachedUser.id === session.user.id && cachedUser.email?.toLowerCase() === session.user.email?.toLowerCase()) {
-            // Active session already matches; avoid re-resolving and re-rendering
+          if (
+            cachedUser &&
+            cachedUser.id === session.user.id &&
+            cachedUser.email?.toLowerCase() === session.user.email?.toLowerCase() &&
+            cachedUser.role &&
+            cachedUser.role !== 'Unassigned' &&
+            event !== 'SIGNED_IN'
+          ) {
+            // Active session already matches and has a resolved role; avoid redundant re-resolving on token refresh
             return;
           }
           const finalUser = await resolveDynamicSessionUser(session.user, cachedUser, isPlatformPath ? 'platform' : 'tenant');
@@ -409,6 +415,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = async () => {
     setIsLoading(true);
     try {
+      try {
+        const { multiMethodAuthService } = await import(
+          '../services/auth/multiMethodAuthService'
+        );
+        await multiMethodAuthService.recordSessionEvent('logout', user?.organization_id);
+      } catch (_) {}
       await authService.signOut();
       try {
         localStorage.removeItem('workforce_active_route');

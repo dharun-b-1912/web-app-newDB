@@ -1,0 +1,2013 @@
+{
+  "report_title": "Pricing strategy: new online booking tool for small service businesses",
+  "headline": {
+    "metric_and_entry": "Charge by staff band; start with a free plan for 1 staff, no card (60% of price-related searches look for free, and 3 of 4 USD rivals are free for one person).",
+    "plans_and_prices": "Free (1 staff), Core (2 to 6 staff) at or under $28.50/month, Growth (7 to 20) at or under $50/month, billed annually with 20% off; a salon package at $65 to $149 a month for one location; contact-us rung listed last.",
+    "why_now": "Salon buyers cost advertisers 3.08x the category CPC and Square is the only rival with a plan card for salons; enterprise searches are 80 a month, so don't lead with enterprise.",
+    "context": "US market, English; rivals Calendly, Acuity Scheduling, Setmore, Square Appointments, SimplyBook.me; pages read 2026-10-06."
+  },
+  "market_price_map": [
+    {
+      "rival": "Calendly",
+      "url": "https://calendly.com/pricing",
+      "currency": "USD",
+      "price_source": "web fetch (the parsed page had plan names but no amounts, also with enable_javascript)",
+      "metric": "per seat (each person who hosts meetings needs a seat)",
+      "plans": [
+        {
+          "plan": "Free",
+          "annual_billed_per_month": 0,
+          "monthly_billed": 0,
+          "limits": "one event type, one calendar connection"
+        },
+        {
+          "plan": "Standard",
+          "annual_billed_per_month": 10,
+          "monthly_billed": null,
+          "annual_saving_shown": "17%",
+          "limits": "per seat; no seat limit stated"
+        },
+        {
+          "plan": "Teams",
+          "annual_billed_per_month": 16,
+          "monthly_billed": null,
+          "annual_saving_shown": "20%",
+          "limits": "per seat; adds round-robin and team scheduling",
+          "badge": "Popular plan"
+        },
+        {
+          "plan": "Enterprise",
+          "annual_billed_per_month": null,
+          "monthly_billed": null,
+          "shown": "starts at $15k per year",
+          "limits": "starts at 50 seats"
+        }
+      ],
+      "entry_offer": "Free plan (\"Always free\"); the FAQ mentions a trial but its length is not shown on the page",
+      "enterprise_gate": "Enterprise, \"starts at $15k per year\" from 50 seats, talk to sales",
+      "add_ons": [
+        "Notetaker and AI assistant (Callie) on Standard or Teams",
+        "single sign-on add-on on Teams"
+      ],
+      "presentation": {
+        "default_billing": "annual (\"Billed yearly\" shown first)",
+        "badge": "\"Popular plan\" on Teams",
+        "anchor": "Enterprise \"starts at $15k/yr\"",
+        "annual_saving": "\"Save up to 20%\""
+      }
+    },
+    {
+      "rival": "Acuity Scheduling",
+      "url": "https://acuityscheduling.com/pricing",
+      "currency": "USD",
+      "price_source": "web fetch (the parsed page had plan names and FAQs but no amounts)",
+      "metric": "calendar band (one calendar per employee or location)",
+      "plans": [
+        {
+          "plan": "Starter",
+          "annual_billed_per_month": 16,
+          "monthly_billed": 20,
+          "limits": "1 calendar"
+        },
+        {
+          "plan": "Standard",
+          "annual_billed_per_month": 27,
+          "monthly_billed": 34,
+          "limits": "up to 6 calendars"
+        },
+        {
+          "plan": "Premium",
+          "annual_billed_per_month": 49,
+          "monthly_billed": 61,
+          "limits": "up to 36 calendars"
+        },
+        {
+          "plan": "Enterprise",
+          "annual_billed_per_month": null,
+          "monthly_billed": null,
+          "limits": "contact the Enterprise team"
+        }
+      ],
+      "entry_offer": "7-day trial on every plan, no credit card needed; no free plan",
+      "enterprise_gate": "Enterprise, contact the Enterprise team (no price shown)",
+      "add_ons": [
+        "AI booking assistant and HIPAA agreement included on Premium, not sold separately"
+      ],
+      "presentation": {
+        "default_billing": "annual (\"Pay annually\" shown first)",
+        "badge": "none found",
+        "anchor": "none",
+        "annual_saving": "\"Save 20%\""
+      }
+    },
+    {
+      "rival": "Setmore",
+      "url": "https://www.setmore.com/pricing",
+      "currency": "USD",
+      "price_source": "parsed page",
+      "metric": "per user (each staff calendar counts as a user)",
+      "plans": [
+        {
+          "plan": "Free",
+          "annual_billed_per_month": 0,
+          "monthly_billed": 0,
+          "limits": "up to 4 users"
+        },
+        {
+          "plan": "Pro",
+          "annual_billed_per_month": 5,
+          "monthly_billed": null,
+          "limits": "unlimited users, priced per user",
+          "note": "a second amount, $12 per user, is shown next to it without a billing label, so it stays out of the annual-saving math"
+        },
+        {
+          "plan": "Enterprise",
+          "annual_billed_per_month": null,
+          "monthly_billed": null,
+          "limits": "contact us"
+        }
+      ],
+      "entry_offer": "Free plan for up to 4 users; Pro has a 30-day refund window instead of a trial",
+      "enterprise_gate": "\"Need more options to suit your larger organisation?\", contact us (no price shown)",
+      "add_ons": [
+        "Live receptionist, $99 a month, separate plan, US only",
+        "extra SMS credits bought in the app (Pro includes 500 a month per team member)"
+      ],
+      "presentation": {
+        "default_billing": "annual (\"$5* ... *Annual pricing\")",
+        "badge": "none found",
+        "anchor": "none",
+        "annual_saving": "not stated"
+      }
+    },
+    {
+      "rival": "Square Appointments",
+      "url": "https://squareup.com/us/en/appointments/pricing",
+      "currency": "USD",
+      "price_source": "web fetch (the parsed page had the FAQ but not the plan fees)",
+      "metric": "per location, plus card processing fees on every payment",
+      "plans": [
+        {
+          "plan": "Free",
+          "annual_billed_per_month": null,
+          "monthly_billed": 0,
+          "limits": "unlimited staff calendars; \"for solo professionals\"",
+          "processing_online": "3.3% + 30¢"
+        },
+        {
+          "plan": "Plus",
+          "annual_billed_per_month": null,
+          "monthly_billed": 49,
+          "limits": "per location; adds no-show fees, multi-staff booking, waitlist; \"for growing teams\"",
+          "processing_online": "2.9% + 30¢",
+          "badge": "Best value"
+        },
+        {
+          "plan": "Premium",
+          "annual_billed_per_month": null,
+          "monthly_billed": 149,
+          "limits": "per location; adds resource management; \"for large salons\"",
+          "processing_online": "2.9% + 30¢"
+        },
+        {
+          "plan": "Square Pro",
+          "annual_billed_per_month": null,
+          "monthly_billed": null,
+          "limits": "custom pricing; for businesses processing over $250,000 a year"
+        }
+      ],
+      "entry_offer": "Free plan (pay card fees only); Plus and Premium have a 30-day trial per the FAQ (the trial length on the plan cards is drawn by script)",
+      "enterprise_gate": "Square Pro, \"Get custom pricing\" above $250,000 a year in card payments",
+      "add_ons": [
+        "payroll from $35 a month plus $6 per person paid",
+        "hardware from $59",
+        "texts beyond the included amount (3¢ on Plus, 1.5¢ on Premium)"
+      ],
+      "presentation": {
+        "default_billing": "monthly only (no annual option shown)",
+        "badge": "\"Best value\" on Plus",
+        "anchor": "Square Pro \"Get custom pricing\"",
+        "annual_saving": "none"
+      }
+    },
+    {
+      "rival": "SimplyBook.me",
+      "url": "https://simplybook.me/en/pricing",
+      "currency": "EUR",
+      "price_source": "parsed page (returned in EUR although accept_language was en-US)",
+      "metric": "booking-volume band with included staff providers (flat fee per band)",
+      "plans": [
+        {
+          "plan": "Free",
+          "annual_billed_per_month": 0,
+          "monthly_billed": 0,
+          "limits": "50 bookings a month, 1 provider"
+        },
+        {
+          "plan": "Basic",
+          "annual_billed_per_month": 11.9,
+          "monthly_billed": 13.9,
+          "limits": "100 bookings a month, 5 providers"
+        },
+        {
+          "plan": "Standard",
+          "annual_billed_per_month": 24.9,
+          "monthly_billed": 29.9,
+          "limits": "500 bookings a month, 15 providers"
+        },
+        {
+          "plan": "Premium",
+          "annual_billed_per_month": 49.9,
+          "monthly_billed": 59.9,
+          "limits": "2,000 bookings a month, 30 providers",
+          "badge": "Most popular"
+        },
+        {
+          "plan": "Enterprise",
+          "annual_billed_per_month": null,
+          "monthly_billed": null,
+          "limits": "custom, billed annually, book a call"
+        }
+      ],
+      "entry_offer": "Free plan with no time limit, and a 14-day trial of premium features, no credit card needed",
+      "enterprise_gate": "Enterprise, custom price, for multi-location businesses",
+      "add_ons": [
+        "Full Setup service from €450",
+        "SMS, WhatsApp and AI booking credits",
+        "account manager help by the hour"
+      ],
+      "presentation": {
+        "default_billing": "annual (\"per month, billed annually\" shown first)",
+        "badge": "\"Most popular\" on Premium",
+        "anchor": "Enterprise \"Custom\"",
+        "annual_saving": "\"Save 17%\""
+      }
+    }
+  ],
+  "price_at_profiles": {
+    "profiles": [
+      "solo (1 staff)",
+      "typical (3 staff)",
+      "larger (10 staff)"
+    ],
+    "basis": "cheapest plan whose stated limits fit, monthly price on annual billing (Square shows monthly only)",
+    "rows": [
+      {
+        "rival": "Calendly",
+        "1_staff": {
+          "plan": "Free",
+          "price_per_month": 0,
+          "basis": "one calendar connection fits one person"
+        },
+        "3_staff": {
+          "plan": "Standard",
+          "price_per_month": 30,
+          "basis": "3 seats x $10; round-robin booking needs Teams ($48)"
+        },
+        "10_staff": {
+          "plan": "Standard",
+          "price_per_month": 100,
+          "basis": "10 seats x $10; round-robin booking needs Teams ($160)"
+        }
+      },
+      {
+        "rival": "Acuity Scheduling",
+        "1_staff": {
+          "plan": "Starter",
+          "price_per_month": 16,
+          "basis": "1 calendar"
+        },
+        "3_staff": {
+          "plan": "Standard",
+          "price_per_month": 27,
+          "basis": "up to 6 calendars"
+        },
+        "10_staff": {
+          "plan": "Premium",
+          "price_per_month": 49,
+          "basis": "up to 36 calendars"
+        }
+      },
+      {
+        "rival": "Setmore",
+        "1_staff": {
+          "plan": "Free",
+          "price_per_month": 0,
+          "basis": "up to 4 users"
+        },
+        "3_staff": {
+          "plan": "Free",
+          "price_per_month": 0,
+          "basis": "up to 4 users"
+        },
+        "10_staff": {
+          "plan": "Pro",
+          "price_per_month": 50,
+          "basis": "10 users x $5"
+        }
+      },
+      {
+        "rival": "Square Appointments",
+        "1_staff": {
+          "plan": "Free",
+          "price_per_month": 0,
+          "basis": "plus card fees (3.3% + 30¢ online); no-show fees and multi-staff booking need Plus ($49 per location)"
+        },
+        "3_staff": {
+          "plan": "Free",
+          "price_per_month": 0,
+          "basis": "plus card fees (3.3% + 30¢ online); no-show fees and multi-staff booking need Plus ($49 per location)"
+        },
+        "10_staff": {
+          "plan": "Free",
+          "price_per_month": 0,
+          "basis": "plus card fees (3.3% + 30¢ online); no-show fees and multi-staff booking need Plus ($49 per location)"
+        }
+      }
+    ],
+    "summary": [
+      {
+        "profile": "solo (1 staff)",
+        "rivals_at_0": "3 of 4",
+        "paid_prices": [
+          16
+        ],
+        "median_paid": 16
+      },
+      {
+        "profile": "typical (3 staff)",
+        "rivals_at_0": "2 of 4",
+        "paid_prices": [
+          27,
+          30
+        ],
+        "median_paid": 28.5
+      },
+      {
+        "profile": "larger (10 staff)",
+        "rivals_at_0": "1 of 4",
+        "paid_prices": [
+          49,
+          50,
+          100
+        ],
+        "median_paid": 50
+      }
+    ],
+    "left_out": [
+      {
+        "rival": "SimplyBook.me",
+        "why": "prices came back in EUR; no exchange rate was given, so it stays in the map but out of the USD math"
+      }
+    ],
+    "how_metrics_scale": {
+      "Calendly": [
+        0,
+        30,
+        100
+      ],
+      "Acuity Scheduling": [
+        16,
+        27,
+        49
+      ],
+      "Setmore": [
+        0,
+        0,
+        50
+      ],
+      "Square Appointments": [
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "demand_signals": {
+    "market": "United States, English (location_code 2840)",
+    "volumes": "Google Ads monthly averages, 12 months to August 2026",
+    "group_totals": {
+      "Head": 3280,
+      "Price research": 5580,
+      "Free-seeking": 8350,
+      "Switching": 370,
+      "Segment": 1890,
+      "Enterprise": 80
+    },
+    "close_variants": {
+      "salon booking software": "same volume, CPC and monthly trend as \"booking software for salons\"; counted once in the group total"
+    },
+    "free_seeking_share": {
+      "value": "60%",
+      "math": "8,350 / (8,350 + 5,580)"
+    },
+    "leader_free_check": {
+      "value": 0.84,
+      "math": "(\"is calendly free\" 2,400 + \"calendly free plan\" 1,300) / \"calendly pricing\" 4,400",
+      "reading": "for every 100 searches for Calendly's pricing there are 84 asking whether it is free"
+    },
+    "segment_cpc_index": {
+      "head_keyword": "appointment scheduling software",
+      "head_cpc_usd": 28.09,
+      "rows": [
+        {
+          "segment": "salons",
+          "keyword": "booking software for salons",
+          "monthly_searches": 720,
+          "cpc_usd": 86.6,
+          "cpc_index": 3.08,
+          "qualifies_for_package": true
+        },
+        {
+          "segment": "salons",
+          "keyword": "salon booking software",
+          "monthly_searches": 720,
+          "cpc_usd": 86.6,
+          "cpc_index": 3.08,
+          "qualifies_for_package": true,
+          "close_variant_of": "booking software for salons"
+        },
+        {
+          "segment": "studios",
+          "keyword": "booking software for studios",
+          "monthly_searches": "no data",
+          "cpc_usd": "no data",
+          "cpc_index": "no data",
+          "qualifies_for_package": false
+        },
+        {
+          "segment": "studios",
+          "keyword": "studio booking software",
+          "monthly_searches": 20,
+          "cpc_usd": 58.1,
+          "cpc_index": 2.07,
+          "qualifies_for_package": false
+        },
+        {
+          "segment": "clinics",
+          "keyword": "booking software for clinics",
+          "monthly_searches": "no data",
+          "cpc_usd": "no data",
+          "cpc_index": "no data",
+          "qualifies_for_package": false
+        },
+        {
+          "segment": "clinics",
+          "keyword": "clinic booking software",
+          "monthly_searches": 10,
+          "cpc_usd": 38.39,
+          "cpc_index": 1.37,
+          "qualifies_for_package": false
+        },
+        {
+          "segment": "small business",
+          "keyword": "booking software for small business",
+          "monthly_searches": 260,
+          "cpc_usd": 46.16,
+          "cpc_index": 1.64,
+          "qualifies_for_package": false
+        },
+        {
+          "segment": "small business",
+          "keyword": "scheduling software for small business",
+          "monthly_searches": 880,
+          "cpc_usd": 45.07,
+          "cpc_index": 1.6,
+          "qualifies_for_package": false
+        }
+      ]
+    },
+    "switching": {
+      "calendly alternative": 320,
+      "acuity scheduling alternative": 50
+    },
+    "enterprise_volume": 80,
+    "no_data_keywords": [
+      "appointment scheduling software cost",
+      "booking software for studios",
+      "booking software for clinics"
+    ],
+    "no_cpc_keywords": [
+      "scheduling software pricing",
+      "appointment scheduling software cost",
+      "online booking system cost",
+      "simplybook pricing",
+      "booking software for studios",
+      "booking software for clinics"
+    ],
+    "keyword_table": [
+      {
+        "group": "Head",
+        "keyword": "appointment scheduling software",
+        "monthly_searches": 2400,
+        "cpc_usd": 28.09,
+        "competition": "LOW"
+      },
+      {
+        "group": "Head",
+        "keyword": "appointment scheduling app",
+        "monthly_searches": 880,
+        "cpc_usd": 22.7,
+        "competition": "HIGH"
+      },
+      {
+        "group": "Price research",
+        "keyword": "scheduling software pricing",
+        "monthly_searches": 10,
+        "cpc_usd": "no data",
+        "competition": "no data"
+      },
+      {
+        "group": "Price research",
+        "keyword": "appointment scheduling software cost",
+        "monthly_searches": "no data",
+        "cpc_usd": "no data",
+        "competition": "no data"
+      },
+      {
+        "group": "Price research",
+        "keyword": "online booking system cost",
+        "monthly_searches": 10,
+        "cpc_usd": "no data",
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Price research",
+        "keyword": "calendly pricing",
+        "monthly_searches": 4400,
+        "cpc_usd": 8.61,
+        "competition": "LOW"
+      },
+      {
+        "group": "Price research",
+        "keyword": "acuity scheduling pricing",
+        "monthly_searches": 720,
+        "cpc_usd": 15.54,
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Price research",
+        "keyword": "setmore pricing",
+        "monthly_searches": 110,
+        "cpc_usd": 29.13,
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Price research",
+        "keyword": "simplybook pricing",
+        "monthly_searches": 10,
+        "cpc_usd": "no data",
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Price research",
+        "keyword": "square appointments pricing",
+        "monthly_searches": 320,
+        "cpc_usd": 2.59,
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Free-seeking",
+        "keyword": "free scheduling software",
+        "monthly_searches": 1000,
+        "cpc_usd": 26.26,
+        "competition": "HIGH"
+      },
+      {
+        "group": "Free-seeking",
+        "keyword": "free appointment scheduling software",
+        "monthly_searches": 260,
+        "cpc_usd": 17.54,
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Free-seeking",
+        "keyword": "free online booking system",
+        "monthly_searches": 480,
+        "cpc_usd": 26.29,
+        "competition": "HIGH"
+      },
+      {
+        "group": "Free-seeking",
+        "keyword": "free scheduling app",
+        "monthly_searches": 2900,
+        "cpc_usd": 23.17,
+        "competition": "HIGH"
+      },
+      {
+        "group": "Free-seeking",
+        "keyword": "cheap scheduling software",
+        "monthly_searches": 10,
+        "cpc_usd": 32.66,
+        "competition": "HIGH"
+      },
+      {
+        "group": "Free-seeking",
+        "keyword": "is calendly free",
+        "monthly_searches": 2400,
+        "cpc_usd": 28.6,
+        "competition": "LOW"
+      },
+      {
+        "group": "Free-seeking",
+        "keyword": "calendly free plan",
+        "monthly_searches": 1300,
+        "cpc_usd": 12.65,
+        "competition": "LOW"
+      },
+      {
+        "group": "Switching",
+        "keyword": "calendly alternative",
+        "monthly_searches": 320,
+        "cpc_usd": 11.5,
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Switching",
+        "keyword": "acuity scheduling alternative",
+        "monthly_searches": 50,
+        "cpc_usd": 9.89,
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Segment",
+        "keyword": "booking software for salons",
+        "monthly_searches": 720,
+        "cpc_usd": 86.6,
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Segment",
+        "keyword": "salon booking software",
+        "monthly_searches": 720,
+        "cpc_usd": 86.6,
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Segment",
+        "keyword": "booking software for studios",
+        "monthly_searches": "no data",
+        "cpc_usd": "no data",
+        "competition": "no data"
+      },
+      {
+        "group": "Segment",
+        "keyword": "studio booking software",
+        "monthly_searches": 20,
+        "cpc_usd": 58.1,
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Segment",
+        "keyword": "booking software for clinics",
+        "monthly_searches": "no data",
+        "cpc_usd": "no data",
+        "competition": "no data"
+      },
+      {
+        "group": "Segment",
+        "keyword": "clinic booking software",
+        "monthly_searches": 10,
+        "cpc_usd": 38.39,
+        "competition": "HIGH"
+      },
+      {
+        "group": "Segment",
+        "keyword": "booking software for small business",
+        "monthly_searches": 260,
+        "cpc_usd": 46.16,
+        "competition": "HIGH"
+      },
+      {
+        "group": "Segment",
+        "keyword": "scheduling software for small business",
+        "monthly_searches": 880,
+        "cpc_usd": 45.07,
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Enterprise",
+        "keyword": "enterprise scheduling software",
+        "monthly_searches": 70,
+        "cpc_usd": 87.61,
+        "competition": "MEDIUM"
+      },
+      {
+        "group": "Enterprise",
+        "keyword": "scheduling software for teams",
+        "monthly_searches": 10,
+        "cpc_usd": 73.69,
+        "competition": "MEDIUM"
+      }
+    ]
+  },
+  "own_signals": {
+    "4a_search_console": "not run: no site yet",
+    "4b_ga4": "not run: no site yet",
+    "4c_stripe": "not run: no billing yet (Stripe path untested until connected)"
+  },
+  "decisions": [
+    {
+      "id": "D1",
+      "decision": "Entry offer",
+      "rule": "Free plan when the free-seeking share is 40% or more and at least half the rivals cost $0 at the smallest profile; trial only under 25% with fewer than half free; otherwise test both.",
+      "numbers": "free-seeking share 60%; 3 of 4 USD rivals cost $0 for 1 staff (Calendly, Setmore, Square)",
+      "verdict": "Free plan, capped at the smallest profile (1 staff). Ask for no card: Acuity and SimplyBook.me both advertise \"no credit card needed\" for their trials."
+    },
+    {
+      "id": "D2",
+      "decision": "Value metric",
+      "rule": "Grows with value, predictable, hard to game, measurable, accepted by the category.",
+      "numbers": "price for 1/3/10 staff: Calendly [0, 30, 100] (per seat), Acuity [16, 27, 49] (calendar band), Setmore [0, 0, 50] (per user after a free 4), Square [0, 0, 0] (per location, card fees on top)",
+      "verdict": "Staff band (rungs by the number of staff who take bookings). It grows with the business like a seat price but in steps buyers can predict; per-seat pricing reaches $100 at 10 staff, 2x the median. Bands are already accepted here (Acuity by calendars, SimplyBook.me by included providers)."
+    },
+    {
+      "id": "D3",
+      "decision": "Price points",
+      "rule": "Core at or under the median paid price at the typical profile, Growth at or under the median at the large profile; adjacent paid plans 1.3x to 3x apart.",
+      "numbers": "median paid at 3 staff $28.50 (from [27, 30]); at 10 staff $50 (from [49, 50, 100]); Growth/Core = 1.75x",
+      "verdict": "Core ceiling $28.50 a month, Growth ceiling $50 a month, both billed annually; the 1.75x step is inside the 1.3x to 3x range. Pick the exact price inside the ceiling with the Gabor-Granger ladder (Step 8)."
+    },
+    {
+      "id": "D4",
+      "decision": "Plan count",
+      "rule": "Three rungs by default; four or more only when the median paid price at the large profile is 5x or more the median at the typical profile.",
+      "numbers": "$50 / $28.50 = 1.75x",
+      "verdict": "Three rungs (Free, Core, Growth) plus the contact-us rung from D5."
+    },
+    {
+      "id": "D5",
+      "decision": "Enterprise rung",
+      "rule": "Add a contact-us rung when at least half the rivals show one; don't lead with it when enterprise searches are under 100 a month.",
+      "numbers": "5 of 5 rivals show one (Calendly, Acuity Scheduling, Setmore, Square Appointments, SimplyBook.me); enterprise searches 80 a month",
+      "verdict": "Add a contact-us rung for multi-location businesses and larger teams, listed last; don't lead with it."
+    },
+    {
+      "id": "D6",
+      "decision": "Annual billing",
+      "rule": "Match the rivals' median annual saving, kept within 15% to 25%; show annual prices by default only when most rivals do.",
+      "numbers": "largest saving each page shows: {'Calendly': 20, 'Acuity Scheduling': 20, 'SimplyBook.me': 17}, median 20% (Calendly's plans show 17% and 20%, headed \"Save up to 20%\"; Setmore's second amount is unlabelled and Square shows no annual option, so both are left out; percentages carry no currency, so SimplyBook.me counts); 4 of 5 rivals show the annual price first (Calendly, Acuity Scheduling, Setmore, SimplyBook.me)",
+      "verdict": "20% off for annual billing, with annual prices shown by default."
+    },
+    {
+      "id": "D7",
+      "decision": "Segment package",
+      "rule": "A segment keyword with a CPC index of 2 or more and 100 or more searches a month earns a dedicated package, priced against the rival plan that names the same segment and 1.3x to 3x the plan it builds on, all in one unit.",
+      "numbers": "tested for every segment in the request (salons, studios, clinics) plus small business, against the head CPC $28.09: \"booking software for salons\" index 3.08 at 720 searches; \"salon booking software\" index 3.08 at 720 searches; \"booking software for studios\" no data; \"studio booking software\" index 2.07 at 20 searches; \"booking software for clinics\" no data; \"clinic booking software\" index 1.37 at 10 searches; \"booking software for small business\" index 1.64 at 260 searches; \"scheduling software for small business\" index 1.6 at 880 searches",
+      "verdict": "Build a salon package: salons are the only segment that qualifies; advertisers pay 3.08x the head-term CPC for salon buyers at 720 searches a month. Studio terms reach the CPC index (2.07) but not the volume, clinic terms reach neither, and small-business terms sit under index 2, so none of them earns its own package. Square names the segment (Premium, \"for large salons\", $149 a month per location, billed monthly). Price the package in the same unit as Growth, one account at one location: $65 to $149 a month, which is 1.3x to 2.98x the Growth ceiling ($50) and at or under Square Premium for one location. Square charges again for every extra location, so compare at one location only; a second location moves to the contact-us rung."
+    },
+    {
+      "id": "D8",
+      "decision": "Value ceiling",
+      "rule": "Only with value inputs: price at or under 10% to 25% of the monthly value one customer gets, and above the cost to serve.",
+      "numbers": "no value inputs given",
+      "verdict": "Not run. Give what one customer gains a month (for example no-shows avoided x average booking value) and the cost to serve one, and this check runs."
+    }
+  ],
+  "recommended_plans": [
+    {
+      "rung": "Free",
+      "metric": "1 staff",
+      "price_ceiling": 0,
+      "for": "solo professionals trying online booking",
+      "moves_up_when": "a second person needs their own calendar"
+    },
+    {
+      "rung": "Core",
+      "metric": "2 to 6 staff",
+      "price_ceiling": 28.5,
+      "billing": "per month, billed annually",
+      "badge": "the plan to badge",
+      "for": "the typical studio or salon (3 staff)",
+      "moves_up_when": "a seventh staff member, or reminders by text at volume"
+    },
+    {
+      "rung": "Growth",
+      "metric": "7 to 20 staff",
+      "price_ceiling": 50,
+      "billing": "per month, billed annually",
+      "for": "larger teams (10 staff)",
+      "moves_up_when": "more than 20 staff or a second location"
+    },
+    {
+      "rung": "Salon package",
+      "metric": "Growth limits (up to 20 staff, one location) plus salon features",
+      "price_range": [
+        65,
+        149
+      ],
+      "billing": "per month, billed annually, one location",
+      "for": "salons: deposits and no-show fees, multi-staff appointments, chairs and stations as resources, waitlist (the features rivals keep for their salon plans)",
+      "moves_up_when": "a second location (contact-us rung)"
+    },
+    {
+      "rung": "Contact us",
+      "metric": "custom",
+      "price_ceiling": null,
+      "for": "multi-location businesses and larger teams",
+      "moves_up_when": "n/a; listed last, not featured"
+    }
+  ],
+  "value_ladder": {
+    "rungs": [
+      "Free",
+      "Core",
+      "Growth",
+      "Salon package",
+      "Contact us"
+    ],
+    "band_rule": "Each paid rung covers up to twice the profile it is priced for (Core for 3 staff goes to 6, Growth for 10 goes to 20), so a growing customer has headroom before the next step.",
+    "add_ons_the_market_sells": [
+      {
+        "add_on": "Text reminder credits",
+        "seen_at": "Square (3¢ per text over the included amount), Setmore (bought in the app), SimplyBook.me (SMS credits)",
+        "answers": "a Core customer who wants more reminders without moving to Growth"
+      },
+      {
+        "add_on": "Setup service",
+        "seen_at": "SimplyBook.me (Full Setup from €450)",
+        "answers": "a salon switching from another tool"
+      },
+      {
+        "add_on": "AI booking assistant",
+        "seen_at": "Calendly (Callie, on Standard or Teams), SimplyBook.me (AI booking credits), Acuity (included on Premium)",
+        "answers": "a busy front desk"
+      },
+      {
+        "add_on": "Phone receptionist",
+        "seen_at": "Setmore ($99 a month, US only)",
+        "answers": "businesses that lose bookings to missed calls"
+      }
+    ],
+    "gaps": [
+      {
+        "between": "Free -> Core",
+        "check": "no ratio for a $0 rung; the upgrade trigger is the second staff member",
+        "flag": false
+      },
+      {
+        "between": "Core -> Growth",
+        "check": "1.75x",
+        "flag": false
+      },
+      {
+        "between": "Growth -> Salon package",
+        "check": "1.3x to 2.98x ($65 to $149 against $50), both priced per account at one location",
+        "flag": false
+      },
+      {
+        "between": "Add-ons",
+        "check": "a $99 receptionist add-on would cost more than the Growth plan ($50); sell it as a separate service, as Setmore does",
+        "flag": true
+      }
+    ]
+  },
+  "perception_review": {
+    "price_endings": "3 of 8 paid USD prices shown end in 9 ([49, 49, 149]); the rest end in other digits ([5, 10, 16, 16, 27]). SimplyBook.me ends every paid price in .9. No single convention, so pick the ending for the position: round for simple and premium, 9 for value.",
+    "badges_and_anchors": "Calendly badges its second paid plan (Teams, \"Popular plan\") and anchors with Enterprise \"starts at $15k/yr\"; Square badges Plus \"Best value\"; SimplyBook.me badges Premium \"Most popular\". Acuity and Setmore badge nothing. Badge Core, the plan most customers should pick.",
+    "billing_framing": "4 of 5 rivals show the annual-billed price first; savings are framed as a percent (\"Save 17%\", \"Save 20%\", \"Save up to 20%\"). Square shows monthly only.",
+    "entry_wording": "Calendly says \"Always free\" and \"Get started for free\"; Acuity repeats \"7-day trial, no credit card needed\" under every plan; SimplyBook.me puts \"No credit card needed.\" above its plans. Searchers ask: 84 \"is Calendly free\" type searches per 100 Calendly pricing searches. Say \"free for 1 staff, no card\" on the plan card itself.",
+    "plan_names": "Square adds a who-it's-for line to every plan (\"for solo professionals\", \"for growing teams\", \"for large salons\"); the others name size only (Starter, Standard, Premium, Pro). Name rungs by who they serve.",
+    "page_reading_note": "Three of five pages drew their prices with scripts, and Square's plan cards show a template placeholder instead of the trial length in the raw page. If your own prices are script-drawn too, search engines and AI assistants may not see them; put the prices in the page text.",
+    "your_page": "not run: a new product with no pricing page yet"
+  },
+  "validation_plan": {
+    "van_westendorp": "Ask salon and studio owners the four price questions after showing the Core description. Read at least 100 answers for salons and 100 for other studios, since D7 prices salons separately.",
+    "gabor_granger_ladder": {
+      "profile": "typical (3 staff)",
+      "rungs_usd": [
+        27,
+        28.5,
+        30,
+        37.5
+      ],
+      "built_from": "lowest, median and highest paid rival price at 3 staff, plus 25% above the highest"
+    },
+    "conjoint": "Not needed for launch; use it later if the salon package grows into many feature differences.",
+    "experiments": [
+      {
+        "test": "Core at two ladder points",
+        "measure": "paid conversion and revenue per pricing-page visitor"
+      },
+      {
+        "test": "Free plan for 1 staff vs a 14-day reverse trial",
+        "measure": "paid conversion at day 30 and 90, not sign-ups"
+      },
+      {
+        "test": "Annual shown by default vs monthly",
+        "measure": "annual share and first-year revenue"
+      },
+      {
+        "test": "Salon package vs Growth with salon add-ons",
+        "measure": "salon plan mix and expansion revenue at 90 days"
+      }
+    ],
+    "how": "New customers only, one change at a time, at least one full billing cycle each."
+  },
+  "unknowns": [
+    "Calendly: trial length (the FAQ mentions a trial; the answer text isn't on the page) and monthly-billed prices (only annual prices and the saving are shown).",
+    "Calendly, Acuity and Square: amounts came from the web-fetch fallback because the parsed pages had no prices; a second Calendly parse with enable_javascript also had none.",
+    "Setmore: the $12 shown next to the $5 Pro price has no billing label, so Setmore stays out of the annual-saving median.",
+    "Square: the trial length on the plan cards is script-drawn; 30 days is from the FAQ.",
+    "SimplyBook.me: prices came back in EUR; kept out of all USD medians.",
+    "Keywords with no volume data: appointment scheduling software cost, booking software for studios, booking software for clinics (counted as 0). Keywords with no CPC: scheduling software pricing, appointment scheduling software cost, online booking system cost, simplybook pricing, booking software for studios, booking software for clinics.",
+    "D8 value ceiling: not run, no value inputs.",
+    "Steps 4a to 4c (Search Console, GA4, Stripe): not run, the product is new and has no site traffic or billing yet."
+  ],
+  "changes_made": "none; this skill only reads pages and data",
+  "mode_examples": {
+    "offer_design": {
+      "current_offer_in_four_lines": {
+        "core_package": "40 video lessons, quizzes and a practice ledger, lifetime access",
+        "makes_buying_feel_safe": "7-day refund, only if no more than 2 lessons were opened",
+        "terms": "one payment of $299",
+        "reason_to_act_now": "a 15-minute countdown timer that restarts for every visitor"
+      },
+      "objection_themes": [
+        {
+          "rank": 1,
+          "theme": "Worth the money",
+          "score_pct": 23.6,
+          "evidence": {
+            "Search Console (impressions)": {
+              "amount": 900,
+              "share_pct": 26.4
+            },
+            "Keyword volumes (monthly searches)": {
+              "amount": 930,
+              "share_pct": 20.3
+            },
+            "Product reviews (count)": {
+              "amount": 2,
+              "share_pct": 33.3
+            },
+            "Sales chat lines (count)": {
+              "amount": 1,
+              "share_pct": 14.3
+            }
+          }
+        },
+        {
+          "rank": 2,
+          "theme": "Effort and time",
+          "score_pct": 20.8,
+          "evidence": {
+            "Search Console (impressions)": {
+              "amount": 210,
+              "share_pct": 6.2
+            },
+            "Keyword volumes (monthly searches)": {
+              "amount": 590,
+              "share_pct": 12.9
+            },
+            "Product reviews (count)": {
+              "amount": 3,
+              "share_pct": 50.0
+            },
+            "Sales chat lines (count)": {
+              "amount": 1,
+              "share_pct": 14.3
+            }
+          }
+        },
+        {
+          "rank": 3,
+          "theme": "Cheaper or free options",
+          "score_pct": 17.9,
+          "evidence": {
+            "Search Console (impressions)": {
+              "amount": 90,
+              "share_pct": 2.6
+            },
+            "Keyword volumes (monthly searches)": {
+              "amount": 2510,
+              "share_pct": 54.7
+            },
+            "Product reviews (count)": {
+              "amount": 0,
+              "share_pct": 0.0
+            },
+            "Sales chat lines (count)": {
+              "amount": 1,
+              "share_pct": 14.3
+            }
+          }
+        },
+        {
+          "rank": 4,
+          "theme": "Fear it won't work",
+          "score_pct": 17.3,
+          "evidence": {
+            "Search Console (impressions)": {
+              "amount": 790,
+              "share_pct": 23.2
+            },
+            "Keyword volumes (monthly searches)": {
+              "amount": 30,
+              "share_pct": 0.7
+            },
+            "Product reviews (count)": {
+              "amount": 1,
+              "share_pct": 16.7
+            },
+            "Sales chat lines (count)": {
+              "amount": 2,
+              "share_pct": 28.6
+            }
+          }
+        },
+        {
+          "rank": 5,
+          "theme": "Trust",
+          "score_pct": 9.8,
+          "evidence": {
+            "Search Console (impressions)": {
+              "amount": 940,
+              "share_pct": 27.6
+            },
+            "Keyword volumes (monthly searches)": {
+              "amount": 530,
+              "share_pct": 11.5
+            },
+            "Product reviews (count)": {
+              "amount": 0,
+              "share_pct": 0.0
+            },
+            "Sales chat lines (count)": {
+              "amount": 0,
+              "share_pct": 0.0
+            }
+          }
+        },
+        {
+          "rank": 6,
+          "theme": "Waiting",
+          "score_pct": 6.0,
+          "evidence": {
+            "Search Console (impressions)": {
+              "amount": 330,
+              "share_pct": 9.7
+            },
+            "Keyword volumes (monthly searches)": {
+              "amount": 0,
+              "share_pct": 0.0
+            },
+            "Product reviews (count)": {
+              "amount": 0,
+              "share_pct": 0.0
+            },
+            "Sales chat lines (count)": {
+              "amount": 1,
+              "share_pct": 14.3
+            }
+          }
+        },
+        {
+          "rank": 7,
+          "theme": "Fit",
+          "score_pct": 4.7,
+          "evidence": {
+            "Search Console (impressions)": {
+              "amount": 150,
+              "share_pct": 4.4
+            },
+            "Keyword volumes (monthly searches)": {
+              "amount": 0,
+              "share_pct": 0.0
+            },
+            "Product reviews (count)": {
+              "amount": 0,
+              "share_pct": 0.0
+            },
+            "Sales chat lines (count)": {
+              "amount": 1,
+              "share_pct": 14.3
+            }
+          }
+        }
+      ],
+      "themes_answered": [
+        "Worth the money",
+        "Effort and time",
+        "Cheaper or free options",
+        "Fear it won't work"
+      ],
+      "scoring": "each theme's share of objection evidence within a source, averaged over the 4 sources; reviews rated 4 or 5, and queries, reviews and lines with no theme word (such as the login query) are left out",
+      "rival_offers": {
+        "per_rival": [
+          {
+            "rival": "Competitor A",
+            "price_usd": 349,
+            "guarantee": "30 days, no conditions",
+            "extras": [
+              "certificate",
+              "student community"
+            ],
+            "payment_terms": "3 monthly payments",
+            "reason_to_act_now": "none",
+            "ads": "6 Meta ads (4 name the guarantee), 7 Google ads"
+          },
+          {
+            "rival": "Competitor B",
+            "price_usd": 249,
+            "guarantee": "14 days, no conditions",
+            "extras": [
+              "spreadsheet templates"
+            ],
+            "payment_terms": "4 payments",
+            "reason_to_act_now": "monthly price rise announced with a date",
+            "ads": "3 Meta ads (1 names the guarantee), 2 Google ads"
+          },
+          {
+            "rival": "Competitor C",
+            "price_usd": 399,
+            "guarantee": "30 days, after finishing module 1",
+            "extras": [
+              "weekly live Q&A"
+            ],
+            "payment_terms": "one payment",
+            "reason_to_act_now": "cohort start dates",
+            "ads": "no ads running"
+          }
+        ],
+        "norms": {
+          "rivals": 3,
+          "guarantee_30_days": 2,
+          "guarantee_any": 3,
+          "instalments": 2,
+          "live_help": 1,
+          "running_meta_ads": 2,
+          "meta_ads_naming_a_guarantee": 5,
+          "meta_ads_total": 9,
+          "google_rows_dropped_other_advertiser": 2
+        },
+        "note": "2 Google library rows under rival domains came from other advertisers and were left out"
+      },
+      "new_offer": {
+        "core_package": "40 video lessons, quizzes and a practice ledger, lifetime access (unchanged)",
+        "makes_buying_feel_safe": "30 days, on finishing module 1 and submitting the practice ledger",
+        "terms": "one payment of $299, or 3 payments of $105",
+        "reason_to_act_now": "a new intake opens on the 1st of each month; live Q&A seats are tied to the intake",
+        "offer_map": [
+          {
+            "objection": "Worth the money",
+            "score_pct": 23.6,
+            "element": "3 payments of $105 ($315 in total) next to the one payment of $299",
+            "cost_per_sale_usd": 3.45,
+            "cost_note": "35% of buyers expected to choose it; provider fee and expected unpaid amount minus the $16 they pay above one payment",
+            "break_even_lift_alone_pct": 1.3,
+            "where_it_shows": "under the full price, never instead of it",
+            "rival_norm": "2 of 3 rivals take payments"
+          },
+          {
+            "objection": "Effort and time",
+            "score_pct": 20.8,
+            "element": "2 live Q&A calls a month for the first 3 months, plus a stated pace: 4 weeks at 5 hours a week",
+            "cost_per_sale_usd": 5.33,
+            "cost_note": "2 calls x $80 x 3 months / 90 buyers a month",
+            "break_even_lift_alone_pct": 2.1,
+            "where_it_shows": "beside the curriculum, with the pace in the headline area",
+            "rival_norm": "1 of 3 rivals gives live help"
+          },
+          {
+            "objection": "Cheaper or free options",
+            "score_pct": 17.9,
+            "element": "what free videos don't give (a practice ledger, feedback, a finished set of books)",
+            "cost_per_sale_usd": 0.0,
+            "cost_note": "nothing per sale",
+            "break_even_lift_alone_pct": 0.0,
+            "where_it_shows": "in the FAQ",
+            "rival_norm": "no rival compares itself with free videos"
+          },
+          {
+            "objection": "Fear it won't work",
+            "score_pct": 17.3,
+            "element": "30 days, on finishing module 1 and submitting the practice ledger",
+            "cost_per_sale_usd": 6.09,
+            "cost_note": "refunds planned at 6.1% instead of 4.1% (1.5 times, until the test shows the real rate)",
+            "break_even_lift_alone_pct": 2.4,
+            "where_it_shows": "next to the buy button and in the FAQ, in one plain sentence",
+            "rival_norm": "2 of 3 rivals give 30 days; the current 7 days with a 2-lesson limit is the shortest"
+          }
+        ]
+      },
+      "profit_check": {
+        "current": {
+          "price_usd": 299,
+          "refund_rate_pct": 4.07,
+          "payment_fees_usd": 8.97,
+          "delivery_and_support_usd": 16.0,
+          "contribution_per_sale_usd": 261.85
+        },
+        "new": {
+          "average_paid_usd": 304.6,
+          "planned_refund_rate_pct": 6.11,
+          "payment_fees_usd": 8.97,
+          "delivery_and_support_usd": 16.0,
+          "live_qa_per_buyer_usd": 5.33,
+          "instalment_cost_per_sale_usd": 8.82,
+          "contribution_per_sale_usd": 246.86
+        },
+        "break_even_lift_pct": 6.1,
+        "verdict": "keep",
+        "reading": "The new offer earns $14.99 less per sale, so it needs 6.1% more sales to earn the same. That is within the 15% keep line.",
+        "one_time_costs": [
+          "write the comparison with free videos for the FAQ (an hour of copy time)"
+        ]
+      },
+      "student_variant": {
+        "offer": "30% off ($209.30)",
+        "gate": "a school email domain, verified at checkout",
+        "cap": "one per person",
+        "ends": "12 months after purchase or at graduation",
+        "contribution_per_sale_usd": 168.81,
+        "reading": "still positive per sale; track the share of buyers using it"
+      },
+      "reason_to_act_now": {
+        "used": "a new intake opens on the 1st of each month; live Q&A seats are tied to the intake",
+        "refused": [
+          {
+            "tactic": "a 15-minute countdown timer that restarts for every visitor",
+            "why": "the deadline isn't real, so it reads as a trick once a buyer reloads the page; remove it"
+          }
+        ]
+      },
+      "presentation": [
+        {
+          "element": "3 payments of $105 ($315 in total) next to the one payment of $299",
+          "where": "under the full price, never instead of it"
+        },
+        {
+          "element": "2 live Q&A calls a month for the first 3 months, plus a stated pace: 4 weeks at 5 hours a week",
+          "where": "beside the curriculum, with the pace in the headline area"
+        },
+        {
+          "element": "what free videos don't give (a practice ledger, feedback, a finished set of books)",
+          "where": "in the FAQ"
+        },
+        {
+          "element": "30 days, on finishing module 1 and submitting the practice ledger",
+          "where": "next to the buy button and in the FAQ, in one plain sentence"
+        },
+        {
+          "element": "ads",
+          "where": "lead with the answer to 'Worth the money', the top theme"
+        }
+      ],
+      "test_plan": {
+        "change": "the new offer against the current one, new visitors only, split 50/50",
+        "primary_metric": "contribution per visitor, read after the 30-day guarantee window closes",
+        "current_conversion_pct": 1.0,
+        "lift_to_detect_pct": 10.0,
+        "target_conversion_pct": 1.1,
+        "visitors_per_arm": 162908,
+        "daily_visitors": 300,
+        "days_to_run": 1087,
+        "verdict": "too slow: over 56 days, so test a bigger change or run the offers one after the other over like periods",
+        "read_refunds_on": "each buyer's day 31",
+        "fallback": "Run the new offer for 4 full weeks after 4 weeks of the current one, same traffic sources, and compare contribution per visitor once every buyer's guarantee window has closed."
+      },
+      "unknowns": [
+        "The real refund rate under a 30-day guarantee: planned at 1.5 times today's rate until the test shows it.",
+        "How many buyers choose payments: planned at 35%."
+      ]
+    },
+    "regional_pricing": {
+      "summary": "4 countries get a lower price now (Mexico, Brazil, India, Philippines), 1 as a test (Poland); every other country keeps $49.",
+      "home": {
+        "trial_start_rate_pct": 3.0,
+        "paid_per_trial_pct": 15.0
+      },
+      "price_level_source": "World Bank PA.NUS.PRVT.PP / PA.NUS.FCRF, 2025 values, read 2026-10-30",
+      "rules": {
+        "lower_price_needs": "300+ sessions and 1%+ of sessions; trial start rate at least 70% of home; paid per trial at most 50% of home; price level ratio under 0.80",
+        "bands": "0.80 or more: 100%; 0.55 to under 0.80: 75%; 0.35 to under 0.55: 55%; under 0.35: 40%",
+        "decision": "go when the ceiling is at least 2 times the break-even lift, test between 1 and 2 times, no below"
+      },
+      "countries": [
+        {
+          "country": "United States",
+          "code": "US",
+          "currency": "USD",
+          "price_level_ratio": 1.0,
+          "sessions_90d": 120000,
+          "share_of_sessions_pct": 61.9,
+          "trial_starts": 3600,
+          "paid": 540,
+          "trial_start_rate_pct": 3.0,
+          "trial_start_rate_vs_home_pct": 100.0,
+          "paid_per_trial_pct": 15.0,
+          "paid_per_trial_vs_home_pct": 100.0,
+          "verdict": "home market",
+          "band_pct": 100,
+          "local_price": 49,
+          "decision": "home price"
+        },
+        {
+          "country": "United Kingdom",
+          "code": "GB",
+          "currency": "GBP",
+          "price_level_ratio": 0.924,
+          "sessions_90d": 18000,
+          "share_of_sessions_pct": 9.3,
+          "trial_starts": 520,
+          "paid": 75,
+          "trial_start_rate_pct": 2.89,
+          "trial_start_rate_vs_home_pct": 96.3,
+          "paid_per_trial_pct": 14.4,
+          "paid_per_trial_vs_home_pct": 96.2,
+          "checks": {
+            "enough_interest": true,
+            "they_want_it": true,
+            "they_dont_pay": false,
+            "cheaper_country": false
+          },
+          "verdict": "keep the home price: they already pay at a similar rate",
+          "band_pct": 100,
+          "local_price": null,
+          "decision": "home price"
+        },
+        {
+          "country": "Canada",
+          "code": "CA",
+          "currency": "CAD",
+          "price_level_ratio": 0.902,
+          "sessions_90d": 9000,
+          "share_of_sessions_pct": 4.6,
+          "trial_starts": 250,
+          "paid": 37,
+          "trial_start_rate_pct": 2.78,
+          "trial_start_rate_vs_home_pct": 92.6,
+          "paid_per_trial_pct": 14.8,
+          "paid_per_trial_vs_home_pct": 98.7,
+          "checks": {
+            "enough_interest": true,
+            "they_want_it": true,
+            "they_dont_pay": false,
+            "cheaper_country": false
+          },
+          "verdict": "keep the home price: they already pay at a similar rate",
+          "band_pct": 100,
+          "local_price": null,
+          "decision": "home price"
+        },
+        {
+          "country": "Australia",
+          "code": "AU",
+          "currency": "AUD",
+          "price_level_ratio": 0.944,
+          "sessions_90d": 6000,
+          "share_of_sessions_pct": 3.1,
+          "trial_starts": 170,
+          "paid": 24,
+          "trial_start_rate_pct": 2.83,
+          "trial_start_rate_vs_home_pct": 94.4,
+          "paid_per_trial_pct": 14.1,
+          "paid_per_trial_vs_home_pct": 94.1,
+          "checks": {
+            "enough_interest": true,
+            "they_want_it": true,
+            "they_dont_pay": false,
+            "cheaper_country": false
+          },
+          "verdict": "keep the home price: they already pay at a similar rate",
+          "band_pct": 100,
+          "local_price": null,
+          "decision": "home price"
+        },
+        {
+          "country": "Germany",
+          "code": "DE",
+          "currency": "EUR",
+          "price_level_ratio": 0.812,
+          "sessions_90d": 5000,
+          "share_of_sessions_pct": 2.6,
+          "trial_starts": 70,
+          "paid": 9,
+          "trial_start_rate_pct": 1.4,
+          "trial_start_rate_vs_home_pct": 46.7,
+          "paid_per_trial_pct": 12.9,
+          "paid_per_trial_vs_home_pct": 85.7,
+          "checks": {
+            "enough_interest": true,
+            "they_want_it": false,
+            "they_dont_pay": false,
+            "cheaper_country": false
+          },
+          "verdict": "keep the home price: few visitors start a trial, so fit, language or traffic is the problem, not price",
+          "band_pct": 100,
+          "local_price": null,
+          "decision": "home price"
+        },
+        {
+          "country": "Spain",
+          "code": "ES",
+          "currency": "EUR",
+          "price_level_ratio": 0.687,
+          "sessions_90d": 3000,
+          "share_of_sessions_pct": 1.5,
+          "trial_starts": 75,
+          "paid": 6,
+          "trial_start_rate_pct": 2.5,
+          "trial_start_rate_vs_home_pct": 83.3,
+          "paid_per_trial_pct": 8.0,
+          "paid_per_trial_vs_home_pct": 53.3,
+          "checks": {
+            "enough_interest": true,
+            "they_want_it": true,
+            "they_dont_pay": false,
+            "cheaper_country": true
+          },
+          "verdict": "keep the home price: paid per trial is more than half the home rate, so price isn't what stops them",
+          "band_pct": 100,
+          "local_price": null,
+          "decision": "home price"
+        },
+        {
+          "country": "Poland",
+          "code": "PL",
+          "currency": "PLN",
+          "price_level_ratio": 0.549,
+          "sessions_90d": 2400,
+          "share_of_sessions_pct": 1.2,
+          "trial_starts": 66,
+          "paid": 4,
+          "trial_start_rate_pct": 2.75,
+          "trial_start_rate_vs_home_pct": 91.7,
+          "paid_per_trial_pct": 6.1,
+          "paid_per_trial_vs_home_pct": 40.4,
+          "checks": {
+            "enough_interest": true,
+            "they_want_it": true,
+            "they_dont_pay": true,
+            "cheaper_country": true
+          },
+          "verdict": "price is the blocker",
+          "band_pct": 55,
+          "band_price_usd": 26.95,
+          "local_price_unrounded": 101.35,
+          "local_price": 99,
+          "local_price_in_usd": 26.33,
+          "floor_usd": 7.08,
+          "local_rivals": [
+            {
+              "rival": "Competitor A",
+              "local_price": 129,
+              "in_usd": 34.3,
+              "rival_discount_vs_its_us_price_pct": 23.8
+            }
+          ],
+          "local_rival_median_usd": 34.3,
+          "rival_flag": "within the local rivals' range",
+          "break_even_lift_pct": 86.1,
+          "ceiling_pct": 147.5,
+          "decision": "test",
+          "google_ads": {
+            "cost_usd_30d": 410,
+            "paid_conversions_30d": 2.0,
+            "cost_per_paid_customer_usd": 205.0,
+            "payback_months_at_band_price": 9.2,
+            "pays_back_within_12_months": true
+          }
+        },
+        {
+          "country": "Mexico",
+          "code": "MX",
+          "currency": "MXN",
+          "price_level_ratio": 0.588,
+          "sessions_90d": 4500,
+          "share_of_sessions_pct": 2.3,
+          "trial_starts": 130,
+          "paid": 7,
+          "trial_start_rate_pct": 2.89,
+          "trial_start_rate_vs_home_pct": 96.3,
+          "paid_per_trial_pct": 5.4,
+          "paid_per_trial_vs_home_pct": 35.9,
+          "checks": {
+            "enough_interest": true,
+            "they_want_it": true,
+            "they_dont_pay": true,
+            "cheaper_country": true
+          },
+          "verdict": "price is the blocker",
+          "band_pct": 75,
+          "band_price_usd": 36.75,
+          "local_price_unrounded": 706.98,
+          "local_price": 709,
+          "local_price_in_usd": 36.86,
+          "floor_usd": 7.37,
+          "local_rivals": [
+            {
+              "rival": "Competitor A",
+              "local_price": 499,
+              "in_usd": 25.94,
+              "rival_discount_vs_its_us_price_pct": 42.4
+            },
+            {
+              "rival": "Competitor B",
+              "local_price": 899,
+              "in_usd": 46.73,
+              "rival_discount_vs_its_us_price_pct": 20.8
+            }
+          ],
+          "local_rival_median_usd": 36.34,
+          "rival_flag": "above the local rivals' median: you will look expensive",
+          "break_even_lift_pct": 33.0,
+          "ceiling_pct": 178.6,
+          "decision": "go",
+          "google_ads": {
+            "cost_usd_30d": 620,
+            "paid_conversions_30d": 3.0,
+            "cost_per_paid_customer_usd": 206.67,
+            "payback_months_at_band_price": 6.6,
+            "pays_back_within_12_months": true
+          }
+        },
+        {
+          "country": "Brazil",
+          "code": "BR",
+          "currency": "BRL",
+          "price_level_ratio": 0.462,
+          "sessions_90d": 5200,
+          "share_of_sessions_pct": 2.7,
+          "trial_starts": 150,
+          "paid": 6,
+          "trial_start_rate_pct": 2.88,
+          "trial_start_rate_vs_home_pct": 96.2,
+          "paid_per_trial_pct": 4.0,
+          "paid_per_trial_vs_home_pct": 26.7,
+          "checks": {
+            "enough_interest": true,
+            "they_want_it": true,
+            "they_dont_pay": true,
+            "cheaper_country": true
+          },
+          "verdict": "price is the blocker",
+          "band_pct": 55,
+          "band_price_usd": 26.95,
+          "local_price_unrounded": 150.58,
+          "local_price": 150.9,
+          "local_price_in_usd": 27.01,
+          "floor_usd": 7.08,
+          "local_rivals": [
+            {
+              "rival": "Competitor A",
+              "local_price": 129.9,
+              "in_usd": 23.25,
+              "rival_discount_vs_its_us_price_pct": 48.3
+            },
+            {
+              "rival": "Competitor B",
+              "local_price": 249.9,
+              "in_usd": 44.73,
+              "rival_discount_vs_its_us_price_pct": 24.2
+            }
+          ],
+          "local_rival_median_usd": 33.99,
+          "rival_flag": "within the local rivals' range",
+          "break_even_lift_pct": 81.4,
+          "ceiling_pct": 275.0,
+          "decision": "go",
+          "google_ads": {
+            "cost_usd_30d": 540,
+            "paid_conversions_30d": 2.0,
+            "cost_per_paid_customer_usd": 270.0,
+            "payback_months_at_band_price": 11.8,
+            "pays_back_within_12_months": true
+          }
+        },
+        {
+          "country": "India",
+          "code": "IN",
+          "currency": "INR",
+          "price_level_ratio": 0.228,
+          "sessions_90d": 14000,
+          "share_of_sessions_pct": 7.2,
+          "trial_starts": 400,
+          "paid": 8,
+          "trial_start_rate_pct": 2.86,
+          "trial_start_rate_vs_home_pct": 95.2,
+          "paid_per_trial_pct": 2.0,
+          "paid_per_trial_vs_home_pct": 13.3,
+          "checks": {
+            "enough_interest": true,
+            "they_want_it": true,
+            "they_dont_pay": true,
+            "cheaper_country": true
+          },
+          "verdict": "price is the blocker",
+          "band_pct": 40,
+          "band_price_usd": 19.6,
+          "local_price_unrounded": 1708.31,
+          "local_price": 1699,
+          "local_price_in_usd": 19.49,
+          "floor_usd": 6.87,
+          "local_rivals": [
+            {
+              "rival": "Competitor A",
+              "local_price": 1999,
+              "in_usd": 22.94,
+              "rival_discount_vs_its_us_price_pct": 49.0
+            },
+            {
+              "rival": "Competitor B",
+              "local_price": 3999,
+              "in_usd": 45.88,
+              "rival_discount_vs_its_us_price_pct": 22.2
+            }
+          ],
+          "local_rival_median_usd": 34.41,
+          "rival_flag": "within the local rivals' range",
+          "break_even_lift_pct": 151.4,
+          "ceiling_pct": 650.0,
+          "decision": "go",
+          "google_ads": {
+            "cost_usd_30d": 480,
+            "paid_conversions_30d": 4.0,
+            "cost_per_paid_customer_usd": 120.0,
+            "payback_months_at_band_price": 7.2,
+            "pays_back_within_12_months": true
+          }
+        },
+        {
+          "country": "Philippines",
+          "code": "PH",
+          "currency": "PHP",
+          "price_level_ratio": 0.357,
+          "sessions_90d": 6000,
+          "share_of_sessions_pct": 3.1,
+          "trial_starts": 170,
+          "paid": 5,
+          "trial_start_rate_pct": 2.83,
+          "trial_start_rate_vs_home_pct": 94.4,
+          "paid_per_trial_pct": 2.9,
+          "paid_per_trial_vs_home_pct": 19.6,
+          "checks": {
+            "enough_interest": true,
+            "they_want_it": true,
+            "they_dont_pay": true,
+            "cheaper_country": true
+          },
+          "verdict": "price is the blocker",
+          "band_pct": 55,
+          "band_price_usd": 26.95,
+          "local_price_unrounded": 1549.76,
+          "local_price": 1599,
+          "local_price_in_usd": 27.81,
+          "floor_usd": 7.08,
+          "local_rivals": [
+            {
+              "rival": "Competitor A",
+              "local_price": 1490,
+              "in_usd": 25.91,
+              "rival_discount_vs_its_us_price_pct": 42.4
+            },
+            {
+              "rival": "Competitor B",
+              "local_price": 2990,
+              "in_usd": 52.0,
+              "rival_discount_vs_its_us_price_pct": 11.9
+            }
+          ],
+          "local_rival_median_usd": 38.95,
+          "rival_flag": "within the local rivals' range",
+          "break_even_lift_pct": 76.2,
+          "ceiling_pct": 410.0,
+          "decision": "go",
+          "google_ads": {
+            "cost_usd_30d": 300,
+            "paid_conversions_30d": 2.0,
+            "cost_per_paid_customer_usd": 150.0,
+            "payback_months_at_band_price": 6.3,
+            "pays_back_within_12_months": true
+          }
+        },
+        {
+          "country": "South Africa",
+          "code": "ZA",
+          "currency": "ZAR",
+          "price_level_ratio": 0.433,
+          "sessions_90d": 900,
+          "share_of_sessions_pct": 0.5,
+          "trial_starts": 26,
+          "paid": 1,
+          "trial_start_rate_pct": 2.89,
+          "trial_start_rate_vs_home_pct": 96.3,
+          "paid_per_trial_pct": 3.8,
+          "paid_per_trial_vs_home_pct": 25.6,
+          "checks": {
+            "enough_interest": false,
+            "they_want_it": true,
+            "they_dont_pay": true,
+            "cheaper_country": true
+          },
+          "verdict": "too little data: keep the home price, look again next quarter",
+          "band_pct": 100,
+          "local_price": null,
+          "decision": "home price"
+        }
+      ],
+      "abuse_rules": [
+        "Price set from the card's issuing country and the billing address; IP location only chooses what to display.",
+        "Home price when card country and billing country disagree, or a VPN or proxy is detected at checkout.",
+        "The regional price renews only while the card country still matches.",
+        "Regional prices on self-serve plans only; Business and contract plans pay the home price.",
+        "Tighten the checks if more than 5% of regional sign-ups pay with a card from another country."
+      ],
+      "tax_display": "Consumer prices in the EU, UK and Australia include tax; US and Canadian prices are shown before tax.",
+      "test_plan": {
+        "launch": [
+          "Mexico",
+          "Brazil"
+        ],
+        "who": "new customers only; existing customers keep their price",
+        "compare": "paid conversion and revenue per visitor against the 90 days before, for at least one billing cycle",
+        "watch": [
+          "refunds",
+          "share of regional sign-ups paying with a foreign card"
+        ]
+      },
+      "unknowns": [
+        "How much of each country's gap is price: the ceiling assumes all of it, so a 'go' needs only half."
+      ]
+    },
+    "change_announcement": {
+      "change": {
+        "type": "plan sunset",
+        "effective_date_E": "2027-02-15",
+        "announcement_day_A": "2026-11-17",
+        "notice_days": 90,
+        "notice_rule": "plan sunset: 90 days or more, annual customers keep it to the end of their term; the terms promise 30 days, so 90 more than covers it"
+      },
+      "affected": {
+        "customers": 1240,
+        "monthly": 1180,
+        "annual": 60,
+        "klaviyo_segment_members": 1262,
+        "segment_vs_billing": "the Klaviyo segment has +22 profiles against billing; send to the segment, check the gap against billing before A",
+        "top_10_pct": {
+          "customers": 124,
+          "revenue_12m_usd": 78792.0,
+          "share_of_affected_revenue_pct": 15.5
+        },
+        "revenue_12m_usd": 509676.0,
+        "widget_users_90_days": 2050,
+        "widget_note": "more people use the old widget than there are Classic accounts, because each account's staff and front desk use it; the in-product banner reaches them"
+      },
+      "rollout": [
+        {
+          "when": "2026-11-10",
+          "rel": "A - 7",
+          "who": "support, sales and success staff (22 people)",
+          "what": "briefing, FAQ, support replies, talking points",
+          "channel": "team meeting and the help desk"
+        },
+        {
+          "when": "2026-11-14",
+          "rel": "A - 3",
+          "who": "top 124 affected customers by 12-month revenue",
+          "what": "personal note from the head of customer success, with a call offer",
+          "channel": "email from a named person"
+        },
+        {
+          "when": "2026-11-15",
+          "rel": "A - 2",
+          "who": "14 reseller partners",
+          "what": "partner note with the dates and the customer FAQ",
+          "channel": "email"
+        },
+        {
+          "when": "2026-11-17",
+          "rel": "A",
+          "who": "all 1,240 Classic customers",
+          "what": "the announcement (monthly and annual versions)",
+          "channel": "email and an in-product banner"
+        },
+        {
+          "when": "2026-11-17",
+          "rel": "A",
+          "who": "everyone else",
+          "what": "changelog post and social post",
+          "channel": "changelog, blog, social (text drafted here)"
+        },
+        {
+          "when": "2027-01-16",
+          "rel": "E - 30",
+          "who": "Classic customers who haven't switched",
+          "what": "reminder 1",
+          "channel": "email and banner"
+        },
+        {
+          "when": "2027-02-08",
+          "rel": "E - 7",
+          "who": "Classic customers who haven't switched",
+          "what": "reminder 2",
+          "channel": "email"
+        },
+        {
+          "when": "2027-02-14",
+          "rel": "E - 1",
+          "who": "Classic customers who haven't switched",
+          "what": "last reminder: what happens tomorrow",
+          "channel": "email"
+        },
+        {
+          "when": "2027-02-15",
+          "rel": "E",
+          "who": "all former Classic customers",
+          "what": "it's done: your new plan and price",
+          "channel": "email"
+        }
+      ],
+      "messages": {
+        "monthly_customers": {
+          "subject": "Your Classic plan ends on February 15, 2027: your price is locked at $39",
+          "body": [
+            "We are retiring the Classic plan on February 15, 2027.",
+            "Your account moves to Growth on that date, at $39 a month for 12 months instead of $49. Your booking page, clients and history stay exactly as they are.",
+            "You don't need to do anything. If you'd rather switch now, one click in Billing moves you today at the same $39.",
+            "We move your services, staff and reminder settings across for you. Growth also adds up to 5 staff calendars, deposits and two-way calendar sync.",
+            "Why: Classic runs on our old booking widget, which we can no longer keep secure and fast, so we are moving everyone to the current one.",
+            "Questions? Reply to this email or read the FAQ at example.com/classic-plan/."
+          ]
+        },
+        "annual_customers": {
+          "subject": "Your Classic plan stays until your renewal date",
+          "body": [
+            "We are retiring the Classic plan on February 15, 2027, but you paid for a year, so nothing changes for you until your renewal date.",
+            "At renewal you move to Growth at $390 a year for your first year (normally $490).",
+            "You don't need to do anything now; we will email you 30 days before your renewal.",
+            "We move your services, staff and reminder settings across for you at renewal, and you can switch early in Billing if you want Growth sooner.",
+            "Why: Classic runs on our old booking widget, which we can no longer keep secure and fast.",
+            "Questions? Reply to this email."
+          ]
+        },
+        "top_customers_note": "Same facts as the monthly email, from the head of customer success by name, with an offer of a 15-minute call to move their settings together.",
+        "partners": "The dates, the $39 locked price, the customer FAQ link, and who to contact for a client with many locations.",
+        "in_product_banner": "Classic ends on February 15. You'll move to Growth at $39/month, with nothing to do. See what changes.",
+        "changelog_post": "We're retiring the Classic plan on February 15, 2027. Classic customers move to Growth at a locked $39 a month for 12 months; nothing else changes for them.",
+        "social_post": "Classic plan customers: on Feb 15 you move to Growth at $39/month for a year. Same booking link, same clients, more staff calendars. Details in your inbox."
+      },
+      "faq": [
+        {
+          "q": "What is changing?",
+          "a": "The Classic plan ends on 2027-02-15. Every Classic account moves to Growth."
+        },
+        {
+          "q": "What will I pay?",
+          "a": "$39 a month for 12 months, then the Growth price at the time. Annual customers: $390 for the first year."
+        },
+        {
+          "q": "Will my booking page link change?",
+          "a": "No. Your link, clients, history and settings stay the same."
+        },
+        {
+          "q": "Do I have to do anything?",
+          "a": "No. You can switch early in Billing if you want the Growth features now."
+        },
+        {
+          "q": "What happens to my text credits?",
+          "a": "Unused credits move with you and keep their expiry date."
+        },
+        {
+          "q": "I only have 1 staff member. Can I stay on $29?",
+          "a": "No, Classic ends for everyone. The Starter plan ($19, 1 staff) is open to you if it fits better."
+        },
+        {
+          "q": "I'm on an annual plan. Do I need to do anything?",
+          "a": "No. Classic stays until your renewal date, then you move to Growth at $390 for the first year. We email you 30 days before."
+        },
+        {
+          "q": "Can I cancel instead?",
+          "a": "Yes, any time before your next billing date, from Billing."
+        },
+        {
+          "q": "Why is this happening?",
+          "a": "Classic runs on our old booking widget, which we can no longer keep secure and fast."
+        }
+      ],
+      "support_replies": [
+        {
+          "question": "Will my booking page link change?",
+          "reply": "No. Your link, clients, history and settings stay the same."
+        },
+        {
+          "question": "What happens to my text credits?",
+          "reply": "Unused credits move with you and keep their expiry date."
+        },
+        {
+          "question": "I only have 1 staff member. Can I stay on $29?",
+          "reply": "No, Classic ends for everyone. The Starter plan ($19, 1 staff) is open to you if it fits better."
+        }
+      ],
+      "sales_talking_points": [
+        "Classic ends for everyone on Feb 15, 2027; the $39 price is locked for 12 months.",
+        "Growth adds staff calendars, deposits and calendar sync.",
+        "Don't promise to keep anyone on $29 or to extend the date: neither is on offer."
+      ],
+      "drafts_offered": [
+        {
+          "action": "klaviyo create_campaign",
+          "status": "offered after confirmation, not run",
+          "creates": "a Draft campaign; nothing sends until it is sent from Klaviyo",
+          "body": {
+            "platform": "klaviyo",
+            "action": "create_campaign",
+            "workspace_id": 1,
+            "brand_id": 1,
+            "body": {
+              "data": {
+                "type": "campaign",
+                "attributes": {
+                  "name": "Classic plan retirement: announcement (monthly)",
+                  "audiences": {
+                    "included": [
+                      "<CLASSIC_MONTHLY_SEGMENT_ID>"
+                    ]
+                  },
+                  "campaign-messages": {
+                    "data": [
+                      {
+                        "type": "campaign-message",
+                        "attributes": {
+                          "definition": {
+                            "channel": "email",
+                            "label": "Main",
+                            "content": {
+                              "subject": "Your Classic plan ends on February 15, 2027: your price is locked at $39",
+                              "preview_text": "Nothing to do. Your link and clients stay the same.",
+                              "from_email": "hello@example.com",
+                              "from_label": "Example Booking Software"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "send_strategy": {
+                    "method": "static",
+                    "datetime": "2026-11-17T15:00:00+00:00"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "watch": {
+        "baseline": {
+          "sends": 10,
+          "rates_per": "recipient",
+          "median_unsubscribe_rate_pct": 0.245,
+          "unsubscribe_flag_above_pct": 0.49,
+          "median_spam_complaint_rate_pct": 0.012,
+          "spam_flag_at_pct": 0.1
+        },
+        "reaction_check": {
+          "read_on": "2026-11-24",
+          "announcement_send": {
+            "recipients": 1262,
+            "delivered": 1254,
+            "unsubscribe_rate_pct": 0.71,
+            "spam_complaint_rate_pct": 0.079,
+            "unsubscribe_flag": true,
+            "spam_flag": false
+          },
+          "switched_early": {
+            "customers": 310,
+            "share_pct": 25.0
+          },
+          "top_tickets": [
+            {
+              "question": "Will my booking page link change?",
+              "tickets": 46
+            },
+            {
+              "question": "Can I keep $29 if I stay with 1 staff?",
+              "tickets": 31
+            },
+            {
+              "question": "What happens to my text credits?",
+              "tickets": 22
+            },
+            {
+              "question": "Do I need to do anything if I'm on annual?",
+              "tickets": 14
+            }
+          ],
+          "actions": [
+            "Unsubscribes ran at 0.71%, over the 0.49% flag: drop the Classic customers who unsubscribed from marketing sends but keep the service notices (the plan change is a service message), and check the replies for the reason.",
+            "Spam complaints at 0.079%, under the 0.1% flag.",
+            "The top ticket ('Will my booking page link change?') is answered in the email body, so readers missed it: put 'your booking link stays the same' in reminder 1's subject line and first line."
+          ]
+        },
+        "searches": "Search Console weekly: 'example booking classic' with 'discontinued', 'alternative' or 'replacement'",
+        "did_they_act": "share of Classic customers switched by E - 7 and by E"
+      },
+      "legal_review": [
+        "The terms promise 30 days' notice of plan changes; confirm the 90-day plan and the auto-move to Growth with whoever owns the terms."
+      ],
+      "unknowns": []
+    }
+  }
+}

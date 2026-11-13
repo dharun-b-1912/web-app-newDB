@@ -599,7 +599,10 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       const finalRecord: AttendanceDaily = {
         id: resolvedRecord?.id || `att-dyn-${emp.id}-${selectedDate}`,
         employee_id: emp.id,
-        employee_code: emp.employee_code || `WF-${emp.id}`,
+        employee_code:
+          emp.employee_code && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(emp.employee_code)
+            ? emp.employee_code
+            : 'EMP-PENDING',
         employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name,
         department: emp.department_name || emp.department || 'General',
         designation: emp.designation_title || emp.designation || 'Staff',

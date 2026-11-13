@@ -1326,7 +1326,7 @@ class BiometricGatewayService {
         branch_id: branchId,
         device_name: dev.device_name || 'eSSL AI-FACE MAGNUM Terminal',
         serial_number: dev.serial_number || 'TDBD253600550',
-        ip_address: dev.ip_address || '192.168.1.201',
+        ip_address: dev.ip_address || '100.64.0.1',
         port: Number(dev.port) || 4370,
         protocol: 'TCP',
         direction: dev.direction_mode === 'CHECK_IN' ? 'IN' : dev.direction_mode === 'CHECK_OUT' ? 'OUT' : 'BOTH',

@@ -164,3 +164,9 @@ verify_jwt = false
 [functions.deduction-engine]
 verify_jwt = false
 
+[functions.face-attend-verify]
+verify_jwt = true
+
+[functions.auth-gateway]
+verify_jwt = false
+

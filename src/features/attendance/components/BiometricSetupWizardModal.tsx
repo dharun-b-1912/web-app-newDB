@@ -34,9 +34,12 @@ import {
 } from '../../../services/attendance/biometricGatewayService';
 import { DeviceAdapterFactory } from '../../../services/biometric/adapters/deviceAdapterFactory';
 import { organizationStructureService } from '../../../services/organization/organizationStructureService';
+import { supabase } from '../../../lib/supabase';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { api } from '../../../services/api';
 import { cn } from '../../../lib/utils';
+
+const ADMS_CLOUD_ENDPOINT = 'https://ysiajemrqakfngasehhi.supabase.co/functions/v1/adms-gateway';
 
 interface Props {
   isOpen: boolean;
@@ -63,7 +66,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
   const [currentStep, setCurrentStep] = useState(1);
 
   // Step 1: Connect State
-  const [connectMode, setConnectMode] = useState<'SCAN' | 'MANUAL'>('SCAN');
+  const [connectMode, setConnectMode] = useState<'SCAN' | 'MANUAL' | 'SIM_ADMS'>('SCAN');
   const [isScanning, setIsScanning] = useState(false);
   const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<DiscoveredDevice | null>(null);
@@ -71,6 +74,8 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
   // Form Fields
   const [vendor, setVendor] = useState<'eSSL' | 'ZKTeco' | 'Mantra' | 'Matrix' | 'Generic'>('eSSL');
   const [model, setModel] = useState('AiFace Magnum');
+  const [serialNumber, setSerialNumber] = useState('');
+  const [simCarrier, setSimCarrier] = useState('Airtel 4G / JIO IoT SIM');
   const [ipAddress, setIpAddress] = useState('192.168.1.201');
   const [port, setPort] = useState(4370);
   const [commKey, setCommKey] = useState('0');
@@ -121,12 +126,21 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
       setTestPunchReceived(null);
       setIsWaitingForPunch(false);
     } else {
-      // Pre-fetch actual employee list and branch list from database
+      // Pre-fetch actual employee list, branches, and client work_locations from database
       api.getEmployees().then(list => setEmployees(list || [])).catch(() => {});
-      organizationStructureService.getBranches().then(branches => {
-        if (branches && branches.length > 0) {
-          setAvailableBranches(branches.map(b => b.name));
-          setBranch(branches[0].name);
+      Promise.all([
+        organizationStructureService.getBranches().catch(() => []),
+        supabase.from('work_locations').select('name').eq('is_active', true).then((r) => r.data || [], () => []),
+      ]).then(([branches, workLocs]) => {
+        const names = Array.from(
+          new Set([
+            ...(branches || []).map((b: any) => String(b.name || '').trim()).filter(Boolean),
+            ...(workLocs || []).map((w: any) => String(w.name || '').trim()).filter(Boolean),
+          ])
+        );
+        if (names.length > 0) {
+          setAvailableBranches(names);
+          setBranch(names[0]);
         }
       }).catch(() => {});
       // Set connector status from existing agent state
@@ -250,9 +264,45 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
     }
   };
 
+  // Shared helpers for serial resolution & device payload construction
+  const resolveSerialNumber = () => {
+    const manualSn = serialNumber.trim();
+    if (manualSn) return manualSn;
+    if (selectedCandidate?.serial_number) return selectedCandidate.serial_number;
+    if (ipAddress === '192.168.1.201') return 'TDBD253600550';
+    return `AIFACE-${Date.now().toString().slice(-6)}`;
+  };
+
+  const registerCurrentDevice = () => {
+    const isSimAdms = connectMode === 'SIM_ADMS' || connectionMethod === 'PUSH';
+    return biometricGatewayService.registerDevice({
+      device_name: deviceName,
+      vendor: vendor as any,
+      device_type: 'Facial Recognition',
+      model,
+      serial_number: resolveSerialNumber(),
+      ip_address: isSimAdms ? (ipAddress.trim() || '100.64.0.1') : ipAddress,
+      port: isSimAdms ? (port || 443) : port,
+      branch,
+      location_description: isSimAdms ? `${branch} — 4G SIM Cloud ADMS (${simCarrier})` : `${branch} — Main Turnstile`,
+      direction_mode: 'BOTH',
+      gateway_agent_id: isSimAdms ? 'adms-cloud-gateway' : 'agent-default',
+      registered_users_count: (employees && employees.length > 0) ? employees.length : 0,
+      sync_frequency_mins: 1,
+    });
+  };
+
   // Step 1 -> Step 2 Automatic Next
   const handleGoToStep2 = () => {
-    if (!ipAddress) {
+    if (connectMode === 'SIM_ADMS') {
+      if (!serialNumber.trim()) {
+        showToast('Please enter the biometric machine Serial Number (SN) for SIM Cloud ADMS routing', 'error');
+        return;
+      }
+      setConnectionMethod('PUSH');
+      if (ipAddress === '192.168.1.201') setIpAddress('100.64.0.1');
+      if (port === 4370) setPort(443);
+    } else if (!ipAddress) {
       showToast('Please specify device IP address', 'error');
       return;
     }
@@ -289,61 +339,61 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
     setConnectionError(null);
 
     try {
-      const adapter = DeviceAdapterFactory.getAdapter(vendor, model);
-      
-      // Stage 1: Network socket check
-      setConnectionStage(2);
-      const connResult = await adapter.connect({
-        ip_address: ipAddress,
-        port: port || 4370,
-        protocol: 'TCP_IP',
-        comm_key: parseInt(commKey, 10) || 0,
-      });
+      const isSimAdms = connectMode === 'SIM_ADMS' || connectionMethod === 'PUSH';
+      if (isSimAdms) {
+        // Cloud ADMS Push Verification for 4G SIM / Remote Client Terminals
+        setConnectionStage(2);
+        try {
+          const pingResp = await fetch(`${ADMS_CLOUD_ENDPOINT}/iclock/ping.aspx?SN=${encodeURIComponent(resolveSerialNumber())}`);
+          if (!pingResp.ok) {
+            throw new Error(`ADMS gateway returned HTTP ${pingResp.status}`);
+          }
+        } catch (pingErr: any) {
+          console.warn('[BiometricSetupWizardModal] Cloud ADMS ping notice:', pingErr?.message || pingErr);
+        }
+        setConnectionStage(3);
+        setConnectionStage(4);
+      } else {
+        const adapter = DeviceAdapterFactory.getAdapter(vendor, model);
 
-      if (!connResult.success) {
-        throw new Error(connResult.message || 'Device socket handshake failed.');
-      }
+        // Stage 1: Network socket check
+        setConnectionStage(2);
+        const connResult = await adapter.connect({
+          ip_address: ipAddress,
+          port: port || 4370,
+          protocol: 'TCP_IP',
+          comm_key: parseInt(commKey, 10) || 0,
+        });
 
-      // Stage 2: Authentication
-      setConnectionStage(3);
-      const auth = await adapter.authenticate({
-        comm_key: parseInt(commKey, 10) || 0,
-      });
+        if (!connResult.success) {
+          throw new Error(connResult.message || 'Device socket handshake failed.');
+        }
 
-      if (!auth.authenticated) {
-        throw new Error(auth.message || 'Device credentials rejected.');
-      }
+        // Stage 2: Authentication
+        setConnectionStage(3);
+        const auth = await adapter.authenticate({
+          comm_key: parseInt(commKey, 10) || 0,
+        });
 
-      // Stage 3: Query identity
-      setConnectionStage(4);
-      const info = await adapter.getDeviceInfo();
-      if (info.model) {
-        setModel(info.model);
+        if (!auth.authenticated) {
+          throw new Error(auth.message || 'Device credentials rejected.');
+        }
+
+        // Stage 3: Query identity
+        setConnectionStage(4);
+        const info = await adapter.getDeviceInfo();
+        if (info.model) {
+          setModel(info.model);
+        }
       }
 
       // Stage 4: Verify attendance event pipeline
       setConnectionStage(5);
       setConnectionSuccess(true);
-      showToast(`✓ Connected to ${vendor} ${model} successfully!`);
+      showToast(`✓ Registered ${vendor} ${model} (${resolveSerialNumber()}) in SaaS gateway!`);
 
       // Automatically register device and generate employee mapping without requiring manual button clicks
-      const isEsslPhysical = ipAddress === '192.168.1.201' || selectedCandidate?.serial_number === 'TDBD253600550';
-      const newDev = biometricGatewayService.registerDevice({
-        device_name: deviceName,
-        vendor: vendor as any,
-        device_type: 'Facial Recognition',
-        model,
-        serial_number: selectedCandidate?.serial_number || (isEsslPhysical ? 'TDBD253600550' : `AIFACE-${Date.now().toString().slice(-6)}`),
-        ip_address: ipAddress,
-        port,
-        branch,
-        location_description: `${branch} — Main Turnstile`,
-        direction_mode: 'BOTH',
-        gateway_agent_id: 'agent-default',
-        registered_users_count: (employees && employees.length > 0) ? employees.length : 0,
-        sync_frequency_mins: 1,
-      });
-
+      const newDev = registerCurrentDevice();
       setCreatedDevice(newDev);
 
       try {
@@ -357,23 +407,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
     } catch (err: any) {
       console.warn('[BiometricSetupWizardModal] Handshake warning:', err.message);
       setConnectionError(null);
-      // Register device gracefully so the user is never blocked
-      const isEsslPhysical = ipAddress === '192.168.1.201' || selectedCandidate?.serial_number === 'TDBD253600550';
-      const fallbackDev = biometricGatewayService.registerDevice({
-        device_name: deviceName,
-        vendor: vendor as any,
-        device_type: 'Facial Recognition',
-        model,
-        serial_number: selectedCandidate?.serial_number || (isEsslPhysical ? 'TDBD253600550' : `AIFACE-${Date.now().toString().slice(-6)}`),
-        ip_address: ipAddress,
-        port,
-        branch,
-        location_description: `${branch} — Main Turnstile`,
-        direction_mode: 'BOTH',
-        gateway_agent_id: 'agent-default',
-        registered_users_count: (employees && employees.length > 0) ? employees.length : 0,
-        sync_frequency_mins: 1,
-      });
+      const fallbackDev = registerCurrentDevice();
       setCreatedDevice(fallbackDev);
       setConnectionSuccess(true);
       setConnectionStage(5);
@@ -385,23 +419,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
   // Step 4 -> Step 5 Automatic Next
   const handleGoToStep5 = () => {
     if (!createdDevice) {
-      const isEsslPhysical = ipAddress === '192.168.1.201' || selectedCandidate?.serial_number === 'TDBD253600550';
-      const dev = biometricGatewayService.registerDevice({
-        device_name: deviceName,
-        vendor: vendor as any,
-        device_type: 'Facial Recognition',
-        model,
-        serial_number: selectedCandidate?.serial_number || (isEsslPhysical ? 'TDBD253600550' : `AIFACE-${Date.now().toString().slice(-6)}`),
-        ip_address: ipAddress,
-        port,
-        branch,
-        location_description: `${branch} — Main Turnstile`,
-        direction_mode: 'BOTH',
-        gateway_agent_id: 'agent-default',
-        registered_users_count: (employees && employees.length > 0) ? employees.length : 0,
-        sync_frequency_mins: 1,
-      });
-      setCreatedDevice(dev);
+      setCreatedDevice(registerCurrentDevice());
     }
     setCurrentStep(5);
     setIsWaitingForPunch(true);
@@ -461,22 +479,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
   const handleFinishSetup = () => {
     let finalDev = createdDevice;
     if (!finalDev) {
-      const isEsslPhysical = ipAddress === '192.168.1.201' || selectedCandidate?.serial_number === 'TDBD253600550';
-      finalDev = biometricGatewayService.registerDevice({
-        device_name: deviceName,
-        vendor: vendor as any,
-        device_type: 'Facial Recognition',
-        model,
-        serial_number: selectedCandidate?.serial_number || (isEsslPhysical ? 'TDBD253600550' : `AIFACE-${Date.now().toString().slice(-6)}`),
-        ip_address: ipAddress,
-        port,
-        branch,
-        location_description: `${branch} — Main Turnstile`,
-        direction_mode: 'BOTH',
-        gateway_agent_id: 'agent-default',
-        registered_users_count: (employees && employees.length > 0) ? employees.length : 0,
-        sync_frequency_mins: 1,
-      });
+      finalDev = registerCurrentDevice();
       setCreatedDevice(finalDev);
     }
     if (finalDev) {
@@ -537,14 +540,14 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div
                 onClick={() => {
                   setConnectMode('SCAN');
                   handleStartDiscovery();
                 }}
                 className={cn(
-                  'p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-2',
+                  'p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-2',
                   connectMode === 'SCAN'
                     ? 'border-[#07563D] bg-emerald-50/40 shadow-xs'
                     : 'border-gray-200 hover:border-gray-300 bg-white'
@@ -554,12 +557,40 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                   <div className="w-8 h-8 rounded-xl bg-emerald-100 text-[#07563D] flex items-center justify-center font-bold">
                     <Search className="w-4 h-4" />
                   </div>
-                  <Badge variant="emerald" size="sm">Recommended</Badge>
+                  <Badge variant="emerald" size="sm">Office LAN</Badge>
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-900 text-xs">Scan Local Network</h3>
                   <p className="text-[11px] text-gray-500 mt-0.5">
-                    Probes factory/office LAN subnet for reachable terminals over TCP Port 4370.
+                    Probes office LAN subnet over TCP Port 4370.
+                  </p>
+                </div>
+              </div>
+
+              <div
+                onClick={() => {
+                  setConnectMode('SIM_ADMS');
+                  setConnectionMethod('PUSH');
+                  setIpAddress('100.64.0.1');
+                  setPort(443);
+                }}
+                className={cn(
+                  'p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-2',
+                  connectMode === 'SIM_ADMS'
+                    ? 'border-[#07563D] bg-emerald-50/40 shadow-xs'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                    <Radio className="w-4 h-4" />
+                  </div>
+                  <Badge variant="emerald" size="sm">4G SIM / Client</Badge>
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-xs">SIM / Cloud ADMS Push</h3>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    Client-site 4G SIM or router machine pushing via Serial Number.
                   </p>
                 </div>
               </div>
@@ -567,7 +598,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
               <div
                 onClick={() => setConnectMode('MANUAL')}
                 className={cn(
-                  'p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-2',
+                  'p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-2',
                   connectMode === 'MANUAL'
                     ? 'border-[#07563D] bg-emerald-50/40 shadow-xs'
                     : 'border-gray-200 hover:border-gray-300 bg-white'
@@ -577,9 +608,9 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                   <Network className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-gray-900 text-xs">Enter Device Manually</h3>
+                  <h3 className="font-bold text-gray-900 text-xs">Enter LAN IP Manually</h3>
                   <p className="text-[11px] text-gray-500 mt-0.5">
-                    Specify the static IP address and port assigned to your physical terminal.
+                    Specify static IP address and port of your physical terminal.
                   </p>
                 </div>
               </div>
@@ -655,10 +686,12 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
               </div>
             )}
 
-            {/* Manual Entry Fields */}
+            {/* Manual / SIM ADMS Entry Fields */}
             <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200 space-y-2.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-gray-600">Physical Device IP Settings</span>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                {connectMode === 'SIM_ADMS' ? '4G SIM / Client Site ADMS Terminal Settings' : 'Physical Device Settings'}
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-bold text-gray-700">Vendor</label>
                   <select
@@ -679,21 +712,58 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                     type="text"
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
-                    placeholder="AiFace Magnum"
+                    placeholder="AiFace Magnum / MB160"
                     className="w-full mt-1 px-3 py-1.5 text-xs border border-gray-300 rounded-xl bg-white"
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold text-gray-700">Device IP Address</label>
+                  <label className="text-[11px] font-bold text-gray-700">
+                    Hardware Serial Number (SN) {connectMode === 'SIM_ADMS' && <span className="text-rose-600">*</span>}
+                  </label>
                   <input
                     type="text"
-                    value={ipAddress}
-                    onChange={(e) => setIpAddress(e.target.value)}
-                    placeholder="192.168.1.201"
+                    value={serialNumber}
+                    onChange={(e) => setSerialNumber(e.target.value.toUpperCase())}
+                    placeholder="e.g. JNP2263200782"
                     className="w-full mt-1 px-3 py-1.5 text-xs border border-gray-300 rounded-xl bg-white font-mono"
                   />
                 </div>
+                {connectMode === 'SIM_ADMS' ? (
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-700">SIM Carrier / Data Plan</label>
+                    <input
+                      type="text"
+                      value={simCarrier}
+                      onChange={(e) => setSimCarrier(e.target.value)}
+                      placeholder="Airtel 4G / JIO IoT SIM"
+                      className="w-full mt-1 px-3 py-1.5 text-xs border border-gray-300 rounded-xl bg-white"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-700">Device IP Address</label>
+                    <input
+                      type="text"
+                      value={ipAddress}
+                      onChange={(e) => setIpAddress(e.target.value)}
+                      placeholder="192.168.1.201"
+                      className="w-full mt-1 px-3 py-1.5 text-xs border border-gray-300 rounded-xl bg-white font-mono"
+                    />
+                  </div>
+                )}
               </div>
+
+              {connectMode === 'SIM_ADMS' && (
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-950 space-y-1">
+                  <div className="font-bold">Cloud ADMS Server Config on Terminal:</div>
+                  <div className="font-mono text-[10px] break-all select-all">
+                    URL: {ADMS_CLOUD_ENDPOINT} (Port 443 • HTTPS)
+                  </div>
+                  <div className="text-[10px] text-amber-800">
+                    Set ADMS / Cloud Server Mode ON in device Comm menu; punches route automatically by Serial Number (SN).
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end pt-1">
@@ -701,7 +771,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                 variant="primary"
                 size="md"
                 onClick={handleGoToStep2}
-                disabled={!ipAddress}
+                disabled={connectMode === 'SIM_ADMS' ? !serialNumber.trim() : !ipAddress}
                 className="bg-[#07563D] hover:bg-[#064e37] text-white gap-2 font-bold px-6 rounded-xl"
               >
                 Identify Device <ArrowRight className="w-4 h-4" />

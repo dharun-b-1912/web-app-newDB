@@ -11,6 +11,7 @@ export type NotificationCategory =
   | 'BILLING'
   | 'SUPPORT'
   | 'ATTENDANCE'
+  | 'BREAKS'
   | 'PAYROLL'
   | 'SYSTEM';
 

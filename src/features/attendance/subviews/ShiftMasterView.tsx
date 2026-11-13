@@ -657,18 +657,27 @@ export const ShiftMasterView: React.FC = () => {
                   <span className="text-[11px] text-gray-400">Arrival after {lateThresholdMinutes}m triggers Late mark</span>
                 </div>
                 <div>
-                  <label className="font-bold text-gray-700 block mb-1">Full Day Minimum (Hours)</label>
+                  <label className="font-bold text-gray-700 block mb-1">Net Working Hours (Full Day)</label>
                   <input
                     type="number"
+                    step="0.5"
+                    min={1}
+                    max={24}
                     value={minHoursFullDay}
                     onChange={e => setMinHoursFullDay(Number(e.target.value))}
                     className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
                   />
+                  <span className="text-[11px] text-gray-400">
+                    e.g. 8h net on a 9h shift, or 11h/12h on a 12h shift
+                  </span>
                 </div>
                 <div>
                   <label className="font-bold text-gray-700 block mb-1">Half Day Minimum (Hours)</label>
                   <input
                     type="number"
+                    step="0.5"
+                    min={0.5}
+                    max={12}
                     value={minHoursHalfDay}
                     onChange={e => setMinHoursHalfDay(Number(e.target.value))}
                     className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
@@ -678,7 +687,9 @@ export const ShiftMasterView: React.FC = () => {
 
               <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 text-xs text-emerald-900 font-semibold flex items-center justify-between">
                 <span>Rule Preview:</span>
-                <span>8h+ = PRESENT | 4h-7h59 = HALF DAY | &lt;4h = ABSENT</span>
+                <span>
+                  {minHoursFullDay}h+ = PRESENT | {minHoursHalfDay}h–&lt;{minHoursFullDay}h = HALF DAY | &lt;{minHoursHalfDay}h = ABSENT
+                </span>
               </div>
 
               <div className="flex justify-between items-center pt-4 border-t border-gray-100">

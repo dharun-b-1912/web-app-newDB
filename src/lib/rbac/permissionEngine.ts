@@ -184,6 +184,15 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'garment-payroll',
   'garment-reports',
   'garment-my-earnings',
+  // JOY FaceAttend Add-On
+  'face-attend',
+  'face-attend-dashboard',
+  'face-attend-enrolment',
+  'face-attend-attempts',
+  'face-attend-exceptions',
+  'face-attend-settings',
+  'face-attend-billing',
+  'face-attend-audit',
   // Performance
   'performance',
   'performance-dashboard',
@@ -375,6 +384,8 @@ const MANAGER_MODULE_IDS: ModuleId[] = [
   'helpdesk', 'other-communication', 'requests',
   // Garment Workforce (Supervisor / Manager operations & reporting)
   'garment', 'garment-dashboard', 'garment-units', 'garment-operations', 'garment-payroll', 'garment-reports',
+  // JOY FaceAttend (Supervisor / Manager exception review & attempts oversight)
+  'face-attend', 'face-attend-dashboard', 'face-attend-attempts', 'face-attend-exceptions',
   // Analytics (department-scoped)
   'analytics', 'analytics-overview', 'analytics-attendance', 'analytics-leave', 'analytics-performance',
   // ESS (own personal data)
@@ -392,6 +403,8 @@ const TEAM_LEAD_MODULE_IDS: ModuleId[] = [
   'tl-communication', 'tl-reports',
   // Garment Floor Supervisor / TL operations
   'garment', 'garment-dashboard', 'garment-operations', 'garment-reports', 'garment-my-earnings',
+  // JOY FaceAttend Supervisor / TL exception review
+  'face-attend', 'face-attend-dashboard', 'face-attend-exceptions',
   // ESS (own personal data)
   'ess-dashboard', 'ess-attendance', 'ess-leave', 'ess-payroll',
   'ess-requests', 'ess-performance', 'ess-learning', 'ess-documents',
@@ -533,6 +546,14 @@ export const ROLE_PROFILES: Record<string, RoleAccessProfile> = {
       'garment-operations',
       'garment-advances',
       'garment-reports',
+      'face-attend',
+      'face-attend-dashboard',
+      'face-attend-enrolment',
+      'face-attend-attempts',
+      'face-attend-exceptions',
+      'face-attend-settings',
+      'face-attend-billing',
+      'face-attend-audit',
     ],
     defaultScope: 'HR',
     moduleScopes: {},
@@ -759,7 +780,7 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
 
   // ── Universal self-service routes: all authenticated users (personal profile & workspace) ─
   const UNIVERSAL_SELF_SERVICE = ['my-profile', 'profile', 'workspace', 'my-workspace', 'helpdesk', 'notifications'];
-  if (module.startsWith('ess-') || UNIVERSAL_SELF_SERVICE.includes(module)) return true;
+  if (module === 'ess' || module.startsWith('ess-') || UNIVERSAL_SELF_SERVICE.includes(module)) return true;
 
   // ── Dynamic Employee HR Module Authorization Override by Work Email ──────────
   if (user.email && hrAuthorizationService.canEmployeeAccessModule(user.email, module)) {

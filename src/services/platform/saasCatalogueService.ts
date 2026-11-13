@@ -3841,6 +3841,20 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     isActive: true,
     iconName: 'Factory',
   },
+  {
+    id: 'addon-face-attend',
+    addonKey: 'face_attend',
+    moduleKey: 'face_attend',
+    name: 'JOY FaceAttend — GPS + 1:1 Face & Liveness Attendance',
+    description: 'Verified mobile check-in/out combining 1:1 employee face matching, anti-spoofing liveness checks, GPS geofencing, and immutable billing snapshots (Basic ₹15 / Pro ₹25 per employee/mo).',
+    category: 'Attendance',
+    monthlyPrice: 25,
+    billingUnit: 'Per Active Employee / Month',
+    pricingModel: 'PER_EMPLOYEE',
+    availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+    isActive: true,
+    iconName: 'ScanFace',
+  },
 ];
 
 class SaasCatalogueService {
@@ -3876,7 +3890,9 @@ class SaasCatalogueService {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length >= 15) {
-            return parsed;
+            const existingIds = new Set(parsed.map((item: any) => item?.id));
+            const missing = INITIAL_COMMERCIAL_ADDONS.filter((item) => !existingIds.has(item.id));
+            return missing.length > 0 ? [...parsed, ...missing] : parsed;
           }
         }
       }

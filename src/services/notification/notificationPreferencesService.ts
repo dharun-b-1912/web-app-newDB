@@ -7,6 +7,8 @@ import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { NotificationCategory, NotificationChannel, NotificationPreferenceItem } from '../../types/notification';
 
 const DEFAULT_CATEGORIES: NotificationCategory[] = [
+  'ATTENDANCE',
+  'BREAKS',
   'APPROVAL',
   'SECURITY',
   'INTEGRATION',

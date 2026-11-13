@@ -125,6 +125,7 @@ export const roleResolutionService = {
               phone,
               avatar_url,
               status,
+              role,
               user_roles (
                 id,
                 role_id,
@@ -161,6 +162,7 @@ export const roleResolutionService = {
               phone,
               avatar_url,
               status,
+              role,
               user_roles (
                 id,
                 role_id,
@@ -230,6 +232,21 @@ export const roleResolutionService = {
               rawRoles.push(r);
             }
           }
+
+          // Fallback to active organization_memberships if user_roles is empty
+          if (rawRoles.length === 0 && profileRow.id) {
+            try {
+              const { data: memRows } = await supabase
+                .from('organization_memberships')
+                .select('role_code, status')
+                .eq('user_id', profileRow.id)
+                .in('status', ['Active', 'active'])
+                .limit(5);
+              for (const m of memRows || []) {
+                if (m.role_code) rawRoles.push(m.role_code);
+              }
+            } catch (_) {}
+          }
         }
 
         // 4. Query employee record if employee_id exists, OR if matching email or auth_user_id exists
@@ -263,14 +280,9 @@ export const roleResolutionService = {
               }
 
               if (rawRoles.length === 0) {
-                const desgTitle = String((empRow.designations as any)?.title || '').toLowerCase();
-                if (desgTitle.includes('hr') || desgTitle.includes('head') || desgTitle.includes('director')) {
-                  rawRoles.push('HR_HEAD');
-                } else if (desgTitle.includes('manager') || desgTitle.includes('lead')) {
-                  rawRoles.push('MANAGER');
-                } else {
-                  rawRoles.push('EMPLOYEE');
-                }
+                // Never escalate privileges (e.g. HR_HEAD / MANAGER) from designation titles.
+                // Employees without an explicit admin/HR role assignment strictly default to EMPLOYEE.
+                rawRoles.push('EMPLOYEE');
               }
               if (empRow.organization_id && !organizationId) organizationId = empRow.organization_id;
               if (empRow.company_id && !companyId) companyId = empRow.company_id;

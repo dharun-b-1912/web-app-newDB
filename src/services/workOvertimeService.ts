@@ -252,7 +252,13 @@ class WorkOvertimeService {
 
       const grossMinutes = record?.gross_working_minutes || 0;
       const netMinutes = record?.net_working_minutes || 0;
-      const breakMinutes = record?.total_break_minutes || (grossMinutes > 300 ? breakPolicy.automatic_break_minutes : 0);
+      const breakMinutes = grossMinutes > 0
+        ? (record?.total_break_minutes || (grossMinutes > 300 ? breakPolicy.automatic_break_minutes : 0))
+        : 0;
+      const creditedPaidBreakMinutes =
+        grossMinutes > 0 && breakMinutes > 0
+          ? Math.min(breakMinutes, breakPolicy.paid_break_allowance_minutes)
+          : 0;
       const actualPresenceHours = Math.round((grossMinutes / 60) * 100) / 100;
       const payableWorkHours = Math.round((netMinutes / 60) * 100) / 100;
 
@@ -294,8 +300,8 @@ class WorkOvertimeService {
         check_in: checkIn || '--:--',
         check_out: checkOut || '--:--',
         total_break_minutes: breakMinutes,
-        paid_break_minutes: breakPolicy.paid_break_allowance_minutes,
-        unpaid_break_minutes: Math.max(0, breakMinutes - breakPolicy.paid_break_allowance_minutes),
+        paid_break_minutes: creditedPaidBreakMinutes,
+        unpaid_break_minutes: Math.max(0, breakMinutes - creditedPaidBreakMinutes),
         payable_work_hours: payableWorkHours,
         grace_period_applied_minutes: policy.grace_period_minutes,
         rounding_adjustment_minutes: 0,

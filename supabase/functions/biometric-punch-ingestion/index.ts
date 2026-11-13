@@ -386,6 +386,16 @@ serve(async (req: Request) => {
             payable_status: payableStatus,
           }).eq('id', existingDaily.id);
 
+          // Recalculate break deductions & net_payable_minutes immediately on biometric check-out
+          try {
+            await supabase.rpc('fn_recalculate_daily_attendance', {
+              p_employee_id: employeeId,
+              p_date: attendanceDateStr,
+            });
+          } catch (recalcErr) {
+            console.warn('[biometric-punch-ingestion] fn_recalculate_daily_attendance warning:', recalcErr);
+          }
+
           dailyAttendanceOutcome = {
             attendanceDate: attendanceDateStr,
             status: finalStatus,

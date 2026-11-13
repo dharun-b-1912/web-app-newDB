@@ -30,15 +30,17 @@ interface Props {
  * employee codes, extracting numeric portions, and incrementing without collisions.
  */
 export function generateNextEmployeeCode(existing: Employee[] = [], prefix = 'JCS'): string {
+  const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const usedCodes = new Set(
     existing
       .map((e) => (e.employee_code || '').trim().toUpperCase())
-      .filter(Boolean)
+      .filter((c) => Boolean(c) && !UUID_PATTERN.test(c))
   );
   let maxSeq = 0;
   for (const emp of existing) {
-    if (!emp.employee_code) continue;
-    const match = emp.employee_code.match(/(\d+)/);
+    const rawCode = (emp.employee_code || '').trim();
+    if (!rawCode || UUID_PATTERN.test(rawCode)) continue;
+    const match = rawCode.match(/^[A-Za-z]+[-_]?0*(\d+)$/);
     if (match) {
       const num = parseInt(match[1], 10);
       if (!isNaN(num) && num > maxSeq) {

@@ -374,6 +374,16 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
   { id: 'garment-reports', label: 'Production & Cost Reports', canonicalPath: '/garment/reports', section: 'GARMENT WORKFORCE', aliases: ['/garment-reports'] },
   { id: 'garment-my-earnings', label: 'My Garment Earnings', canonicalPath: '/garment/my-earnings', section: 'GARMENT WORKFORCE', aliases: ['/garment-my-earnings'] },
 
+  // ── JOY FACEATTEND ADD-ON ──
+  { id: 'face-attend', label: 'JOY FaceAttend', canonicalPath: '/face-attend', section: 'CLOCKING & DEVICES', aliases: ['/face-attend-dashboard'], exact: true },
+  { id: 'face-attend-dashboard', label: 'FaceAttend Live Command', canonicalPath: '/face-attend', section: 'CLOCKING & DEVICES', aliases: ['/face-attend-dashboard'], exact: true },
+  { id: 'face-attend-enrolment', label: 'Face Enrolment & Consent', canonicalPath: '/face-attend/enrolment', section: 'CLOCKING & DEVICES', aliases: ['/face-attend-enrolment'] },
+  { id: 'face-attend-attempts', label: 'Verification Attempts', canonicalPath: '/face-attend/attempts', section: 'CLOCKING & DEVICES', aliases: ['/face-attend-attempts'] },
+  { id: 'face-attend-exceptions', label: 'Fallback & Exceptions', canonicalPath: '/face-attend/exceptions', section: 'CLOCKING & DEVICES', aliases: ['/face-attend-exceptions'] },
+  { id: 'face-attend-settings', label: 'FaceAttend Policy & Geofences', canonicalPath: '/face-attend/settings', section: 'CLOCKING & DEVICES', aliases: ['/face-attend-settings'] },
+  { id: 'face-attend-billing', label: 'FaceAttend Subscription & Billing', canonicalPath: '/face-attend/billing', section: 'CLOCKING & DEVICES', aliases: ['/face-attend-billing'] },
+  { id: 'face-attend-audit', label: 'FaceAttend Audit Trail', canonicalPath: '/face-attend/audit', section: 'CLOCKING & DEVICES', aliases: ['/face-attend-audit'] },
+
   // ── VENDOR & PROCUREMENT GOVERNANCE ──
   { id: 'vendor-portal', label: 'Vendor Governance Overview', canonicalPath: '/vendor-portal', section: 'VENDOR & PROCUREMENT GOVERNANCE', aliases: ['/vendor', '/vendor/portal', '/vendor-dashboard', '/vendor/dashboard'] },
   { id: 'vendor-directory', label: 'Vendor Master Directory', canonicalPath: '/vendor-directory', section: 'VENDOR & PROCUREMENT GOVERNANCE', aliases: ['/vendor/directory', '/vendors'] },

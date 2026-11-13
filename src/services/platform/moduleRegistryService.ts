@@ -685,6 +685,37 @@ export const CANONICAL_MODULES: ModuleRegistryItem[] = [
       'garment-payroll', 'garment-reports', 'garment-my-earnings'
     ],
   },
+  // ─── ADD-ON DOMAIN: JOY FACEATTEND (GPS + 1:1 FACE + LIVENESS) ──────────
+  {
+    module_key: 'face_attend',
+    module_name: 'JOY FaceAttend (GPS + Face Verification & Liveness)',
+    category: 'ATTENDANCE_LEAVE',
+    status: 'LIVE',
+    launch_scope: true,
+    launch_scope_category: 'LAUNCH_CRITICAL',
+    navigation_visible: true,
+    route_accessible: true,
+    required_plan: 'Starter',
+    required_permissions: ['attendance.view'],
+    dependencies: ['people', 'attendance'],
+    web_enabled: true,
+    mobile_enabled: true,
+    certification_status: 'LAUNCH_CERTIFIED',
+    planned_phase: 'Add-On Live',
+    priority: 'HIGH_P1',
+    completion_percentage: 100,
+    development_notes: 'Subscription-gated add-on combining 1:1 face verification, anti-spoofing liveness verification, GPS/geofence validation, and immutable monthly billing snapshots.',
+    associated_routes: [
+      'face-attend', 'face-attend-dashboard', 'face-attend-enrolment',
+      'face-attend-attempts', 'face-attend-exceptions', 'face-attend-settings',
+      'face-attend-billing', 'face-attend-audit'
+    ],
+    associated_nav_ids: [
+      'face-attend', 'face-attend-dashboard', 'face-attend-enrolment',
+      'face-attend-attempts', 'face-attend-exceptions', 'face-attend-settings',
+      'face-attend-billing', 'face-attend-audit'
+    ],
+  },
 ];
 
 class ModuleRegistryService {

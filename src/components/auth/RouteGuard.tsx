@@ -29,13 +29,21 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
     (primaryRole === 'Super Admin'
       ? 'platform-dashboard'
       : primaryRole === 'Company Admin' ||
-        primaryRole === 'HR Head'
+        primaryRole === 'Organization Admin' ||
+        primaryRole === 'HR Head' ||
+        primaryRole === 'HR Admin' ||
+        primaryRole === 'Manager'
       ? 'dashboard'
-      : 'my-workspace');
+      : primaryRole === 'Team Lead'
+      ? 'tl-dashboard'
+      : primaryRole === 'Vendor Admin'
+      ? 'vendor-dashboard'
+      : 'ess-dashboard');
 
-  // Direct pass-through for critical core dashboards and employee workspace
-  const isCoreDashboardOrWorkspace = ['dashboard', 'workforce-overview', 'executive-overview', 'my-workspace'].includes(module.toLowerCase());
-  if (isCoreDashboardOrWorkspace) {
+  // Direct pass-through ONLY for universal employee self-service workspace/ESS routes.
+  // Never bypass RBAC for HR/Executive dashboards ('dashboard', 'workforce-overview', 'executive-overview').
+  const isUniversalSelfService = ['my-workspace', 'ess-dashboard'].includes(module.toLowerCase());
+  if (isUniversalSelfService) {
     return <>{children}</>;
   }
 

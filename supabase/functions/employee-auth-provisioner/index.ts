@@ -524,6 +524,7 @@ serve(async (req: Request) => {
             email: normalizedEmail,
             full_name: full_name.trim(),
             phone: phone || null,
+            role: roleRow?.code || role_code,
             status: 'ACTIVE',
           },
           { onConflict: 'auth_user_id,organization_id' }
@@ -551,6 +552,26 @@ serve(async (req: Request) => {
         } catch (e: any) {
           console.warn('[Provisioner] user_roles notice:', e);
         }
+      }
+
+      // 5b. Upsert canonical public.organization_memberships record
+      try {
+        await supabaseAdmin
+          .from('organization_memberships')
+          .upsert(
+            {
+              user_id: profileRow.id,
+              organization_id: targetOrgId,
+              role_id: roleRow?.id || null,
+              role_code: roleRow?.code || role_code,
+              status: 'Active',
+              is_default: true,
+              activated_at: new Date().toISOString(),
+            },
+            { onConflict: 'user_id,organization_id' }
+          );
+      } catch (e: any) {
+        console.warn('[Provisioner] organization_memberships notice:', e);
       }
 
       // 6. Link employees.user_id = profileRow.id (CRITICAL: foreign key references user_profiles(id))

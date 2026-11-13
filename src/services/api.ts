@@ -458,7 +458,11 @@ export function sanitizeEmployeeForSupabase(emp: any): Record<string, any> {
   }
   if (emp.user_id && isValidUUID(emp.user_id)) clean.user_id = emp.user_id;
 
-  clean.employee_code = String(emp.employee_code || (emp.identity?.employee_code) || `WF-${Math.floor(1000 + Math.random() * 9000)}`).trim();
+  const rawCandidateCode = String(emp.employee_code || emp.identity?.employee_code || '').trim();
+  clean.employee_code =
+    rawCandidateCode && !isValidUUID(rawCandidateCode)
+      ? rawCandidateCode
+      : `JCS-${String(Math.floor(100 + Math.random() * 899))}`;
   if (emp.first_name) clean.first_name = String(emp.first_name).trim();
   if (emp.middle_name) clean.middle_name = String(emp.middle_name).trim();
   if (emp.last_name) clean.last_name = String(emp.last_name).trim();
@@ -2528,7 +2532,12 @@ export const api = {
 
     if (stepNumber === 1) {
       // Step 1: Identity
-      const code = formData.employee_code?.trim() || existing.employee_code || `WF-${Math.floor(1000 + Math.random() * 9000)}`;
+      const rawStepCode = formData.employee_code?.trim();
+      const rawExistingCode = existing.employee_code?.trim();
+      const code =
+        (rawStepCode && !isValidUUID(rawStepCode) ? rawStepCode : null) ||
+        (rawExistingCode && !isValidUUID(rawExistingCode) ? rawExistingCode : null) ||
+        `JCS-${String(Math.floor(100 + Math.random() * 899))}`;
       employeePatch.employee_code = code;
       if (formData.first_name !== undefined) employeePatch.first_name = formData.first_name.trim();
       if (formData.middle_name !== undefined) employeePatch.middle_name = formData.middle_name.trim();
@@ -3846,9 +3855,7 @@ export const api = {
           email: newEmp.work_email,
           firstName: newEmp.first_name,
           lastName: newEmp.last_name,
-          role: newEmp.designation_title?.toLowerCase().includes('manager') ? 'Manager' :
-                newEmp.designation_title?.toLowerCase().includes('lead') ? 'Team Lead' :
-                newEmp.designation_title?.toLowerCase().includes('hr') ? 'HR Head' : 'Employee',
+          role: (input as any).role || 'Employee',
           sendSms: false,
         });
       }

@@ -1,0 +1,26 @@
+services:
+  compreface:
+    image: exadel/compreface:1.2.0
+    container_name: joy-compreface
+    restart: unless-stopped
+    ports:
+      - "${COMPREFACE_PORT:-8000}:80"
+    environment:
+      - SAVE_IMAGES_TO_DB=${SAVE_IMAGES_TO_DB:-false}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-5MB}
+      - MAX_REQUEST_SIZE=${MAX_REQUEST_SIZE:-10MB}
+      # MobileFaceNet / ArcFace models are built into exadel/compreface:1.2.0
+      - IMG_LENGTH_LIMIT=${IMG_LENGTH_LIMIT:-1024}
+    volumes:
+      - compreface_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:80/api/v1/recognition/status || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+volumes:
+  compreface_db:
+    name: joy_compreface_db
+

@@ -9,7 +9,7 @@ import { AppShell } from './components/shell/AppShell';
 import { RouteGuard } from './components/auth/RouteGuard';
 import { getPrimaryRole, canViewModule, isPublicModule } from './lib/rbac/permissionEngine';
 import { SessionExpiryModal } from './components/states/SessionExpiryModal';
-import { parseRouteFromUrl, syncUrlWithRoute } from './lib/router/urlRouter';
+import { parseRouteFromUrl, syncUrlWithRoute, ROUTE_ALIASES } from './lib/router/urlRouter';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { realtimeSyncEngine } from './services/realtimeSyncEngine';
 import { navPerfTracker } from './services/observability/navigationPerfTracker';
@@ -29,6 +29,7 @@ const AttendanceModuleMaster = lazy(() => import('./features/attendance/Attendan
 const LeaveManagementModule = lazy(() => import('./features/leave/LeaveManagementModule').then(m => ({ default: m.LeaveManagementModule })));
 const PayrollMasterModule = lazy(() => import('./features/payroll/PayrollMasterModule').then(m => ({ default: m.PayrollMasterModule })));
 const GarmentMasterModule = lazy(() => import('./features/garment/GarmentMasterModule').then(m => ({ default: m.GarmentMasterModule })));
+const FaceAttendMasterModule = lazy(() => import('./features/faceAttend/FaceAttendMasterModule').then(m => ({ default: m.FaceAttendMasterModule })));
 
 // Secondary & on-demand modules lazy-loaded
 const SuperAdminLoginPage = lazy(() => import('./features/auth/SuperAdminLoginPage').then(m => ({ default: m.SuperAdminLoginPage })));
@@ -149,8 +150,15 @@ const AppContent: React.FC = () => {
 
   const getDefaultRouteForUser = (targetUser?: any) => {
     const stored = targetUser || user || api.getCurrentUser();
-    if (stored?.authContext?.defaultRoute) {
-      return stored.authContext.defaultRoute;
+    const ctxDefault = stored?.authContext?.defaultRoute;
+    if (ctxDefault) {
+      const normalized = String(ctxDefault).replace(/^\/+/, '').toLowerCase();
+      if (normalized === 'employee' || normalized === 'employee/dashboard' || normalized === 'ess') {
+        return 'ess-dashboard';
+      }
+      if (normalized !== 'executive-overview' && normalized !== 'dashboard') {
+        return normalized;
+      }
     }
     const primaryRole = getPrimaryRole(stored);
     const isPlatformRole = (['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'] as string[]).includes(primaryRole);
@@ -163,8 +171,8 @@ const AppContent: React.FC = () => {
     }
     if (primaryRole === 'Manager') return 'dashboard';
     if (primaryRole === 'Team Lead') return 'tl-dashboard';
-    if (primaryRole === 'Employee') return 'ess-dashboard';
-    return 'executive-overview';
+    if (primaryRole === 'Vendor Admin') return 'vendor-dashboard';
+    return 'ess-dashboard';
   };
 
   // Compute the correct starting route: URL first -> localStorage saved route -> role default
@@ -210,7 +218,7 @@ const AppContent: React.FC = () => {
       ) {
         return getDefaultRouteForUser();
       }
-      if (r === 'face-attendance' || r.includes('face') || r === 'biometric/face') {
+      if (!r.startsWith('face-attend') && (r === 'face-attendance' || r.includes('face') || r === 'biometric/face')) {
         return 'biometric';
       }
       return urlState.route;
@@ -422,7 +430,14 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  const handleNavigate = (route: string, params?: Record<string, string>, replace: boolean = false) => {
+  const handleNavigate = (rawRoute: string, params?: Record<string, string>, replace: boolean = false) => {
+    if (!rawRoute) return;
+    const trimmed = rawRoute.trim();
+    const withLeadingSlash = trimmed.startsWith('/') ? trimmed.toLowerCase() : `/${trimmed.toLowerCase()}`;
+    const route =
+      ROUTE_ALIASES[trimmed.toLowerCase()] ||
+      ROUTE_ALIASES[withLeadingSlash] ||
+      (trimmed.startsWith('/') ? trimmed.slice(1) : trimmed);
     if (!route) return;
     if (currentRoute === route && !params) {
       syncUrlWithRoute(route, undefined, true);
@@ -1101,6 +1116,15 @@ const AppContent: React.FC = () => {
       case 'garment/reports':
       case 'garment/my-earnings':
         return <GarmentMasterModule initialTab={currentRoute} onNavigateTab={handleNavigate} />;
+      case 'face-attend':
+      case 'face-attend-dashboard':
+      case 'face-attend-enrolment':
+      case 'face-attend-attempts':
+      case 'face-attend-exceptions':
+      case 'face-attend-settings':
+      case 'face-attend-billing':
+      case 'face-attend-audit':
+        return <FaceAttendMasterModule initialTab={currentRoute} onNavigateTab={handleNavigate} />;
       case 'other':
       case 'other-dashboard':
       case 'other-travel':
@@ -1417,13 +1441,22 @@ const AppContent: React.FC = () => {
       case 'vault':
         return <StorageAdministrationView />;
       default: {
-        const stored = api.getCurrentUser();
+        const stored = user || api.getCurrentUser();
         const primaryRole = getPrimaryRole(stored);
         const isPlatformRole = ['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(primaryRole);
         if (isPlatformRole) {
           return <PlatformAdminMasterModule initialTab={currentRoute} onNavigateTab={handleNavigate} />;
         }
-        return <DashboardView onNavigate={handleNavigate} />;
+        if (['Company Admin', 'Organization Admin', 'HR Head', 'HR Admin', 'Manager'].includes(primaryRole)) {
+          return <DashboardView onNavigate={handleNavigate} />;
+        }
+        if (primaryRole === 'Team Lead') {
+          return <TlMasterModule initialTab="tl-dashboard" />;
+        }
+        if (primaryRole === 'Vendor Admin') {
+          return <VendorPortalWorkspace initialTab="vendor-dashboard" viewMode="VENDOR_PORTAL" onNavigate={handleNavigate} />;
+        }
+        return <EssMasterModule initialTab="ess-dashboard" />;
       }
     }
   };

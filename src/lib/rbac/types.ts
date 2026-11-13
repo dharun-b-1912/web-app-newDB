@@ -192,6 +192,15 @@ export type ModuleId =
   | 'garment-payroll'
   | 'garment-reports'
   | 'garment-my-earnings'
+  // JOY FaceAttend Add-On
+  | 'face-attend'
+  | 'face-attend-dashboard'
+  | 'face-attend-enrolment'
+  | 'face-attend-attempts'
+  | 'face-attend-exceptions'
+  | 'face-attend-settings'
+  | 'face-attend-billing'
+  | 'face-attend-audit'
   // Recruitment & ATS
   | 'recruitment'
   | 'recruitment-dashboard'

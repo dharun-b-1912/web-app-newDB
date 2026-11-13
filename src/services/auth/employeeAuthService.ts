@@ -1274,9 +1274,7 @@ class EmployeeAuthService {
     const emp = employees.find((e) => e.id === identity.employee_id || e.profile?.phone === identity.phone);
     const existingUser = users.find((u) => u.id === identity.employee_id || u.email?.toLowerCase() === identity.email?.toLowerCase());
 
-    const roleName = identity.role || (emp?.designation_title?.toLowerCase().includes('manager') ? 'Manager' :
-                                       emp?.designation_title?.toLowerCase().includes('lead') ? 'Team Lead' :
-                                       emp?.designation_title?.toLowerCase().includes('hr') ? 'HR Head' : 'Employee');
+    const roleName = identity.role || 'Employee';
 
     const resolvedUser: User = {
       id: existingUser?.id || (emp ? `usr-${emp.id}` : `usr-${identity.id}`),

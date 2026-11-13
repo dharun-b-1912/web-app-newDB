@@ -391,6 +391,9 @@ export const ROUTE_ALIASES: Record<string, string> = {
   // Team Lead & ESS Slugs
   '/tl': 'tl-dashboard',
   '/tl/dashboard': 'tl-dashboard',
+  '/employee': 'ess-dashboard',
+  '/employee/dashboard': 'ess-dashboard',
+  '/employee-portal': 'ess-dashboard',
   '/ess': 'ess-dashboard',
   '/ess/dashboard': 'ess-dashboard',
   '/ess/profile': 'ess-profile',
@@ -398,6 +401,10 @@ export const ROUTE_ALIASES: Record<string, string> = {
   '/ess/leave': 'ess-leave',
   '/ess/payroll': 'ess-payroll',
   '/ess/documents': 'ess-documents',
+  '/ess/requests': 'ess-requests',
+  '/ess/performance': 'ess-performance',
+  '/ess/learning': 'ess-learning',
+  '/ess/communication': 'ess-communication',
 
   // Platform Control Plane Slugs
   '/platform': 'platform-dashboard',

@@ -161,9 +161,15 @@ class OrganizationContextService {
    */
   getCachedContextSync(user: User): EffectiveUserContext | null {
     if (!user) return null;
+    const primaryRole = getPrimaryRole(user);
+    const roleName = primaryRole !== 'Unassigned' ? primaryRole : ((user as any).roleCode || (user as any).primaryRole || user.role || 'Unassigned');
+    const expectedRoleTitle = this.formatCleanRoleTitle(roleName);
     const userKey = `${user?.id || 'anon'}_${user?.organization_id || ''}_${user?.role || ''}`;
     const cachedEntry = OrganizationContextService.cachedUserContext.get(userKey);
-    if (cachedEntry) {
+    if (
+      cachedEntry &&
+      (expectedRoleTitle === 'Unassigned' || !cachedEntry.ctx.roleTitle || cachedEntry.ctx.roleTitle === expectedRoleTitle)
+    ) {
       return cachedEntry.ctx;
     }
 
@@ -172,9 +178,20 @@ class OrganizationContextService {
         const stored = localStorage.getItem(`workforce_ctx_${user.id}`);
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (parsed?.activeOrganization && (!user.organization_id || parsed.activeOrganization.id === user.organization_id)) {
+          const roleMatches =
+            expectedRoleTitle === 'Unassigned' ||
+            !parsed?.roleTitle ||
+            parsed.roleTitle === expectedRoleTitle;
+          if (
+            parsed?.activeOrganization &&
+            (!user.organization_id || parsed.activeOrganization.id === user.organization_id) &&
+            roleMatches
+          ) {
             OrganizationContextService.cachedUserContext.set(userKey, { ctx: parsed, timestamp: Date.now() });
             return parsed;
+          }
+          if (!roleMatches) {
+            localStorage.removeItem(`workforce_ctx_${user.id}`);
           }
         }
       } catch (_) {}
@@ -208,16 +225,13 @@ class OrganizationContextService {
       created_at: new Date().toISOString(),
     };
 
-    const primaryRole = getPrimaryRole(user);
-    const roleName = primaryRole !== 'Unassigned' ? primaryRole : ((user as any).roleCode || (user as any).primaryRole || user.role || 'Unassigned');
-
     const synCtx: EffectiveUserContext = {
       userId: user.id,
       organizations: [fallbackOrg],
       activeOrganization: fallbackOrg,
       authorizedLegalEntities: [fallbackComp],
       activeLegalEntity: fallbackComp,
-      roleTitle: this.formatCleanRoleTitle(roleName),
+      roleTitle: expectedRoleTitle,
       isPlatformAdmin: primaryRole === 'Super Admin' || user.role === 'Super Admin' || (user as any).is_platform_admin === true,
     };
 
