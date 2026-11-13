@@ -278,14 +278,14 @@ BEGIN
     IF v_last_out IS NOT NULL AND v_last_out > v_first_in THEN
         v_gross_presence_mins := GREATEST(0, (EXTRACT(EPOCH FROM (v_last_out - v_first_in)) / 60)::INTEGER);
 
-        IF COALESCE(v_policy.deduction_mode, 'HYBRID') = 'AUTO_FIXED' THEN
-            IF v_gross_presence_mins >= COALESCE(v_policy.auto_deduct_threshold_minutes, 300) THEN
-                v_auto_deducted_mins := GREATEST(0, COALESCE(v_policy.auto_deduct_minutes, 30) - v_unpaid_break_mins);
-            END IF;
-        ELSIF COALESCE(v_policy.deduction_mode, 'HYBRID') = 'HYBRID' THEN
-            IF v_completed_break_count = 0 AND v_gross_presence_mins >= COALESCE(v_policy.auto_deduct_threshold_minutes, 300) THEN
-                v_auto_deducted_mins := COALESCE(v_policy.auto_deduct_minutes, 30);
-            END IF;
+        -- Canonical auto-deduction: applies only if mandatory_breaks is enabled and no actual break events were logged
+        IF v_completed_break_count = 0
+           AND COALESCE(v_policy.mandatory_breaks, false) = true
+           AND COALESCE(v_policy.automatic_break_minutes, 0) > 0
+           AND v_gross_presence_mins >= (COALESCE(v_policy.automatic_break_after_hours, 5.0) * 60) THEN
+            v_auto_deducted_mins := v_policy.automatic_break_minutes;
+        ELSE
+            v_auto_deducted_mins := 0;
         END IF;
 
         v_total_work_mins := GREATEST(0, v_gross_presence_mins - v_unpaid_break_mins - v_auto_deducted_mins);

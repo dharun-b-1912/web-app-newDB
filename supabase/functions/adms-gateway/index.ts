@@ -508,6 +508,7 @@ serve(async (req: Request) => {
                   overtime_minutes: yOvertimeMins,
                   status: 'PRESENT',
                   payable_status: 1.0,
+                  current_work_state: 'CHECKED_OUT',
                 })
                 .eq('id', yDaily.id);
 
@@ -696,6 +697,7 @@ serve(async (req: Request) => {
                 last_check_out: eventUtcIso,
                 total_work_minutes: totalMins,
                 overtime_minutes: overtimeMins,
+                current_work_state: 'CHECKED_OUT',
               })
               .eq('id', existingDaily.id);
 
@@ -713,7 +715,7 @@ serve(async (req: Request) => {
           .limit(1);
 
         if (!existingPunch || existingPunch.length === 0) {
-          await supabase.from('attendance_punches').insert({
+          const { error: punchInsErr } = await supabase.from('attendance_punches').insert({
             employee_id: emp.id,
             organization_id: organizationId,
             device_id: device.id,
@@ -723,6 +725,9 @@ serve(async (req: Request) => {
             verification_mode: 'FACE',
             attendance_date: todayDate,
           });
+          if (punchInsErr) {
+            console.warn('[ADMS-EDGE] attendance_punches insert warning:', punchInsErr.message);
+          }
         }
 
         // Authoritative update to attendance_daily
@@ -736,6 +741,7 @@ serve(async (req: Request) => {
           overtime_minutes: overtimeMins,
           status: 'PRESENT',
           payable_status: 1.0,
+          current_work_state: 'CHECKED_OUT',
         }, { onConflict: 'employee_id,attendance_date' });
 
         // Dispatch Airtel DLT Checkout SMS

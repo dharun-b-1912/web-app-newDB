@@ -384,6 +384,7 @@ serve(async (req: Request) => {
             overtime_minutes: overtimeMinutes,
             status: finalStatus,
             payable_status: payableStatus,
+            current_work_state: 'CHECKED_OUT',
           }).eq('id', existingDaily.id);
 
           // Recalculate break deductions & net_payable_minutes immediately on biometric check-out
