@@ -833,7 +833,7 @@ BEGIN
       location_authorized, unauthorized_checkout, unauthorized_checkout_reason,
       punch_source, attendance_date, idempotency_key, faceattend_attempt_id, is_processed
     ) VALUES (
-      p_organization_id, p_employee_id, v_now, 'IN', 'Face',
+      p_organization_id, p_employee_id, v_now, 'IN', 'FACE',
       p_latitude, p_longitude, COALESCE(p_accuracy, 20.0), p_work_location_id, COALESCE(p_distance_meters, 0),
       COALESCE(p_location_authorized, true), false, NULL,
       'JOY_FACEATTEND', v_today, p_idempotency_key, p_attempt_id, true
@@ -937,7 +937,7 @@ BEGIN
       location_authorized, unauthorized_checkout, unauthorized_checkout_reason,
       punch_source, attendance_date, idempotency_key, faceattend_attempt_id, is_processed
     ) VALUES (
-      p_organization_id, p_employee_id, v_now, 'OUT', 'Face',
+      p_organization_id, p_employee_id, v_now, 'OUT', 'FACE',
       p_latitude, p_longitude, COALESCE(p_accuracy, 20.0), p_work_location_id, COALESCE(p_distance_meters, 0),
       COALESCE(p_location_authorized, true), v_unauthorized_checkout,
       CASE WHEN v_unauthorized_checkout THEN NULLIF(TRIM(COALESCE(p_reason, '')), '') ELSE NULL END,
