@@ -149,3 +149,4 @@ $$;
 GRANT EXECUTE ON FUNCTION public.fn_sentinel_ingest_event TO service_role;
 GRANT EXECUTE ON FUNCTION public.fn_sentinel_ingest_event TO anon;
 GRANT EXECUTE ON FUNCTION public.fn_sentinel_ingest_event TO authenticated;
+

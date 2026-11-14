@@ -36,16 +36,117 @@ async function sendTelegramMessage(chatId: string | number, textHtml: string, re
   }
 }
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
   if (req.method !== 'POST') {
-    return new Response('Joy PeopleHR Telegram Webhook Active.\n', { status: 200 });
+    return new Response('Joy PeopleHR Telegram Webhook Active.\n', { status: 200, headers: corsHeaders });
   }
 
   try {
-    const update = await req.json();
+    const body = await req.json();
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SECRET_KEY') || '';
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const timestamp = new Date().toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'medium',
+      timeStyle: 'medium',
+    });
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 0. ANOMALY EVENT REPORT INGESTION (From React Frontend & Flutter Mobile)
+    // ──────────────────────────────────────────────────────────────────────────
+    if (body?.action === 'report_event') {
+      const evt = body.event || {};
+      const eventCode = evt.eventCode || 'UI-001';
+      const severity = evt.severity || 'P1';
+      const serviceName = evt.serviceName || 'Client Platform';
+      const message = evt.message || 'Unhandled client error';
+      const sourceLocation = evt.sourceLocation || 'client';
+      const diagnosticPayload = evt.diagnosticPayload || {};
+      const probableCause = evt.probableCause || 'Client-side runtime exception.';
+      const recommendedAction = evt.recommendedAction || 'Inspect client stack trace and view state.';
+
+      // Ingest via RPC
+      const { data: incRes, error: rpcErr } = await supabase.rpc('fn_sentinel_ingest_event', {
+        p_event_code: eventCode,
+        p_severity: severity,
+        p_service_name: serviceName,
+        p_message: message,
+        p_source_location: sourceLocation,
+        p_diagnostic_payload: diagnosticPayload,
+        p_probable_cause: probableCause,
+        p_recommended_action: recommendedAction,
+      });
+
+      if (rpcErr) {
+        console.warn('[TG-WEBHOOK] Sentinel ingest error:', rpcErr.message);
+        return new Response(JSON.stringify({ error: rpcErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const incidentNumber = incRes?.incident_number || 'INC-PENDING';
+      const occurrenceCount = incRes?.occurrence_count || 1;
+      const isNew = incRes?.is_new !== false;
+
+      // Only dispatch Telegram alert on initial detection or every 5 occurrences for P0/P1
+      if (isNew || occurrenceCount === 5 || occurrenceCount === 10 || severity === 'P0') {
+        const detailsSnippet = JSON.stringify(diagnosticPayload, null, 2).slice(0, 350);
+        const icon = severity === 'P0' ? '🚨' : (severity === 'P1' ? '🔴' : '🟡');
+        const alertHtml = `${icon} <b>[${severity} ALERT] JOY SENTINEL</b>
+━━━━━━━━━━━━━━━━━━━━
+<b>Incident</b>: <code>${incidentNumber}</code> [${severity} · ${eventCode}]
+<b>Service</b>: ${serviceName}
+<b>Occurrences</b>: <b>${occurrenceCount}</b>
+<b>Location</b>: <code>${sourceLocation}</code>
+<b>Time</b>: ${timestamp}
+
+<b>Error</b>:
+${message}
+
+<b>Diagnostic Details</b>:
+<pre>${detailsSnippet}</pre>
+
+<b>Probable Cause</b>:
+${probableCause}
+
+<b>Recommended Runbook</b>:
+${recommendedAction}
+
+👉 <i>Investigate</i>: <code>/investigate ${incidentNumber}</code>
+👉 <i>Acknowledge</i>: <code>/ack ${incidentNumber}</code>
+━━━━━━━━━━━━━━━━━━━━`;
+
+        for (const targetChat of Array.from(AUTHORIZED_CHATS)) {
+          await sendTelegramMessage(targetChat, alertHtml);
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, incident: incRes }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // TELEGRAM BOT COMMAND HANDLERS
+    // ──────────────────────────────────────────────────────────────────────────
+    const update = body;
     const msg = update?.message || update?.edited_message;
     if (!msg || !msg.chat || !msg.text) {
-      return new Response('OK', { status: 200 });
+      return new Response('OK', { status: 200, headers: corsHeaders });
     }
 
     const chatId = String(msg.chat.id);
@@ -63,18 +164,8 @@ serve(async (req: Request) => {
         chatId,
         `⚠️ <b>Access Denied</b>\nThis bot is restricted to authorized Joy PeopleHR DevOps engineers.`
       );
-      return new Response('OK', { status: 200 });
+      return new Response('OK', { status: 200, headers: corsHeaders });
     }
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SECRET_KEY') || '';
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const timestamp = new Date().toLocaleString('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      dateStyle: 'medium',
-      timeStyle: 'medium',
-    });
 
     // ──────────────────────────────────────────────────────────────────────────
     // COMMAND: /help or /start

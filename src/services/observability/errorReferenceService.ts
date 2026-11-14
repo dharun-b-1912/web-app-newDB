@@ -7,6 +7,7 @@
 
 import { ObservabilityLogger } from './observabilityLogger';
 import { TraceManager } from './traceManager';
+import { emitSentinelEvent } from '../sentinel/sentinelCoreService';
 
 export interface RecordedErrorReference {
   referenceId: string;
@@ -125,6 +126,26 @@ export class ErrorReferenceService {
 
     this.referenceMap.set(referenceId, record);
     this.persist();
+
+    // Asynchronously dispatch to JOY Sentinel Telemetry and Telegram Watchdog Bot
+    const sentinelCode = module === 'ASYNC_PROMISE' ? 'API-001' : (module === 'AUTH' ? 'AUTH-001' : 'UI-001');
+    emitSentinelEvent({
+      eventCode: sentinelCode,
+      severity: 'P1',
+      serviceName: 'React Web Frontend',
+      message: errorMessage,
+      sourceLocation: `${module}:${record.url || 'browser'}`,
+      diagnosticPayload: {
+        referenceId,
+        module,
+        traceId: record.traceId,
+        stackSnippet: errObj.stack?.slice(0, 350),
+        userAgent: record.userAgent,
+        metadata: metadata || {},
+      },
+      probableCause: `Client runtime exception caught in module ${module}.`,
+      recommendedAction: 'Inspect customer action trace and browser console logs.',
+    }).catch(() => {});
 
     // Limit memory footprint
     if (this.referenceMap.size > this.MAX_STORED_REFERENCES) {

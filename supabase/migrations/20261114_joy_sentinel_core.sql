@@ -89,3 +89,4 @@ CREATE POLICY "Allow service role full access on sentinel_oncall_schedules"
 
 CREATE POLICY "Allow authenticated read on sentinel_incidents"
   ON public.sentinel_incidents FOR SELECT TO authenticated USING (true);
+

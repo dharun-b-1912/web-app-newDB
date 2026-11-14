@@ -9,6 +9,7 @@ import React, { ErrorInfo, ReactNode } from 'react';
 import { AlertCircle, RefreshCw, Copy, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { Button } from './Button';
 import { ErrorReferenceService } from '../../services/observability/errorReferenceService';
+import { emitSentinelEvent } from '../../services/sentinel/sentinelCoreService';
 
 export interface EnterpriseErrorBoundaryProps {
   children: ReactNode;
@@ -49,6 +50,27 @@ export class EnterpriseErrorBoundary extends React.Component<EnterpriseErrorBoun
       { componentStack: errorInfo.componentStack }
     );
     this.setState({ referenceId: refId });
+
+    // Ingest into JOY Sentinel Telemetry and trigger Telegram Watchdog Alert
+    emitSentinelEvent({
+      eventCode: 'UI-001',
+      severity: 'P1',
+      serviceName: 'React Web Frontend',
+      message: error.message || 'React component render crash',
+      sourceLocation: `${this.props.module || 'UI'}:${typeof window !== 'undefined' ? window.location.pathname : 'react'}`,
+      diagnosticPayload: {
+        module: this.props.module || 'UI_COMPONENT',
+        componentStack: errorInfo.componentStack?.slice(0, 400),
+        url: typeof window !== 'undefined' ? window.location.href : '',
+        referenceId: refId,
+      },
+      probableCause: 'Unhandled runtime exception or state crash during React render lifecycle.',
+      recommendedAction: 'Inspect componentStack, verify state null-safety, and check recent UI commits.',
+    }).then((incNum) => {
+      if (incNum) {
+        this.setState({ referenceId: incNum });
+      }
+    });
   }
 
   private handleReset = () => {

@@ -67,37 +67,65 @@ const throttleMap = new Map<string, number>();
 /**
  * Emit an anomaly event to JOY Sentinel.
  * Non-blocking, fails silently to guarantee live SaaS operations are NEVER impacted.
+ * Returns the created/aggregated incident number if successful.
  */
-export async function emitSentinelEvent(payload: SentinelEventPayload): Promise<void> {
+export async function emitSentinelEvent(payload: SentinelEventPayload): Promise<string | null> {
   const throttleKey = `${payload.eventCode}:${payload.sourceLocation || 'global'}`;
   const now = Date.now();
   const lastTime = throttleMap.get(throttleKey);
 
   // If identical event occurred in the last 60 seconds, throttle client-side dispatch
   if (lastTime && now - lastTime < 60000) {
-    return;
+    return null;
   }
   throttleMap.set(throttleKey, now);
 
+  const supabaseUrl = (import.meta.env?.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co').replace(/\/$/, '');
+  const webhookUrl = `${supabaseUrl}/functions/v1/telegram-webhook`;
+
   try {
-    const { error } = await supabase.rpc('fn_sentinel_ingest_event', {
-      p_event_code: payload.eventCode,
-      p_severity: payload.severity,
-      p_service_name: payload.serviceName,
-      p_message: payload.message,
-      p_source_location: payload.sourceLocation || 'client/react',
-      p_diagnostic_payload: payload.diagnosticPayload || {},
-      p_probable_cause: payload.probableCause || null,
-      p_recommended_action: payload.recommendedAction || null,
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'report_event',
+        event: {
+          ...payload,
+          sourceLocation: payload.sourceLocation || (typeof window !== 'undefined' ? window.location.pathname : 'client/react'),
+        },
+      }),
     });
 
-    if (error) {
-      console.warn('[JOY-SENTINEL] Telemetry ingest notice:', error.message);
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const incNum = data?.incident?.incident_number || null;
+      if (incNum) {
+        console.warn(`[JOY-SENTINEL] Anomaly captured: ${payload.eventCode} -> ${incNum}`);
+        return incNum;
+      }
+    } else {
+      // Fallback directly to Supabase RPC if webhook is unreachable
+      const { data: incRes, error } = await supabase.rpc('fn_sentinel_ingest_event', {
+        p_event_code: payload.eventCode,
+        p_severity: payload.severity,
+        p_service_name: payload.serviceName,
+        p_message: payload.message,
+        p_source_location: payload.sourceLocation || 'client/react',
+        p_diagnostic_payload: payload.diagnosticPayload || {},
+        p_probable_cause: payload.probableCause || null,
+        p_recommended_action: payload.recommendedAction || null,
+      });
+
+      if (!error && incRes?.incident_number) {
+        return incRes.incident_number;
+      }
     }
   } catch (err: any) {
     // Fail silently: monitoring must never break application runtime
     console.warn('[JOY-SENTINEL] Anomaly report deferred:', err?.message || err);
   }
+
+  return null;
 }
 
 /**
@@ -167,3 +195,4 @@ export async function resolveSentinelIncident(
     return false;
   }
 }
+
