@@ -126,6 +126,7 @@ async function dispatchAndLogAirtelSms(
       dynamic_payload: {
         dltTemplateId: templateId,
         employeeCode: emp.employee_code,
+        employeeName: emp.first_name ? `${emp.first_name} ${emp.last_name || ''}`.trim() : emp.employee_code,
         source: 'ADMS_BIOMETRIC_GATEWAY',
       },
       provider_message_id: providerMessageId,
