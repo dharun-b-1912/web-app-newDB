@@ -32,6 +32,51 @@ function getTenDigit(phone) {
   return c.slice(-10);
 }
 
+// ── Developer Watchdog Registry ─────────────────────────────────────────────
+export const MONITORED_DEVELOPER_PHONES = ['919384125278', '919944399088'];
+const devAlertDedupMap = new Map();
+
+export async function alertDevelopers(errorCode, summary, details = '', remediation = '') {
+  const dedupKey = `${errorCode}_${summary.slice(0, 50)}`;
+  const now = Date.now();
+  const lastAlert = devAlertDedupMap.get(dedupKey);
+  if (lastAlert && now - lastAlert < 5 * 60 * 1000) {
+    console.log(`[WA-DEV-WATCHDOG] Suppressed duplicate alert (${Math.round((now - lastAlert) / 1000)}s): ${dedupKey}`);
+    return;
+  }
+  devAlertDedupMap.set(dedupKey, now);
+
+  const timestamp = new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  });
+
+  const alertText = `🚨 *[DEV WATCHDOG ALERT]* Joy PeopleHR Bot Ops\n━━━━━━━━━━━━━━━━━━━━\n*Error Code*: \`${errorCode}\`\n*Severity*: SEV-1 (CRITICAL)\n*Service*: Meta WhatsApp Bot Core\n*Location*: \`server_whatsapp_bot.js\`\n*Time*: ${timestamp}\n\n*Summary*:\n${summary}\n${details ? `\n*Details*:\n\`\`\`${String(details).slice(0, 350)}\`\`\`` : ''}\n${remediation ? `\n*Action Steps*:\n${remediation}` : ''}\n━━━━━━━━━━━━━━━━━━━━`;
+
+  for (const devPhone of MONITORED_DEVELOPER_PHONES) {
+    try {
+      await fetch(`https://graph.facebook.com/${API_VERSION}/${PHONE_NUMBER_ID}/messages`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ACCESS_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: devPhone,
+          type: 'text',
+          text: { preview_url: false, body: alertText },
+        }),
+      });
+      console.log(`[WA-DEV-WATCHDOG] Dispatched alert to ${devPhone}`);
+    } catch (e) {
+      console.warn(`[WA-DEV-WATCHDOG] Alert dispatch error to ${devPhone}:`, e?.message || e);
+    }
+  }
+}
+
 let cachedAdminToken = null;
 let adminTokenExpiresAt = 0;
 

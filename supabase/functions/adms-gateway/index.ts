@@ -133,6 +133,17 @@ async function dispatchAndLogAirtelSms(
       error_message: succeeded ? null : (smsRes?.error || 'Airtel gateway rejected or unconfirmed'),
       cost_inr: succeeded ? 0.18 : 0.0,
     });
+
+    if (!succeeded) {
+      await notifyDevelopersOfAnomaly(
+        'ERR_AIRTEL_DLT_REJECTED',
+        'Airtel IQ Prepaid SMS Gateway',
+        'supabase/functions/adms-gateway/index.ts:113',
+        `Airtel SMS check-in/out confirmation failed for employee ${emp.first_name || emp.employee_code} (${cleanPhone}). Punch was recorded in DB, but employee received NO SMS receipt!`,
+        `Error: ${smsRes?.error || 'Airtel unconfirmed'}\nDLT Template ID: ${templateId}\nEmployee: ${emp.employee_code} (${emp.first_name || ''})\nRecipient Phone: ${cleanPhone}`,
+        `1. Check Airtel prepaid balance on Airtel IQ portal (https://airtel.in/business/b2b/airtel-iq/dashboard/#/sms/logs).\n2. Verify DLT template registration with TRAI for PE ID 1001333025440167393.`
+      );
+    }
   } catch (logErr: any) {
     console.warn('[ADMS-EDGE] SMS audit log insert notice:', logErr?.message || logErr);
   }
@@ -252,6 +263,76 @@ async function notifyReportingManager(
 }
 
 // --------------------------------------------------------------------------
+// REALTIME DEVELOPER INCIDENT WATCHDOG (+91 9384125278, +91 9944399088)
+// --------------------------------------------------------------------------
+const DEV_ALERT_RECIPIENTS = ['919384125278', '919944399088'];
+const devAlertDedupMap = new Map<string, number>();
+
+async function notifyDevelopersOfAnomaly(
+  errorCode: string,
+  service: string,
+  location: string,
+  summary: string,
+  details?: string,
+  remediation?: string
+) {
+  const dedupKey = `${errorCode}_${location}`;
+  const now = Date.now();
+  const lastAlert = devAlertDedupMap.get(dedupKey);
+  if (lastAlert && now - lastAlert < 5 * 60 * 1000) {
+    console.log(`[ADMS-DEV-ALERT] Suppressed duplicate alert (${Math.round((now - lastAlert) / 1000)}s): ${dedupKey}`);
+    return;
+  }
+  devAlertDedupMap.set(dedupKey, now);
+
+  const timestamp = new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  });
+
+  const alertMsg = `🚨 *[CRITICAL DEV ALERT]* Joy PeopleHR Watchdog
+━━━━━━━━━━━━━━━━━━━━
+*Error Code*: \`${errorCode}\`
+*Severity*: SEV-1 (CRITICAL)
+*Service*: ${service}
+*Location*: \`${location}\`
+*Time*: ${timestamp}
+
+*Summary*:
+${summary}
+${details ? `\n*Diagnostic Details*:\n\`\`\`${details.slice(0, 400)}\`\`\`` : ''}
+${remediation ? `\n*Action Steps*:\n${remediation}` : ''}
+━━━━━━━━━━━━━━━━━━━━`;
+
+  const phoneId = Deno.env.get('META_WA_PHONE_NUMBER_ID') || '1352826481241407';
+  const token = Deno.env.get('META_WA_ACCESS_TOKEN') || 'EAAVABkQlajUBSjPw0ZChZCPzoO3nFz2aI2tDnnkZBOsgUquxD0Dw8NZCIOKYfCr0vk7hDfWYyIiDuWkZCzqjhwU6CwnxnumN1IDlu9pKhAKFLOMUZAmGT0gOBZBhtcXZApEUGmUSHtNC7or1Nv3z9HKHtyvSVGF3dH5J2GbVGYKzsSMiuRvmJ8KhqdSIQV0kkAZDZD';
+
+  for (const phone of DEV_ALERT_RECIPIENTS) {
+    try {
+      const res = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: phone,
+          type: 'text',
+          text: { preview_url: false, body: alertMsg },
+        }),
+      });
+      const resData = await res.json().catch(() => ({}));
+      console.log(`[ADMS-DEV-ALERT] Dispatched alert to developer ${phone}:`, res.status, resData?.messages?.[0]?.id || resData?.error?.message);
+    } catch (e: any) {
+      console.warn(`[ADMS-DEV-ALERT] Failed dispatching alert to ${phone}:`, e?.message || e);
+    }
+  }
+}
+
+// --------------------------------------------------------------------------
 // UPSTASH SERVERLESS REDIS CLIENT HELPERS (Command Queue & Synchronization)
 // --------------------------------------------------------------------------
 const UPSTASH_URL = Deno.env.get('UPSTASH_REDIS_REST_URL') || 'https://powerful-marmot-162532.upstash.io';
@@ -287,7 +368,8 @@ async function redisDel(key: string): Promise<void> {
 }
 
 serve(async (req: Request) => {
-  const url = new URL(req.url);
+  try {
+    const url = new URL(req.url);
   const pathname = url.pathname;
   const sn = (url.searchParams.get('SN') || url.searchParams.get('sn') || '').trim();
 
@@ -386,6 +468,14 @@ serve(async (req: Request) => {
 
     if (devErr || !devices || devices.length === 0) {
       console.warn(`[ADMS-EDGE] Unregistered device tried to connect: SN ${sn}`);
+      await notifyDevelopersOfAnomaly(
+        'ERR_ADMS_UNKNOWN_DEVICE',
+        'ADMS Biometric Hardware Ingress',
+        'supabase/functions/adms-gateway/index.ts:468',
+        `Biometric terminal (SN: ${sn}) pushed punches, but this Serial Number is NOT registered in database. Punches dropped!`,
+        `Device Serial: ${sn}\nTable: ${table}\nPunch sample: ${bodyText.slice(0, 150)}`,
+        `Register serial '${sn}' in Biometric Devices settings tab on web app.`
+      );
       return new Response('OK: 0\n', { status: 200, headers: { 'Content-Type': 'text/plain' } });
     }
 
@@ -877,4 +967,19 @@ serve(async (req: Request) => {
     status: 200,
     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
   });
+  } catch (err: any) {
+    console.error('[ADMS-EDGE] Unhandled Gateway Exception:', err);
+    await notifyDevelopersOfAnomaly(
+      'ERR_ADMS_GATEWAY_CRASH',
+      'ADMS Gateway Edge Engine',
+      'supabase/functions/adms-gateway/index.ts',
+      `Unhandled runtime exception in ADMS biometric gateway: ${err?.message || err}`,
+      err?.stack || String(err),
+      'Inspect Supabase function logs on dashboard.'
+    );
+    return new Response(`ERROR: ${err?.message || 'Server error'}\n`, {
+      status: 500,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }
 });
