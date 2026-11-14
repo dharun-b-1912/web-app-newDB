@@ -74,16 +74,22 @@ function formatMinutesToHoursAndMins(mins?: number): string {
 }
 
 function formatPunchSourceLabel(src?: string | null): string {
-  if (!src) return 'Biometric';
+  if (!src) return 'Mobile';
   const s = String(src).toUpperCase();
   if (s.includes('MANUAL') || s.includes('REGULAR')) {
     return 'Manual (HR)';
   }
-  if (s.includes('BIO') || s.includes('FACE') || s.includes('FINGER') || s.includes('CARD') || s === 'DEVICE') {
-    return 'Biometric';
+  if (s.includes('FACEATTEND') || s.includes('FACE_ATTEND') || s.includes('JOY_FACEATTEND')) {
+    return 'FaceAttend (Mobile)';
   }
   if (s.includes('MOBILE') || s.includes('GPS')) {
-    return 'Mobile GPS';
+    return 'Mobile App';
+  }
+  if (s.includes('BIO') || s.includes('FINGER') || s.includes('CARD') || s === 'DEVICE') {
+    return 'Biometric';
+  }
+  if (s.includes('FACE')) {
+    return 'FaceAttend (Mobile)';
   }
   if (s.includes('WEB') || s.includes('BROWSER') || s.includes('PORTAL')) {
     return 'Web Portal';
@@ -582,7 +588,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         effectiveStatus = 'Weekly Off';
       }
 
-      const outSrc = checkOutSrc || (lastOut ? 'BIOMETRIC' : undefined);
+      const outSrc = checkOutSrc || (lastOut ? (inSrc || 'MOBILE') : undefined);
       const overallSrc: PunchSource = (inSrc || resolvedRecord?.source || 'SYSTEM') as PunchSource;
 
       const liveGrossMins = lastOut
@@ -1446,7 +1452,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                     || (record.source && record.source !== 'MANUAL' ? record.source : undefined)
                     || (String((record as any)?.check_in_source || (record as any)?.punch_source).toUpperCase().includes('MANUAL') ? 'MANUAL' : 'MOBILE');
                   const checkOutSource = record.check_out_source
-                    || (record.is_regularized ? 'MANUAL' : (record.last_check_out ? 'BIOMETRIC' : undefined));
+                    || (record.is_regularized ? 'MANUAL' : (record.last_check_out ? (record.source || 'MOBILE') : undefined));
                   const isWorking = rowIsWorking ?? (record.first_check_in && !record.last_check_out && record.status !== 'Missing Punch');
                   const isMissingPunch = rowIsMissingPunch || record.status === 'Missing Punch';
 

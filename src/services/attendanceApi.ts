@@ -171,10 +171,12 @@ export const attendanceApi = {
               let resolved: PunchSource = 'MOBILE';
               if (psource === 'MANUAL' || mode === 'MANUAL' || psource.includes('MANUAL')) {
                 resolved = 'MANUAL';
-              } else if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
-                resolved = 'BIOMETRIC';
+              } else if (psource === 'JOY_FACEATTEND' || psource.includes('FACEATTEND') || psource.includes('FACE_ATTEND') || (mode === 'FACE' && (!p.device_id || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')))) {
+                resolved = 'MOBILE';
               } else if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE_GPS' || psource.includes('GPS') || psource.includes('MOBILE') || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
                 resolved = 'MOBILE';
+              } else if (psource === 'BIOMETRIC' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || (mode === 'FACE' && p.device_id)) {
+                resolved = 'BIOMETRIC';
               } else if (psource === 'WEB' || dev.includes('BROWSER')) {
                 resolved = 'WEB';
               }
@@ -562,10 +564,12 @@ export const attendanceApi = {
             let resolved: PunchSource = 'MOBILE';
             if (psource === 'MANUAL' || mode === 'MANUAL' || psource.includes('MANUAL')) {
               resolved = 'MANUAL';
-            } else if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
-              resolved = 'BIOMETRIC';
+            } else if (psource === 'JOY_FACEATTEND' || psource.includes('FACEATTEND') || psource.includes('FACE_ATTEND') || (mode === 'FACE' && (!p.device_id || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')))) {
+              resolved = 'MOBILE';
             } else if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE_GPS' || psource.includes('GPS') || psource.includes('MOBILE') || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
               resolved = 'MOBILE';
+            } else if (psource === 'BIOMETRIC' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || (mode === 'FACE' && p.device_id)) {
+              resolved = 'BIOMETRIC';
             } else if (psource === 'WEB' || dev.includes('BROWSER')) {
               resolved = 'WEB';
             }
