@@ -179,21 +179,28 @@ ${recommendedAction}
 • ⏱ <b>/devices</b> — Hardware biometric terminals heartbeat &amp; sync
 • 🚨 <b>/errors</b> — Outbound communication failures (Last 24h)
 
+<b>Engineering Intelligence &amp; Correlation</b>:
+• 🚀 <b>/deployments</b> — Recent GitHub deployments &amp; 60m correlation window
+• 🔀 <b>/prs</b> — Recent Pull Request merges
+• 🔍 <b>/investigate &lt;ID/CODE&gt;</b> — Root-cause correlation &amp; diagnostic runbook
+• 📈 <b>/predict</b> — Predictive capacity &amp; maintenance planner
+
 <b>Incident Management (Sentinel Core)</b>:
 • 🔴 <b>/critical</b> — Open P0 &amp; P1 production blocking incidents
 • 📋 <b>/incidents</b> — All active platform incidents &amp; occurrence counts
-• 🔍 <b>/investigate &lt;ID&gt;</b> — Root-cause analysis, evidence &amp; runbook
 • ✍️ <b>/ack &lt;ID&gt;</b> — Acknowledge incident ownership
 • ✅ <b>/resolve &lt;ID&gt; [notes]</b> — Mark incident resolved
 
-<b>Night Watch &amp; On-Call</b>:
-• 🌙 <b>/nightwatch</b> — Current on-call engineers &amp; escalation status
+<b>Night Watch &amp; On-Call Escalation</b>:
+• 🌙 <b>/nightwatch</b> — On-call engineers &amp; 15-minute SLA status
+• ⏰ <b>/escalate</b> — Trigger autonomous SLA escalation check
 ━━━━━━━━━━━━━━━━━━━━`;
 
       const keyboard = {
         keyboard: [
           [{ text: '/status' }, { text: '/critical' }, { text: '/incidents' }],
-          [{ text: '/airtel' }, { text: '/devices' }, { text: '/nightwatch' }],
+          [{ text: '/airtel' }, { text: '/deployments' }, { text: '/predict' }],
+          [{ text: '/devices' }, { text: '/nightwatch' }, { text: '/help' }],
         ],
         resize_keyboard: true,
         one_time_keyboard: false,
@@ -348,60 +355,76 @@ ${list}
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // COMMAND: /investigate <ID> (Root Cause & Runbook)
+    // COMMAND: /investigate <ID or CODE> (Phase V5: Root Cause & Runbook)
     // ──────────────────────────────────────────────────────────────────────────
     if (command === '/investigate') {
       const targetId = args[0]?.trim();
       if (!targetId) {
         await sendTelegramMessage(
           chatId,
-          `⚠️ <b>Usage</b>: <code>/investigate &lt;INCIDENT_NUMBER&gt;</code>\nExample: <code>/investigate INC-20261114-0001</code>`
+          `⚠️ <b>Usage</b>: <code>/investigate &lt;INCIDENT_NUMBER or ERROR_CODE&gt;</code>\nExamples: <code>/investigate ATT-001</code>, <code>/investigate SMS-001</code>, <code>/investigate INC-20261114-0001</code>`
         );
         return new Response('OK', { status: 200 });
       }
 
-      const { data: inc, error } = await supabase
-        .from('sentinel_incidents')
-        .select('*')
-        .or(`incident_number.eq.${targetId},error_code.eq.${targetId}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const [incRes, runbookRes, recentDeploymentsRes] = await Promise.all([
+        supabase.from('sentinel_incidents').select('*').or(`incident_number.eq.${targetId},error_code.eq.${targetId}`).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('sentinel_diagnostic_runbooks').select('*').eq('error_code', targetId).maybeSingle(),
+        supabase.from('sentinel_deployments').select('*').order('created_at', { ascending: false }).limit(3),
+      ]);
 
-      if (error || !inc) {
+      const inc = incRes.data;
+      const errorCode = inc?.error_code || targetId;
+      let runbook = runbookRes.data;
+      if (!runbook && inc?.error_code) {
+        const { data: rb } = await supabase.from('sentinel_diagnostic_runbooks').select('*').eq('error_code', inc.error_code).maybeSingle();
+        runbook = rb;
+      }
+
+      if (!inc && !runbook) {
         await sendTelegramMessage(
           chatId,
-          `❓ <b>Incident not found</b> for identifier: <code>${targetId}</code>\nType <b>/incidents</b> to list existing incident IDs.`
+          `❓ <b>No Incident or Runbook found</b> for identifier: <code>${targetId}</code>\nAvailable Runbooks: <code>ATT-001</code>, <code>SMS-001</code>, <code>AUTH-001</code>, <code>DB-001</code>, <code>PAY-001</code>, <code>FACE-001</code>.`
         );
         return new Response('OK', { status: 200 });
       }
 
-      const firstSeen = new Date(inc.first_seen_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' });
-      const lastSeen = new Date(inc.last_seen_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' });
-      const evidenceSnippet = JSON.stringify(inc.evidence || {}, null, 2).slice(0, 500);
+      const recentDeploys = recentDeploymentsRes.data || [];
+      let deployCorrelation = '<i>No recent deployments in correlation window (Clean base).</i>';
+      if (recentDeploys.length > 0) {
+        const latest = recentDeploys[0];
+        const deployMinsAgo = Math.floor((Date.now() - new Date(latest.created_at).getTime()) / 60000);
+        if (deployMinsAgo <= 60) {
+          deployCorrelation = `⚠️ <b>HIGH PROBABILITY REGRESSION:</b>\nCommit <code>${latest.commit_short_sha}</code> (<i>${latest.commit_message}</i>) deployed by @${latest.author_login} <b>${deployMinsAgo}m ago</b> coincides with this error window!`;
+        } else {
+          deployCorrelation = `• Latest deployment: <code>${latest.commit_short_sha}</code> by @${latest.author_login} (${deployMinsAgo}m ago) — Outside immediate failure window.`;
+        }
+      }
 
-      const invHtml = `🔍 <b>JOY Sentinel Root Cause Investigation</b>
+      const stepsList = runbook?.investigation_steps ? runbook.investigation_steps.map((s: string) => `  ${s}`).join('\n') : '• Inspect application logs and Supabase pooler.';
+      const actionsList = runbook?.recommended_actions ? runbook.recommended_actions.map((a: string) => `  • ${a}`).join('\n') : '• Review recent commits and test endpoint manually.';
+      const evidenceSnippet = inc?.evidence ? `<pre>${JSON.stringify(inc.evidence, null, 2).slice(0, 350)}</pre>` : '<i>No live runtime crash trace attached.</i>';
+
+      const invHtml = `🔍 <b>JOY Sentinel Diagnostic Runbook &amp; Root-Cause Correlation</b>
 ━━━━━━━━━━━━━━━━━━━━
-<b>Incident</b>: <code>${inc.incident_number}</code>
-<b>Severity</b>: <b>${inc.severity}</b> | <b>Code</b>: <code>${inc.error_code}</code>
-<b>Service</b>: ${inc.service_name}
-<b>Lifecycle</b>: <b>${inc.lifecycle_state}</b>
-<b>Occurrences</b>: <b>${inc.occurrence_count}</b>
-<b>First Detected</b>: ${firstSeen}
-<b>Last Occurrence</b>: ${lastSeen}
+<b>Identifier</b>: <code>${inc ? inc.incident_number : 'RUNBOOK'}</code> [<b>${errorCode}</b>]
+<b>Module</b>: <b>${runbook?.module || inc?.service_name || 'Platform Core'}</b>
+<b>Severity</b>: <b>${inc?.severity || 'CONFIGURED'}</b> | State: <b>${inc?.lifecycle_state || 'REFERENCE'}</b>
 
-🎯 <b>Probable Cause</b>:
-${inc.probable_cause || 'Pattern correlation in progress.'}
+🎯 <b>Probable Root-Cause Pattern</b>:
+${runbook?.probable_cause_pattern || inc?.probable_cause || 'Root-cause analysis in progress.'}
 
-🔬 <b>Captured Diagnostic Evidence</b>:
-<pre>${evidenceSnippet}</pre>
+🚀 <b>GitHub Deployment Correlation</b>:
+${deployCorrelation}
 
-🛠 <b>Recommended Engineering Runbook</b>:
-${inc.recommended_action || 'Inspect Edge Function logs and Supabase database connection pool.'}
+🔬 <b>Automated Step-by-Step Runbook</b>:
+${stepsList}
 
-<b>Actions</b>:
-• Acknowledge: <code>/ack ${inc.incident_number}</code>
-• Resolve: <code>/resolve ${inc.incident_number} [optional notes]</code>
+🛠 <b>Recommended Remediation Actions</b>:
+${actionsList}
+
+📋 <b>Diagnostic Evidence</b>:
+${evidenceSnippet}
 ━━━━━━━━━━━━━━━━━━━━`;
 
       await sendTelegramMessage(chatId, invHtml);
@@ -686,6 +709,137 @@ ${errList}
 ━━━━━━━━━━━━━━━━━━━━`;
 
       await sendTelegramMessage(chatId, errorsHtml);
+      return new Response('OK', { status: 200 });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // COMMAND: /deployments (Phase V3: GitHub Deployments & Correlation)
+    // ──────────────────────────────────────────────────────────────────────────
+    if (command === '/deployments') {
+      const { data: deploys, error } = await supabase
+        .from('sentinel_deployments')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error || !deploys || deploys.length === 0) {
+        await sendTelegramMessage(chatId, `⚠️ <b>No deployments recorded yet.</b>`);
+        return new Response('OK', { status: 200 });
+      }
+
+      const deployList = deploys.map((d: any) => {
+        const diffMins = Math.floor((Date.now() - new Date(d.created_at).getTime()) / 60000);
+        const windowStatus = diffMins <= 60 ? `🟡 Active Window (${diffMins}m ago)` : `⚪️ ${diffMins}m ago`;
+        const actionType = d.event_type === 'pull_request' ? `PR #${d.pr_number}` : 'Push';
+        return `• <b>[${actionType}]</b> <code>${d.commit_short_sha}</code> on <code>${d.branch}</code>
+  Message: <i>${(d.commit_message || '').slice(0, 50)}</i>
+  Author: @${d.author_login || 'dev'} | Status: <b>${d.status}</b>
+  Correlation: ${windowStatus}`;
+      }).join('\n\n');
+
+      const deploysHtml = `🚀 <b>JOY Sentinel Deployment Telemetry (Live)</b>
+━━━━━━━━━━━━━━━━━━━━
+<b>Active Correlation Window</b>: 60 minutes
+<b>Monitored Branch</b>: <code>main</code>
+
+${deployList}
+
+<i>Deployments automatically correlate with incoming production incident spikes.</i>
+━━━━━━━━━━━━━━━━━━━━`;
+
+      await sendTelegramMessage(chatId, deploysHtml);
+      return new Response('OK', { status: 200 });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // COMMAND: /prs (Phase V3: Pull Request Telemetry)
+    // ──────────────────────────────────────────────────────────────────────────
+    if (command === '/prs') {
+      const { data: prs, error } = await supabase
+        .from('sentinel_deployments')
+        .select('*')
+        .eq('event_type', 'pull_request')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error || !prs || prs.length === 0) {
+        await sendTelegramMessage(chatId, `ℹ️ <b>No merged pull requests recorded yet.</b>`);
+        return new Response('OK', { status: 200 });
+      }
+
+      const prList = prs.map((p: any) => {
+        const t = new Date(p.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' });
+        return `• <b>PR #${p.pr_number}</b>: <i>${p.pr_title || p.commit_message}</i>
+  Merged by: @${p.author_login} | Commit: <code>${p.commit_short_sha}</code>
+  Time: ${t} (IST)`;
+      }).join('\n\n');
+
+      const prsHtml = `🔀 <b>Recent GitHub Pull Request Merges</b>
+━━━━━━━━━━━━━━━━━━━━
+${prList}
+━━━━━━━━━━━━━━━━━━━━`;
+
+      await sendTelegramMessage(chatId, prsHtml);
+      return new Response('OK', { status: 200 });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // COMMAND: /predict or /maintenance (Phase V6: Capacity & Maintenance Radar)
+    // ──────────────────────────────────────────────────────────────────────────
+    if (command === '/predict' || command === '/maintenance') {
+      const { data: metrics, error } = await supabase
+        .from('sentinel_predictive_metrics')
+        .select('*')
+        .order('status', { ascending: false });
+
+      if (error || !metrics || metrics.length === 0) {
+        await sendTelegramMessage(chatId, `⚠️ <b>No predictive metrics initialized.</b>`);
+        return new Response('OK', { status: 200 });
+      }
+
+      const metricsList = metrics.map((m: any) => {
+        const badge = m.status === 'CRITICAL' ? '🔴 CRITICAL' : (m.status === 'WARNING' ? '🟡 WARNING' : '🟢 OPTIMAL');
+        const trendArrow = m.trend === 'IMPROVING' ? '↗️ Improving' : (m.trend === 'DEGRADING' ? '↘️ Degrading' : '➡️ Stable');
+        return `• <b>${m.metric_name}</b>: <b>${m.current_value}${m.unit}</b> [${badge}]
+  Trend: <b>${trendArrow}</b> (Warn: ${m.warning_threshold}${m.unit} | Crit: ${m.critical_threshold}${m.unit})
+  Insight: <i>${m.prediction_notes}</i>
+  Action: 🛠 <b>${m.recommended_maintenance}</b>`;
+      }).join('\n\n');
+
+      const predictHtml = `📈 <b>JOY Sentinel Predictive Capacity &amp; Maintenance Radar</b>
+━━━━━━━━━━━━━━━━━━━━
+<b>Assessment Engine</b>: Real-time Telemetry Predictor
+<b>Capacity Horizon</b>: 30-Day Projections
+
+${metricsList}
+
+<i>Prevents outages before users report them. Evaluated continuously.</i>
+━━━━━━━━━━━━━━━━━━━━`;
+
+      await sendTelegramMessage(chatId, predictHtml);
+      return new Response('OK', { status: 200 });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // COMMAND: /escalate (Phase V4: Autonomous Night Watch Escalation Trigger)
+    // ──────────────────────────────────────────────────────────────────────────
+    if (command === '/escalate') {
+      const { data: result, error } = await supabase.rpc('fn_sentinel_check_nightwatch_escalation');
+
+      if (error) {
+        await sendTelegramMessage(chatId, `❌ Failed to execute escalation scan: ${error.message}`);
+        return new Response('OK', { status: 200 });
+      }
+
+      const escalatedCount = result?.escalated_count || 0;
+      let msg = '';
+      if (escalatedCount > 0) {
+        msg = `🚨 <b>Escalation Triggered!</b>\n<b>${escalatedCount} incident(s)</b> exceeded the 15-minute SLA and were escalated to the Secondary On-Call Maintainer.`;
+      } else {
+        msg = `🟢 <b>Night Watch SLA Compliant.</b>\nZero unacknowledged high-severity incidents exceeded the 15-minute SLA limit.`;
+      }
+
+      await sendTelegramMessage(chatId, `⏰ <b>Night Watch Escalation Scan Completed</b>\n━━━━━━━━━━━━━━━━━━━━\n${msg}\n━━━━━━━━━━━━━━━━━━━━`);
       return new Response('OK', { status: 200 });
     }
 
