@@ -92,11 +92,28 @@ serve(async (req: Request) => {
   }
 
   if (req.method !== 'POST') {
-    return new Response('Joy PeopleHR Telegram Webhook Active.\n', { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ status: 'warm', function: 'telegram-webhook', timestamp: new Date().toISOString() }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {
-    const body = await req.json();
+    const url = new URL(req.url);
+    if (url.searchParams.get('ping') === '1' || url.pathname.endsWith('/ping')) {
+      return new Response(JSON.stringify({ status: 'warm', ping: 'pong', edge_time: Date.now() }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    if (body?.ping === true || body?.action === 'ping') {
+      return new Response(JSON.stringify({ status: 'warm', ping: 'pong', edge_time: Date.now() }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SECRET_KEY') || '';
