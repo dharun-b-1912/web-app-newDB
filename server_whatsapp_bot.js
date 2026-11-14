@@ -75,6 +75,23 @@ export async function alertDevelopers(errorCode, summary, details = '', remediat
       console.warn(`[WA-DEV-WATCHDOG] Alert dispatch error to ${devPhone}:`, e?.message || e);
     }
   }
+
+  // Also dispatch to Telegram Watchdog Group & Private Chat
+  const tgToken = process.env.TELEGRAM_BOT_TOKEN || '9137821052:AAH40OpD041tLdmC0_fheiZbk9_AxGs2TQ0';
+  const tgChats = (process.env.TELEGRAM_CHAT_ID || '-5189746331,9155594412').split(',').map(s => s.trim()).filter(Boolean);
+
+  const tgHtml = `🚨 <b>[CRITICAL DEV ALERT] Joy PeopleHR Bot Ops</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Error Code</b>: <code>${errorCode}</code>\n<b>Severity</b>: SEV-1 (CRITICAL)\n<b>Service</b>: Meta WhatsApp Bot Core\n<b>Location</b>: <code>server_whatsapp_bot.js</code>\n<b>Time</b>: ${timestamp}\n\n<b>Summary</b>:\n${summary}\n${details ? `\n<b>Details</b>:\n<pre>${String(details).slice(0, 350)}</pre>` : ''}\n${remediation ? `\n<b>Action Steps</b>:\n${remediation}` : ''}\n━━━━━━━━━━━━━━━━━━━━`;
+
+  for (const chatId of tgChats) {
+    try {
+      await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: tgHtml, parse_mode: 'HTML' }),
+      });
+      console.log(`[WA-DEV-WATCHDOG] Dispatched Telegram alert to ${chatId}`);
+    } catch (_) {}
+  }
 }
 
 let cachedAdminToken = null;

@@ -330,6 +330,41 @@ ${remediation ? `\n*Action Steps*:\n${remediation}` : ''}
       console.warn(`[ADMS-DEV-ALERT] Failed dispatching alert to ${phone}:`, e?.message || e);
     }
   }
+
+  // ── Dispatch to Telegram Ops Watchdog (@joy_ops_alert_bot) ─────────────────
+  const tgToken = Deno.env.get('TELEGRAM_BOT_TOKEN') || '9137821052:AAH40OpD041tLdmC0_fheiZbk9_AxGs2TQ0';
+  const tgChats = (Deno.env.get('TELEGRAM_CHAT_ID') || '-5189746331,9155594412').split(',').map(s => s.trim()).filter(Boolean);
+
+  const tgHtml = `🚨 <b>[CRITICAL DEV ALERT] Joy PeopleHR Watchdog</b>
+━━━━━━━━━━━━━━━━━━━━
+<b>Error Code</b>: <code>${errorCode}</code>
+<b>Severity</b>: SEV-1 (CRITICAL)
+<b>Service</b>: ${service}
+<b>Location</b>: <code>${location}</code>
+<b>Time</b>: ${timestamp}
+
+<b>Summary</b>:
+${summary}
+${details ? `\n<b>Diagnostic Details</b>:\n<pre>${details.slice(0, 400)}</pre>` : ''}
+${remediation ? `\n<b>Action Steps</b>:\n${remediation}` : ''}
+━━━━━━━━━━━━━━━━━━━━`;
+
+  for (const chatId of tgChats) {
+    try {
+      await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: tgHtml,
+          parse_mode: 'HTML',
+        }),
+      });
+      console.log(`[ADMS-DEV-ALERT] Dispatched alert to Telegram chat ${chatId}`);
+    } catch (tgErr: any) {
+      console.warn(`[ADMS-DEV-ALERT] Telegram dispatch notice (${chatId}):`, tgErr?.message || tgErr);
+    }
+  }
 }
 
 // --------------------------------------------------------------------------

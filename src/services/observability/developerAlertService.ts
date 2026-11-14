@@ -155,6 +155,54 @@ ${remediationBlock}
       }
     }
 
+    // ── 2. Dispatches to Telegram Ops Watchdog Group & Private Chat ─────────────
+    const telegramToken =
+      (typeof process !== 'undefined' && (process.env.TELEGRAM_BOT_TOKEN || process.env.VITE_TELEGRAM_BOT_TOKEN)) ||
+      '9137821052:AAH40OpD041tLdmC0_fheiZbk9_AxGs2TQ0';
+
+    const rawChatIds =
+      (typeof process !== 'undefined' && (process.env.TELEGRAM_CHAT_ID || process.env.VITE_TELEGRAM_CHAT_ID)) ||
+      '-5189746331,9155594412';
+
+    const telegramChatIds = rawChatIds.split(',').map(s => s.trim()).filter(Boolean);
+
+    const telegramHtml = `🚨 <b>[CRITICAL DEV ALERT] Joy PeopleHR Watchdog</b>
+━━━━━━━━━━━━━━━━━━━━
+<b>Error Code</b>: <code>${payload.errorCode}</code>
+<b>Severity</b>: ${payload.severity}
+<b>Service</b>: ${payload.service}
+<b>Location</b>: <code>${payload.location}</code>
+<b>Tenant</b>: ${payload.organizationName || payload.organizationId || 'Multi-Tenant System Core'}
+<b>Time</b>: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'medium' })}
+
+<b>Summary</b>:
+${payload.summary}
+${payload.details ? `\n<b>Diagnostic Details</b>:\n<pre>${payload.details.slice(0, 450)}</pre>` : ''}
+${payload.remediation ? `\n<b>Action Steps</b>:\n${payload.remediation}` : ''}
+━━━━━━━━━━━━━━━━━━━━`;
+
+    for (const chatId of telegramChatIds) {
+      try {
+        const tgRes = await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: telegramHtml,
+            parse_mode: 'HTML',
+          }),
+        });
+        const tgData = await tgRes.json();
+        if (tgRes.ok && tgData.ok) {
+          results.push({ phone: `telegram:${chatId}`, success: true, messageId: String(tgData.result?.message_id) });
+        } else {
+          results.push({ phone: `telegram:${chatId}`, success: false, error: JSON.stringify(tgData) });
+        }
+      } catch (tgErr: any) {
+        results.push({ phone: `telegram:${chatId}`, success: false, error: tgErr.message });
+      }
+    }
+
     return { dispatched: true, results };
   }
 }
