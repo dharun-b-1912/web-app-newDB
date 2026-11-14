@@ -89,3 +89,4 @@ CREATE POLICY "faceattend_billing_all" ON public.faceattend_billing_snapshots
 FOR ALL TO authenticated, anon
 USING (true)
 WITH CHECK (true);
+

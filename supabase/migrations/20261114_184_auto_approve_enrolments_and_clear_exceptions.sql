@@ -31,3 +31,4 @@ SET review_status = 'APPROVED',
     review_notes = COALESCE(review_notes, 'Approved & verified by HR (Punch settled in attendance ledger)'),
     updated_at = now()
 WHERE review_status = 'PENDING';
+

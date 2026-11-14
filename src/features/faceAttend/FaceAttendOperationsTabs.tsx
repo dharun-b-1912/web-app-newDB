@@ -1,13 +1,127 @@
 // src/features/faceAttend/FaceAttendOperationsTabs.tsx
-import React, { useMemo, useState } from 'react';
-import { CheckCircle2, XCircle, Search, MapPin } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { CheckCircle2, XCircle, Search, MapPin, AlertCircle, Info, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react';
 import type { FaceAttendAttemptRecord, FaceAttendExceptionReview } from '../../types/faceAttend';
+
+interface DecisionInfo {
+  label: string;
+  badgeClass: string;
+  solution: string;
+  actionHint: string;
+}
+
+const getDecisionInfo = (attempt: FaceAttendAttemptRecord): DecisionInfo => {
+  const d = attempt.decision;
+  const reason = attempt.failure_reason || '';
+
+  if (d === 'MATCH') {
+    return {
+      label: 'Verified & Passed',
+      badgeClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+      solution: 'Verification successful. Check-in/out punch has been committed to the attendance register.',
+      actionHint: 'No action needed',
+    };
+  }
+
+  if (d === 'LOW_CONFIDENCE') {
+    return {
+      label: 'Low Face Match',
+      badgeClass: 'bg-amber-50 text-amber-800 border border-amber-200',
+      solution:
+        'Face match score is below policy threshold. Ask employee to stand facing a clear light source without backlighting, mask, or cap. If employee appearance has significantly changed, re-register face in Enrolment tab.',
+      actionHint: 'Instruct: Retake in good lighting / Re-enroll',
+    };
+  }
+
+  if (d === 'LIVENESS_FAILED') {
+    return {
+      label: 'Liveness Failed',
+      badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200',
+      solution:
+        'Anti-spoofing check did not detect natural face movement. Ask employee to hold phone steadily at eye level, blink naturally inside the oval guide, and turn head slightly. Screen replays and photos are blocked.',
+      actionHint: 'Instruct: Hold eye-level & blink inside oval',
+    };
+  }
+
+  if (d === 'GEOFENCE_FAILED' || attempt.geofence_passed === false) {
+    const dist = attempt.distance_meters != null ? `${Math.round(attempt.distance_meters)}m away` : 'out of boundary';
+    return {
+      label: 'Outside Workplace Range',
+      badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200',
+      solution: `Employee was ${dist} from authorized site. Ask employee to turn on High Accuracy GPS & Wi-Fi. If employee has moved to another site, assign their work location in Employee Master.`,
+      actionHint: 'Instruct: Turn on GPS Wi-Fi / Update site',
+    };
+  }
+
+  if (d === 'TEMPLATE_NOT_AVAILABLE') {
+    return {
+      label: 'Enrolment Missing',
+      badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200',
+      solution:
+        'No active registered face template found. Employee self-enrolment is now auto-approved: ask employee to open mobile app, complete 3-angle Face Registration, and try again immediately.',
+      actionHint: 'Instruct: Complete Face Registration in app',
+    };
+  }
+
+  if (d === 'PROVIDER_UNAVAILABLE') {
+    return {
+      label: 'Service Delay / Timeout',
+      badgeClass: 'bg-amber-50 text-amber-800 border border-amber-200',
+      solution:
+        'Cloud verification service encountered a temporary connection timeout. Ask employee to tap Capture again after 30 seconds, or approve via Exception Fallback tab.',
+      actionHint: 'Instruct: Tap Capture again / Fallback approve',
+    };
+  }
+
+  if (d === 'CONSENT_REQUIRED') {
+    return {
+      label: 'Consent Needed',
+      badgeClass: 'bg-amber-50 text-amber-800 border border-amber-200',
+      solution:
+        'Biometric privacy consent has not been granted. Ask employee to accept the consent agreement prompt in the mobile app before scanning.',
+      actionHint: 'Instruct: Accept consent prompt in app',
+    };
+  }
+
+  if (d === 'IMAGE_QUALITY_FAILED') {
+    return {
+      label: 'Blurry / Dark Image',
+      badgeClass: 'bg-amber-50 text-amber-800 border border-amber-200',
+      solution:
+        'Selfie image quality is too dark or blurry. Ask employee to wipe camera lens and step into adequate light.',
+      actionHint: 'Instruct: Clean lens & brighten room',
+    };
+  }
+
+  if (d === 'NO_MATCH') {
+    return {
+      label: 'Face Not Recognized',
+      badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200',
+      solution:
+        'The scanned face does not match the enrolled biometric profile. Verify employee identity or re-enroll photos via Enrolment tab.',
+      actionHint: 'Verify identity & re-enroll',
+    };
+  }
+
+  return {
+    label: d || 'Other Error',
+    badgeClass: 'bg-gray-100 text-gray-700 border border-gray-200',
+    solution: reason || 'Review attempt logs or approve via Exception Fallback desk.',
+    actionHint: 'Review error details',
+  };
+};
 
 export const FaceAttendAttemptsTab: React.FC<{
   attempts: FaceAttendAttemptRecord[];
 }> = ({ attempts }) => {
   const [decisionFilter, setDecisionFilter] = useState<string>('ALL');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, decisionFilter, pageSize]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -18,7 +132,8 @@ export const FaceAttendAttemptsTab: React.FC<{
         !(
           (a.employee_name || '').toLowerCase().includes(q) ||
           (a.employee_code || '').toLowerCase().includes(q) ||
-          a.correlation_id.toLowerCase().includes(q)
+          a.correlation_id.toLowerCase().includes(q) ||
+          (a.work_location_name || '').toLowerCase().includes(q)
         )
       ) {
         return false;
@@ -27,15 +142,21 @@ export const FaceAttendAttemptsTab: React.FC<{
     });
   }, [attempts, decisionFilter, search]);
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginatedAttempts = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
+
   return (
     <div className="space-y-4">
-      <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-xs">
         <div>
           <h3 className="text-sm font-semibold text-gray-900">
             Face, Liveness & GPS Verification Attempt Ledger
           </h3>
           <p className="text-xs text-gray-500">
-            Every check-in / check-out attempt with transparent scores, provider mode, geofence distance, and correlation ID.
+            Every check-in / check-out attempt with simplified status terms and instant step-by-step HR guidance to resolve employee issues.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -45,7 +166,7 @@ export const FaceAttendAttemptsTab: React.FC<{
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Employee or correlation ID..."
+              placeholder="Search employee, site, or ID..."
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-emerald-500"
             />
           </div>
@@ -54,16 +175,16 @@ export const FaceAttendAttemptsTab: React.FC<{
             onChange={(e) => setDecisionFilter(e.target.value)}
             className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white"
           >
-            <option value="ALL">All Decisions</option>
-            <option value="MATCH">MATCH</option>
-            <option value="NO_MATCH">NO_MATCH</option>
-            <option value="LOW_CONFIDENCE">LOW_CONFIDENCE</option>
-            <option value="LIVENESS_FAILED">LIVENESS_FAILED</option>
-            <option value="IMAGE_QUALITY_FAILED">IMAGE_QUALITY_FAILED</option>
-            <option value="GEOFENCE_FAILED">GEOFENCE_FAILED</option>
-            <option value="TEMPLATE_NOT_AVAILABLE">TEMPLATE_NOT_AVAILABLE</option>
-            <option value="PROVIDER_UNAVAILABLE">PROVIDER_UNAVAILABLE</option>
-            <option value="CONSENT_REQUIRED">CONSENT_REQUIRED</option>
+            <option value="ALL">All Outcomes ({attempts.length})</option>
+            <option value="MATCH">✅ Verified & Passed (MATCH)</option>
+            <option value="LOW_CONFIDENCE">⚠️ Low Face Match (LOW_CONFIDENCE)</option>
+            <option value="LIVENESS_FAILED">❌ Liveness Failed (LIVENESS_FAILED)</option>
+            <option value="GEOFENCE_FAILED">📍 Outside Workplace (GEOFENCE_FAILED)</option>
+            <option value="TEMPLATE_NOT_AVAILABLE">👤 Enrolment Missing (TEMPLATE_NOT_AVAILABLE)</option>
+            <option value="PROVIDER_UNAVAILABLE">🔄 Service Timeout (PROVIDER_UNAVAILABLE)</option>
+            <option value="CONSENT_REQUIRED">📝 Consent Needed (CONSENT_REQUIRED)</option>
+            <option value="IMAGE_QUALITY_FAILED">📸 Blurry / Dark (IMAGE_QUALITY_FAILED)</option>
+            <option value="NO_MATCH">⛔ Face Not Recognized (NO_MATCH)</option>
           </select>
         </div>
       </div>
@@ -73,71 +194,165 @@ export const FaceAttendAttemptsTab: React.FC<{
           <table className="w-full text-left text-xs">
             <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
               <tr>
-                <th className="py-3 px-4 font-semibold">Timestamp & Employee</th>
-                <th className="py-3 px-4 font-semibold">Type</th>
-                <th className="py-3 px-4 font-semibold">1:1 Face</th>
-                <th className="py-3 px-4 font-semibold">Liveness</th>
-                <th className="py-3 px-4 font-semibold">GPS / Geofence</th>
-                <th className="py-3 px-4 font-semibold">Decision & Reason</th>
+                <th className="py-3 px-4 font-semibold whitespace-nowrap">Employee & Timestamp</th>
+                <th className="py-3 px-3 font-semibold whitespace-nowrap">Type</th>
+                <th className="py-3 px-3 font-semibold whitespace-nowrap">Face Match</th>
+                <th className="py-3 px-3 font-semibold whitespace-nowrap">Liveness</th>
+                <th className="py-3 px-4 font-semibold whitespace-nowrap">GPS & Boundary</th>
+                <th className="py-3 px-4 font-semibold whitespace-nowrap">Verification Status</th>
+                <th className="py-3 px-4 font-semibold min-w-[280px]">HR Solution & Intimation Steps</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-gray-500">
+                  <td colSpan={7} className="py-12 text-center text-gray-500">
                     No verification attempts match the selected filter.
                   </td>
                 </tr>
               ) : (
-                filtered.map((a) => (
-                  <tr key={a.id} className="hover:bg-gray-50/70">
-                    <td className="py-3 px-4">
-                      <div className="font-semibold text-gray-900">{a.employee_name}</div>
-                      <div className="text-[11px] text-gray-500">
-                        {new Date(a.created_at).toLocaleString('en-IN')} &bull; {a.correlation_id.slice(0, 8)}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 font-medium text-gray-700">{a.punch_type}</td>
-                    <td className="py-3 px-4">
-                      {a.face_similarity_score != null ? `${a.face_similarity_score.toFixed(1)}%` : '—'}
-                      <div className="text-[10px] text-gray-400">{a.provider_code}</div>
-                    </td>
-                    <td className="py-3 px-4">
-                      {a.liveness_score != null ? `${a.liveness_score.toFixed(0)}%` : '—'}{' '}
-                      <span className={a.liveness_passed ? 'text-emerald-600' : 'text-rose-600'}>
-                        ({a.liveness_passed ? 'Pass' : 'Fail'})
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-gray-400" />
-                        <span>{a.work_location_name || (a.geofence_passed ? 'Authorized' : 'Failed')}</span>
-                      </div>
-                      <div className="text-[11px] text-gray-500">
-                        {a.distance_meters != null ? `${Math.round(a.distance_meters)}m` : 'No dist'} &bull;{' '}
-                        {a.gps_accuracy_meters != null ? `±${Math.round(a.gps_accuracy_meters)}m` : '—'}
-                        {a.is_mock_location ? ' • MOCK GPS' : ''}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                          a.decision === 'MATCH'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-rose-50 text-rose-700'
-                        }`}
-                      >
-                        {a.decision}
-                      </span>
-                      {a.failure_reason && (
-                        <div className="text-[11px] text-gray-600 mt-1 max-w-xs">{a.failure_reason}</div>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                paginatedAttempts.map((a) => {
+                  const info = getDecisionInfo(a);
+                  return (
+                    <tr key={a.id} className="hover:bg-gray-50/70 transition-colors">
+                      <td className="py-3 px-4 align-top">
+                        <div className="font-semibold text-gray-900">{a.employee_name}</div>
+                        <div className="text-[11px] text-gray-500 font-mono">
+                          {a.employee_code ? `${a.employee_code} • ` : ''}
+                          {new Date(a.created_at).toLocaleString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: true,
+                          })}
+                        </div>
+                        <div className="text-[10px] text-gray-400 font-mono mt-0.5">
+                          ID: {a.correlation_id.slice(0, 8)}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 align-top">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${
+                            a.punch_type === 'CHECK_IN'
+                              ? 'bg-blue-50 text-blue-700'
+                              : 'bg-purple-50 text-purple-700'
+                          }`}
+                        >
+                          {a.punch_type === 'CHECK_IN' ? 'Check-In' : 'Check-Out'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 align-top">
+                        <div className="font-semibold text-gray-900">
+                          {a.face_similarity_score != null ? `${a.face_similarity_score.toFixed(1)}%` : '—'}
+                        </div>
+                        <div className="text-[10px] text-gray-400">{a.provider_code || 'BUILTIN'}</div>
+                      </td>
+                      <td className="py-3 px-3 align-top">
+                        <div className="font-semibold text-gray-900">
+                          {a.liveness_score != null ? `${a.liveness_score.toFixed(0)}%` : '—'}
+                        </div>
+                        <span
+                          className={`inline-block text-[11px] font-medium ${
+                            a.liveness_passed ? 'text-emerald-600' : 'text-rose-600'
+                          }`}
+                        >
+                          {a.liveness_passed ? 'Pass (Real)' : 'Fail (Spoof)'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 align-top">
+                        <div className="flex items-center gap-1 font-medium text-gray-800">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="truncate max-w-[180px]">
+                            {a.work_location_name || (a.geofence_passed ? 'Authorized Site' : 'Unknown Site')}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-gray-500 mt-0.5">
+                          {a.distance_meters != null ? `${Math.round(a.distance_meters)}m from center` : 'No GPS'}{' '}
+                          &bull; {a.gps_accuracy_meters != null ? `±${Math.round(a.gps_accuracy_meters)}m` : '—'}
+                        </div>
+                        {a.is_mock_location && (
+                          <span className="inline-block px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 text-[10px] font-bold mt-0.5">
+                            FAKE GPS DETECTED
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 align-top">
+                        <span className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold ${info.badgeClass}`}>
+                          {info.label}
+                        </span>
+                        {a.failure_reason && a.decision !== 'MATCH' && (
+                          <div className="text-[11px] text-gray-500 mt-1 max-w-[190px] leading-tight">
+                            {a.failure_reason}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 align-top">
+                        <div className="bg-gray-50 rounded-lg p-2.5 border border-gray-200/80">
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 mb-1">
+                            {a.decision === 'MATCH' ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            ) : (
+                              <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            )}
+                            <span>{info.actionHint}</span>
+                          </div>
+                          <p className="text-[11px] text-gray-600 leading-relaxed">{info.solution}</p>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Clean Pagination Bar */}
+        <div className="border-t border-gray-200 px-4 py-3 bg-gray-50 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600">
+          <div className="flex items-center gap-2">
+            <span>
+              Showing {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1} to{' '}
+              {Math.min(page * pageSize, filtered.length)} of {filtered.length} attempts
+            </span>
+            <span className="text-gray-300">|</span>
+            <label className="flex items-center gap-1">
+              <span>Rows:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="px-2 py-0.5 border border-gray-200 rounded bg-white text-xs"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="p-1 rounded border border-gray-200 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer"
+              title="Previous Page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="px-2 font-medium">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="p-1 rounded border border-gray-200 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer"
+              title="Next Page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -155,12 +370,24 @@ export const FaceAttendExceptionsTab: React.FC<{
   const [busyId, setBusyId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
   const [batchResolving, setBatchResolving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const pendingList = exceptions.filter((e) => e.review_status === 'PENDING');
   const filtered = exceptions.filter((e) => {
     if (statusFilter === 'ALL') return true;
     return e.review_status === statusFilter;
   });
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginatedList = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
 
   const handleBatchResolveAll = async () => {
     if (batchResolving || pendingList.length === 0) return;
@@ -242,7 +469,7 @@ export const FaceAttendExceptionsTab: React.FC<{
                   </td>
                 </tr>
               ) : (
-                filtered.map((ex) => (
+                paginatedList.map((ex) => (
                   <tr key={ex.id} className="hover:bg-gray-50/70">
                     <td className="py-3 px-4">
                       <div className="font-semibold text-gray-900">{ex.employee_name}</div>
@@ -292,6 +519,51 @@ export const FaceAttendExceptionsTab: React.FC<{
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Clean Pagination Bar */}
+        <div className="border-t border-gray-200 px-4 py-3 bg-gray-50 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600">
+          <div className="flex items-center gap-2">
+            <span>
+              Showing {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1} to{' '}
+              {Math.min(page * pageSize, filtered.length)} of {filtered.length} requests
+            </span>
+            <span className="text-gray-300">|</span>
+            <label className="flex items-center gap-1">
+              <span>Rows:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="px-2 py-0.5 border border-gray-200 rounded bg-white text-xs"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="p-1 rounded border border-gray-200 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer"
+              title="Previous Page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="px-2 font-medium">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="p-1 rounded border border-gray-200 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer"
+              title="Next Page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

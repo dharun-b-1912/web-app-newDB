@@ -1,6 +1,6 @@
 // src/features/faceAttend/FaceAttendEnrolmentTab.tsx
-import React, { useMemo, useState } from 'react';
-import { Check, X, Trash2, ShieldOff, Search, Eye, Loader2 } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Check, X, Trash2, ShieldOff, Search, Eye, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { faceAttendService } from '../../services/faceAttend/faceAttendService';
 import type { FaceAttendSubscription, FaceAttendTemplateRecord } from '../../types/faceAttend';
 
@@ -25,11 +25,17 @@ export const FaceAttendEnrolmentTab: React.FC<Props> = ({
 }) => {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [inspectTpl, setInspectTpl] = useState<FaceAttendTemplateRecord | null>(null);
   const [inspectPhotos, setInspectPhotos] = useState<Array<{ label: string; url: string }>>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [confirmEraseTpl, setConfirmEraseTpl] = useState<FaceAttendTemplateRecord | null>(null);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, pageSize]);
 
   const openPhotoReview = async (tpl: FaceAttendTemplateRecord) => {
     setInspectTpl(tpl);
@@ -82,6 +88,12 @@ export const FaceAttendEnrolmentTab: React.FC<Props> = ({
       return true;
     });
   }, [templates, statusFilter, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginated = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
 
   const handleAction = async (id: string, fn: () => Promise<void>) => {
     setBusyId(id);
@@ -163,7 +175,7 @@ export const FaceAttendEnrolmentTab: React.FC<Props> = ({
                   </td>
                 </tr>
               ) : (
-                filtered.map((tpl) => (
+                paginated.map((tpl) => (
                   <tr key={tpl.id} className="hover:bg-gray-50/70">
                     <td className="py-3 px-4">
                       <div className="font-semibold text-gray-900">{tpl.employee_name}</div>
@@ -263,6 +275,52 @@ export const FaceAttendEnrolmentTab: React.FC<Props> = ({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Clean Pagination Bar */}
+        <div className="border-t border-gray-200 px-4 py-3 bg-gray-50 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600">
+          <div className="flex items-center gap-2">
+            <span>
+              Showing {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1} to{' '}
+              {Math.min(page * pageSize, filtered.length)} of {filtered.length} employees
+            </span>
+            <span className="text-gray-300">|</span>
+            <label className="flex items-center gap-1">
+              <span>Rows:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="px-2 py-0.5 border border-gray-200 rounded bg-white text-xs"
+              >
+                <option value={15}>15</option>
+                <option value={30}>30</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="p-1 rounded border border-gray-200 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer"
+              title="Previous Page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="px-2 font-medium">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="p-1 rounded border border-gray-200 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer"
+              title="Next Page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 

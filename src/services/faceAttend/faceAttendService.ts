@@ -90,7 +90,7 @@ export const faceAttendService = {
         .select('*, employees(display_name, employee_code, avatar_url)')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false })
-        .limit(200),
+        .limit(1000),
       supabase
         .from('faceattend_consents')
         .select('employee_id, status, consent_version, granted_at')
@@ -234,7 +234,7 @@ export const faceAttendService = {
     return { ok: true };
   },
 
-  async listAttempts(organizationId: string, limit = 150): Promise<FaceAttendAttemptRecord[]> {
+  async listAttempts(organizationId: string, limit = 300): Promise<FaceAttendAttemptRecord[]> {
     const { data, error } = await supabase
       .from('faceattend_verification_attempts')
       .select('*, employees(display_name, employee_code), work_locations(name)')
@@ -404,12 +404,18 @@ export const faceAttendService = {
   async listWorkLocations(organizationId: string) {
     const { data, error } = await supabase
       .from('work_locations')
-      .select('id, name, address, latitude, longitude, geofence_radius_meters, is_active')
+      .select('id, name, address_line1, latitude, longitude, geofence_radius_meters, is_active')
       .eq('organization_id', organizationId)
       .order('name', { ascending: true });
 
-    if (error) return [];
-    return data || [];
+    if (error) {
+      console.warn('[FaceAttendService] listWorkLocations error:', error.message);
+      return [];
+    }
+    return (data || []).map((row: any) => ({
+      ...row,
+      address: row.address_line1 || '',
+    }));
   },
 
   async listAuditLogs(organizationId: string): Promise<FaceAttendAuditLog[]> {
