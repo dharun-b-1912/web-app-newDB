@@ -44,6 +44,24 @@ export const FaceAttendEnrolmentTab: React.FC<Props> = ({
   };
 
   const activeCount = templates.filter((t) => t.enrolment_status === 'ACTIVE').length;
+  const pendingTemplates = useMemo(
+    () => templates.filter((t) => t.enrolment_status === 'PENDING_APPROVAL'),
+    [templates]
+  );
+  const [batchApproving, setBatchApproving] = useState(false);
+
+  const handleBatchApprove = async () => {
+    if (batchApproving || pendingTemplates.length === 0) return;
+    setBatchApproving(true);
+    try {
+      for (const t of pendingTemplates) {
+        await onApprove(t.id);
+      }
+    } finally {
+      setBatchApproving(false);
+    }
+  };
+
   const maxCap = subscription?.max_enrolled_employees;
 
   const filtered = useMemo(() => {
@@ -111,6 +129,16 @@ export const FaceAttendEnrolmentTab: React.FC<Props> = ({
             <option value="REVOKED">Revoked</option>
             <option value="DELETED">Deleted</option>
           </select>
+          {isAdmin && pendingTemplates.length > 0 && (
+            <button
+              disabled={batchApproving}
+              onClick={handleBatchApprove}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
+            >
+              <Check className="w-3.5 h-3.5" />
+              {batchApproving ? 'Approving...' : `Approve All Pending (${pendingTemplates.length})`}
+            </button>
+          )}
         </div>
       </div>
 

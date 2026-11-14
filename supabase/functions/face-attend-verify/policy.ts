@@ -56,7 +56,7 @@ export const DEFAULT_FACEATTEND_POLICY: FaceAttendPolicyConfig = {
   require_face_on_checkout: true,
   offline_queue_enabled: false,
   manual_fallback_enabled: true,
-  self_enrolment_requires_approval: true,
+  self_enrolment_requires_approval: false,
   match_threshold: 88.0,
   liveness_threshold: 80.0,
   max_gps_accuracy_meters: 80.0,

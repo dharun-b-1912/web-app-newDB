@@ -64,7 +64,7 @@ export const FaceAttendSettingsTab: React.FC<{
               ['gps_verification_enabled', 'GPS Location Verification'],
               ['require_face_on_checkin', 'Require Face on Check-In'],
               ['require_face_on_checkout', 'Require Face on Check-Out'],
-              ['self_enrolment_requires_approval', 'Self-Enrolment Needs HR Approval'],
+              ['self_enrolment_requires_approval', 'Require Manual HR Approval for Face Enrolments (Off = Auto-Approve 700+ employees instantly)'],
               ['manual_fallback_enabled', 'Manual Exception Fallback Allowed'],
               ['offline_queue_enabled', 'Offline Queueing (Pending Verify)'],
               ['allow_non_face_fallback_on_provider_outage', 'Fallback Allowed on Provider Outage'],

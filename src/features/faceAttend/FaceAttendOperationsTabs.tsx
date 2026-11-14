@@ -153,6 +153,26 @@ export const FaceAttendExceptionsTab: React.FC<{
   ) => Promise<void>;
 }> = ({ exceptions, onResolve }) => {
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [batchResolving, setBatchResolving] = useState(false);
+
+  const pendingList = exceptions.filter((e) => e.review_status === 'PENDING');
+  const filtered = exceptions.filter((e) => {
+    if (statusFilter === 'ALL') return true;
+    return e.review_status === statusFilter;
+  });
+
+  const handleBatchResolveAll = async () => {
+    if (batchResolving || pendingList.length === 0) return;
+    setBatchResolving(true);
+    try {
+      for (const ex of pendingList) {
+        await onResolve(ex, 'APPROVED', 'Approved & verified by HR (Batch resolve)');
+      }
+    } finally {
+      setBatchResolving(false);
+    }
+  };
 
   const act = async (review: FaceAttendExceptionReview, decision: 'APPROVED' | 'REJECTED') => {
     setBusyId(review.id);
@@ -169,14 +189,37 @@ export const FaceAttendExceptionsTab: React.FC<{
 
   return (
     <div className="space-y-4">
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-gray-900">
-          Non-Biometric Fallback & Exception Review Queue
-        </h3>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Employees unable to pass automated face verification (camera failure, lighting, injury, provider outage)
-          can submit attendance for Supervisor / HR approval without being marked absent automatically.
-        </p>
+      <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">
+            Non-Biometric Fallback & Exception Review Queue
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Employees unable to pass automated face verification can submit attendance for Supervisor / HR approval without being marked absent automatically.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white"
+          >
+            <option value="ALL">All Statuses ({exceptions.length})</option>
+            <option value="PENDING">Pending Only ({pendingList.length})</option>
+            <option value="APPROVED">Approved</option>
+            <option value="REJECTED">Rejected</option>
+          </select>
+          {pendingList.length > 0 && (
+            <button
+              disabled={batchResolving}
+              onClick={handleBatchResolveAll}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {batchResolving ? 'Resolving...' : `Approve All Pending (${pendingList.length})`}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xs">
@@ -192,14 +235,14 @@ export const FaceAttendExceptionsTab: React.FC<{
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {exceptions.length === 0 ? (
+              {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-10 text-center text-gray-500">
                     No manual exception fallback requests queued.
                   </td>
                 </tr>
               ) : (
-                exceptions.map((ex) => (
+                filtered.map((ex) => (
                   <tr key={ex.id} className="hover:bg-gray-50/70">
                     <td className="py-3 px-4">
                       <div className="font-semibold text-gray-900">{ex.employee_name}</div>
