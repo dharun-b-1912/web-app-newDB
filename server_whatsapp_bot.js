@@ -46,13 +46,51 @@ export async function alertDevelopers(errorCode, summary, details = '', remediat
   }
   devAlertDedupMap.set(dedupKey, now);
 
+  // Map to standardized Sentinel error codes & severities
+  let sentinelCode = errorCode;
+  let severity = 'P1';
+  if (errorCode.includes('TOKEN') || errorCode.includes('AUTH')) {
+    sentinelCode = 'NOTIF-002';
+    severity = 'P0';
+  } else if (errorCode.includes('DB') || errorCode.includes('POSTGRES')) {
+    sentinelCode = 'DB-001';
+    severity = 'P1';
+  }
+
+  // 1. Ingest into JOY Sentinel Telemetry Vault
+  let incidentNumber = 'INC-PENDING';
+  let occurrenceCount = 1;
+  try {
+    const incRes = await supabaseFetch('rpc/fn_sentinel_ingest_event', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_event_code: sentinelCode,
+        p_severity: severity,
+        p_service_name: 'Meta WhatsApp Bot Engine',
+        p_message: summary,
+        p_source_location: 'server_whatsapp_bot.js',
+        p_diagnostic_payload: { details: details || '', raw_code: errorCode },
+        p_probable_cause: details || 'Pattern correlation in progress.',
+        p_recommended_action: remediation || 'Check Meta Cloud API token and webhook status.',
+      })
+    });
+
+    if (incRes?.incident_number) {
+      incidentNumber = incRes.incident_number;
+      occurrenceCount = incRes.occurrence_count || 1;
+      console.log(`[WA-SENTINEL] Ingested event ${sentinelCode} -> ${incidentNumber} (Count: ${occurrenceCount})`);
+    }
+  } catch (ingestErr) {
+    console.warn('[WA-SENTINEL] Telemetry ingest notice:', ingestErr?.message || ingestErr);
+  }
+
   const timestamp = new Date().toLocaleString('en-IN', {
     timeZone: 'Asia/Kolkata',
     dateStyle: 'medium',
     timeStyle: 'medium',
   });
 
-  const alertText = `🚨 *[DEV WATCHDOG ALERT]* Joy PeopleHR Bot Ops\n━━━━━━━━━━━━━━━━━━━━\n*Error Code*: \`${errorCode}\`\n*Severity*: SEV-1 (CRITICAL)\n*Service*: Meta WhatsApp Bot Core\n*Location*: \`server_whatsapp_bot.js\`\n*Time*: ${timestamp}\n\n*Summary*:\n${summary}\n${details ? `\n*Details*:\n\`\`\`${String(details).slice(0, 350)}\`\`\`` : ''}\n${remediation ? `\n*Action Steps*:\n${remediation}` : ''}\n━━━━━━━━━━━━━━━━━━━━`;
+  const alertText = `🚨 *[CRITICAL DEV ALERT]* Joy PeopleHR Sentinel\n━━━━━━━━━━━━━━━━━━━━\n*Incident*: \`${incidentNumber}\` [${severity} · ${sentinelCode}]\n*Service*: Meta WhatsApp Bot Core\n*Occurrences*: ${occurrenceCount}\n*Location*: \`server_whatsapp_bot.js\`\n*Time*: ${timestamp}\n\n*Summary*:\n${summary}\n${details ? `\n*Details*:\n\`\`\`${String(details).slice(0, 300)}\`\`\`` : ''}\n${remediation ? `\n*Action Steps*:\n${remediation}` : ''}\n━━━━━━━━━━━━━━━━━━━━`;
 
   for (const devPhone of MONITORED_DEVELOPER_PHONES) {
     try {
@@ -80,7 +118,7 @@ export async function alertDevelopers(errorCode, summary, details = '', remediat
   const tgToken = process.env.TELEGRAM_BOT_TOKEN || '9137821052:AAH40OpD041tLdmC0_fheiZbk9_AxGs2TQ0';
   const tgChats = (process.env.TELEGRAM_CHAT_ID || '-5189746331,9155594412').split(',').map(s => s.trim()).filter(Boolean);
 
-  const tgHtml = `🚨 <b>[CRITICAL DEV ALERT] Joy PeopleHR Bot Ops</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Error Code</b>: <code>${errorCode}</code>\n<b>Severity</b>: SEV-1 (CRITICAL)\n<b>Service</b>: Meta WhatsApp Bot Core\n<b>Location</b>: <code>server_whatsapp_bot.js</code>\n<b>Time</b>: ${timestamp}\n\n<b>Summary</b>:\n${summary}\n${details ? `\n<b>Details</b>:\n<pre>${String(details).slice(0, 350)}</pre>` : ''}\n${remediation ? `\n<b>Action Steps</b>:\n${remediation}` : ''}\n━━━━━━━━━━━━━━━━━━━━`;
+  const tgHtml = `🚨 <b>[CRITICAL DEV ALERT] JOY SENTINEL</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Incident</b>: <code>${incidentNumber}</code> [${severity} · ${sentinelCode}]\n<b>Service</b>: Meta WhatsApp Bot Core\n<b>Occurrences</b>: <b>${occurrenceCount}</b>\n<b>Location</b>: <code>server_whatsapp_bot.js</code>\n<b>Time</b>: ${timestamp}\n\n<b>Summary</b>:\n${summary}\n${details ? `\n<b>Details</b>:\n<pre>${String(details).slice(0, 300)}</pre>` : ''}\n${remediation ? `\n<b>Action Steps</b>:\n${remediation}` : ''}\n\n👉 <i>Investigate</i>: <code>/investigate ${incidentNumber}</code>\n👉 <i>Acknowledge</i>: <code>/ack ${incidentNumber}</code>\n━━━━━━━━━━━━━━━━━━━━`;
 
   for (const chatId of tgChats) {
     try {

@@ -4,6 +4,8 @@
 // Live Airtel IQ Prepaid Gateway Engine (iqsms.airtel.in)
 // ============================================================
 
+import { emitSentinelEvent } from '../sentinel/sentinelCoreService';
+
 export interface AirtelSmsSendRequest {
   destinationAddress: string; // E.164 formatted (+91...) or 10-digit
   message: string;
@@ -176,6 +178,22 @@ export class AirtelSmsClient {
         data.errorCode ||
         `HTTP ${response.status} Airtel IQ rejected request`;
 
+      emitSentinelEvent({
+        eventCode: 'NOTIF-001',
+        severity: 'P1',
+        serviceName: 'Airtel IQ Gateway',
+        message: `Airtel IQ SMS dispatch failed: ${errorMsg}`,
+        sourceLocation: 'src/services/communications/airtelSmsClient.ts',
+        diagnosticPayload: {
+          statusCode: response.status,
+          error: errorMsg,
+          recipient: formattedPhone,
+          dltTemplateId,
+        },
+        probableCause: 'Carrier DLT template mismatch, low prepaid points, or gateway rejection.',
+        recommendedAction: 'Verify DLT template registered on Airtel IQ portal for PE ID 1001333025440167393.',
+      });
+
       return {
         success: false,
         status: 'FAILED',
@@ -184,6 +202,17 @@ export class AirtelSmsClient {
         provider: 'AIRTEL_IQ',
       };
     } catch (err: any) {
+      emitSentinelEvent({
+        eventCode: 'NOTIF-001',
+        severity: 'P1',
+        serviceName: 'Airtel IQ Gateway',
+        message: `Network error connecting to Airtel IQ gateway: ${err?.message || err}`,
+        sourceLocation: 'src/services/communications/airtelSmsClient.ts',
+        diagnosticPayload: { error: err?.message || String(err), recipient: formattedPhone },
+        probableCause: 'DNS or egress network timeout reaching iqsms.airtel.in.',
+        recommendedAction: 'Verify outbound connectivity to iqsms.airtel.in:443.',
+      });
+
       return {
         success: false,
         status: 'FAILED',

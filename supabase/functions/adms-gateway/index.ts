@@ -263,6 +263,15 @@ async function notifyReportingManager(
 }
 
 // --------------------------------------------------------------------------
+// SUPABASE CLIENT PROVIDER
+// --------------------------------------------------------------------------
+function getSupabaseAdmin() {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SECRET_KEY') || '';
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+// --------------------------------------------------------------------------
 // REALTIME DEVELOPER INCIDENT WATCHDOG (+91 9384125278, +91 9944399088)
 // --------------------------------------------------------------------------
 const DEV_ALERT_RECIPIENTS = ['919384125278', '919944399088'];
@@ -274,7 +283,8 @@ async function notifyDevelopersOfAnomaly(
   location: string,
   summary: string,
   details?: string,
-  remediation?: string
+  remediation?: string,
+  supabaseClient?: any
 ) {
   const dedupKey = `${errorCode}_${location}`;
   const now = Date.now();
@@ -285,23 +295,64 @@ async function notifyDevelopersOfAnomaly(
   }
   devAlertDedupMap.set(dedupKey, now);
 
+  // Map to standardized Sentinel error codes & severities
+  let sentinelCode = errorCode;
+  let severity = 'P1';
+  if (errorCode === 'ERR_AIRTEL_DLT_REJECTED') {
+    sentinelCode = 'NOTIF-001';
+    severity = 'P1';
+  } else if (errorCode === 'ERR_ADMS_UNKNOWN_DEVICE') {
+    sentinelCode = 'ATT-002';
+    severity = 'P1';
+  } else if (errorCode === 'ERR_ADMS_GATEWAY_CRASH') {
+    sentinelCode = 'EDGE-001';
+    severity = 'P0';
+  }
+
+  // 1. Ingest into JOY Sentinel Telemetry Vault (deduplicates & generates Incident ID)
+  let incidentNumber = 'INC-PENDING';
+  let occurrenceCount = 1;
+  try {
+    const sb = supabaseClient || getSupabaseAdmin();
+    const { data: incRes, error: rpcErr } = await sb.rpc('fn_sentinel_ingest_event', {
+      p_event_code: sentinelCode,
+      p_severity: severity,
+      p_service_name: service,
+      p_message: summary,
+      p_source_location: location,
+      p_diagnostic_payload: { details: details || '', raw_code: errorCode },
+      p_probable_cause: details || 'Pattern correlation in progress.',
+      p_recommended_action: remediation || 'Inspect Edge Function logs.',
+    });
+
+    if (!rpcErr && incRes?.incident_number) {
+      incidentNumber = incRes.incident_number;
+      occurrenceCount = incRes.occurrence_count || 1;
+      console.log(`[ADMS-SENTINEL] Ingested event ${sentinelCode} -> ${incidentNumber} (Count: ${occurrenceCount})`);
+    } else if (rpcErr) {
+      console.warn('[ADMS-SENTINEL] Sentinel RPC notice:', rpcErr.message);
+    }
+  } catch (ingestErr: any) {
+    console.warn('[ADMS-SENTINEL] Telemetry ingest notice:', ingestErr?.message || ingestErr);
+  }
+
   const timestamp = new Date().toLocaleString('en-IN', {
     timeZone: 'Asia/Kolkata',
     dateStyle: 'medium',
     timeStyle: 'medium',
   });
 
-  const alertMsg = `🚨 *[CRITICAL DEV ALERT]* Joy PeopleHR Watchdog
+  const alertMsg = `🚨 *[CRITICAL DEV ALERT]* Joy PeopleHR Sentinel
 ━━━━━━━━━━━━━━━━━━━━
-*Error Code*: \`${errorCode}\`
-*Severity*: SEV-1 (CRITICAL)
+*Incident*: \`${incidentNumber}\` [${severity} · ${sentinelCode}]
 *Service*: ${service}
+*Occurrences*: ${occurrenceCount}
 *Location*: \`${location}\`
 *Time*: ${timestamp}
 
 *Summary*:
 ${summary}
-${details ? `\n*Diagnostic Details*:\n\`\`\`${details.slice(0, 400)}\`\`\`` : ''}
+${details ? `\n*Diagnostic Details*:\n\`\`\`${details.slice(0, 300)}\`\`\`` : ''}
 ${remediation ? `\n*Action Steps*:\n${remediation}` : ''}
 ━━━━━━━━━━━━━━━━━━━━`;
 
@@ -335,18 +386,21 @@ ${remediation ? `\n*Action Steps*:\n${remediation}` : ''}
   const tgToken = Deno.env.get('TELEGRAM_BOT_TOKEN') || '9137821052:AAH40OpD041tLdmC0_fheiZbk9_AxGs2TQ0';
   const tgChats = (Deno.env.get('TELEGRAM_CHAT_ID') || '-5189746331,9155594412').split(',').map(s => s.trim()).filter(Boolean);
 
-  const tgHtml = `🚨 <b>[CRITICAL DEV ALERT] Joy PeopleHR Watchdog</b>
+  const tgHtml = `🚨 <b>[CRITICAL DEV ALERT] JOY SENTINEL</b>
 ━━━━━━━━━━━━━━━━━━━━
-<b>Error Code</b>: <code>${errorCode}</code>
-<b>Severity</b>: SEV-1 (CRITICAL)
+<b>Incident</b>: <code>${incidentNumber}</code> [${severity} · ${sentinelCode}]
 <b>Service</b>: ${service}
+<b>Occurrences</b>: <b>${occurrenceCount}</b>
 <b>Location</b>: <code>${location}</code>
 <b>Time</b>: ${timestamp}
 
 <b>Summary</b>:
 ${summary}
-${details ? `\n<b>Diagnostic Details</b>:\n<pre>${details.slice(0, 400)}</pre>` : ''}
+${details ? `\n<b>Diagnostic Details</b>:\n<pre>${details.slice(0, 300)}</pre>` : ''}
 ${remediation ? `\n<b>Action Steps</b>:\n${remediation}` : ''}
+
+👉 <i>Investigate</i>: <code>/investigate ${incidentNumber}</code>
+👉 <i>Acknowledge</i>: <code>/ack ${incidentNumber}</code>
 ━━━━━━━━━━━━━━━━━━━━`;
 
   for (const chatId of tgChats) {

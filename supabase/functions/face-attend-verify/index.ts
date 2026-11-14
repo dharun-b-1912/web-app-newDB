@@ -1090,6 +1090,22 @@ async function downloadStorageImageBase64(supabaseAdmin: any, path: string): Pro
     );
 
     if (commitErr) {
+      // Log to JOY Sentinel Telemetry
+      ctx.supabaseAdmin.rpc('fn_sentinel_ingest_event', {
+        p_event_code: 'ATT-001',
+        p_severity: 'P1',
+        p_service_name: 'FaceAttend Engine',
+        p_message: `FaceAttend punch commit failed for employee ${caller.displayName}: ${commitErr.message}`,
+        p_source_location: 'supabase/functions/face-attend-verify/index.ts:1092',
+        p_diagnostic_payload: {
+          employee_id: caller.employeeId,
+          error: commitErr.message,
+          attempt_id: attempt.id,
+        },
+        p_probable_cause: 'Database RPC fn_faceattend_commit_attendance returned an error or locked row.',
+        p_recommended_action: 'Inspect fn_faceattend_commit_attendance parameters and database lock queues.',
+      }).catch(() => {});
+
       // Update attempt failure reason cleanly without leaving orphaned attendance
       await ctx.supabaseAdmin
         .from('faceattend_verification_attempts')
