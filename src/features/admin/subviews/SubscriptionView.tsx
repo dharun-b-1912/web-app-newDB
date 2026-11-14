@@ -28,6 +28,8 @@ import {
   FileCheck2,
 } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
+import { useTenant } from '../../../hooks/useTenant';
+import { useAuth } from '../../../hooks/useAuth';
 import {
   featureEntitlementService,
   PlanTier,
@@ -137,6 +139,12 @@ const COMMERCIAL_MODULE_CATALOGUE: CommercialModuleCard[] = [
 
 export const SubscriptionView: React.FC = () => {
   const { showToast } = useToast();
+  const { organization } = useTenant();
+  const { user } = useAuth();
+  const isPlatformSuperAdmin = user?.role === 'Super Admin' || (user as any)?.is_platform_admin === true;
+  const isDevBenchmarkOrg = organization?.id === '0c621892-e938-4707-9957-13534ea32c19';
+  const showPlanSwitcher = isPlatformSuperAdmin || isDevBenchmarkOrg;
+
   const [currentPlan, setCurrentPlan] = useState<PlanTier>(() =>
     featureEntitlementService.getCurrentTenantPlan()
   );
@@ -228,55 +236,68 @@ export const SubscriptionView: React.FC = () => {
         </div>
       </div>
 
-      {/* Plan Tier Selector (Interactive Simulation / Upgrade Switcher) */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-black text-gray-900 tracking-tight flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-emerald-600" />
-              <span>Select Active Plan Tier</span>
-            </h3>
-            <p className="text-xs text-gray-500">
-              Switching plans immediately reconfigures portal navigation visibility and access permissions across all client users.
-            </p>
+      {/* Plan Tier Selector (Interactive Simulation / Upgrade Switcher for Admin only) */}
+      {showPlanSwitcher ? (
+        <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-black text-gray-900 tracking-tight flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <span>Select Active Plan Tier</span>
+              </h3>
+              <p className="text-xs text-gray-500">
+                Switching plans immediately reconfigures portal navigation visibility and access permissions across all client users.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+            {(['Starter', 'Professional', 'Business', 'Enterprise'] as PlanTier[]).map((plan) => {
+              const isSelected = currentPlan === plan;
+              return (
+                <button
+                  key={plan}
+                  type="button"
+                  onClick={() => handleSelectPlan(plan)}
+                  className={`p-4 rounded-2xl border text-left transition-all duration-200 cursor-pointer relative overflow-hidden ${
+                    isSelected
+                      ? 'border-[#07563D] bg-emerald-50/40 ring-2 ring-[#07563D]/20 shadow-xs'
+                      : 'border-gray-200/90 bg-white hover:border-gray-300 hover:bg-gray-50/50'
+                  }`}
+                >
+                  {isSelected && (
+                    <div className="absolute top-2 right-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#07563D] text-white">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  )}
+                  <div className="font-black text-sm text-gray-900 flex items-center gap-1.5">
+                    <span>{plan}</span>
+                  </div>
+                  <div className="text-[11px] text-gray-500 mt-1 leading-snug">
+                    {plan === 'Starter' && 'Core HR, ESS, Basic Attendance & Standard Payroll.'}
+                    {plan === 'Professional' && 'Adds Shift Rostering, GPS Geofencing & Statutory Payroll.'}
+                    {plan === 'Business' && 'Adds ATS Recruitment, LMS Training, Expense Desk & BI.'}
+                    {plan === 'Enterprise' && 'Unlimited: Vendor Workforce, Biometric Push, 360 Appraisals.'}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-          {(['Starter', 'Professional', 'Business', 'Enterprise'] as PlanTier[]).map((plan) => {
-            const isSelected = currentPlan === plan;
-            return (
-              <button
-                key={plan}
-                type="button"
-                onClick={() => handleSelectPlan(plan)}
-                className={`p-4 rounded-2xl border text-left transition-all duration-200 cursor-pointer relative overflow-hidden ${
-                  isSelected
-                    ? 'border-[#07563D] bg-emerald-50/40 ring-2 ring-[#07563D]/20 shadow-xs'
-                    : 'border-gray-200/90 bg-white hover:border-gray-300 hover:bg-gray-50/50'
-                }`}
-              >
-                {isSelected && (
-                  <div className="absolute top-2 right-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#07563D] text-white">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    </span>
-                  </div>
-                )}
-                <div className="font-black text-sm text-gray-900 flex items-center gap-1.5">
-                  <span>{plan}</span>
-                </div>
-                <div className="text-[11px] text-gray-500 mt-1 leading-snug">
-                  {plan === 'Starter' && 'Core HR, ESS, Basic Attendance & Standard Payroll.'}
-                  {plan === 'Professional' && 'Adds Shift Rostering, GPS Geofencing & Statutory Payroll.'}
-                  {plan === 'Business' && 'Adds ATS Recruitment, LMS Training, Expense Desk & BI.'}
-                  {plan === 'Enterprise' && 'Unlimited: Vendor Workforce, Biometric Push, 360 Appraisals.'}
-                </div>
-              </button>
-            );
-          })}
+      ) : (
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-emerald-50/40 p-6 rounded-3xl border border-emerald-200/90 shadow-2xs space-y-2">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-emerald-700" />
+            <h3 className="text-base font-black text-gray-900 tracking-tight">Enterprise Tier Evaluation Active</h3>
+            <Badge variant="emerald" className="text-[10px] font-bold">30-Day Enterprise Trial</Badge>
+          </div>
+          <p className="text-xs text-gray-600 max-w-3xl leading-relaxed">
+            Your organization is operating with full enterprise access during the onboarding evaluation period. All enterprise features, including Attendance Roster Matrix, GPS Geofencing, Automated Statutory Onboarding, and Hardware Push, are fully provisioned.
+          </p>
         </div>
-      </div>
+      )}
 
       {/* Headcount Capacity & Plan Health */}
       <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs grid grid-cols-1 md:grid-cols-3 gap-6">

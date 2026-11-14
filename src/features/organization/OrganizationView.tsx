@@ -212,7 +212,7 @@ export const OrganizationView: React.FC = () => {
       const [brList, summary, empList] = await Promise.all([
         organizationStructureService.getBranches(undefined, orgId),
         organizationStructureService.getMetrics(orgId),
-        api.getEmployees(),
+        api.getEmployees(orgId ? { organizationId: orgId } as any : undefined),
       ]);
       setBranches(brList);
       setMetrics(summary);

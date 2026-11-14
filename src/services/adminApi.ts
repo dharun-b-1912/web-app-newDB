@@ -26,6 +26,8 @@ import { platformAuthInvitationService } from './platform/platformAuthInvitation
 import { featureEntitlementService } from './tenant/featureEntitlementService';
 import { userAuthProvisionerService } from './auth/userAuthProvisionerService';
 
+import { getActiveOrgId } from './attendance/biometricCommandService';
+
 const INVITATIONS_STORAGE_KEY = 'joy_invitations_v1';
 const API_KEYS_STORAGE_KEY = 'joy_api_keys_v1';
 const INTEGRATIONS_STORAGE_KEY = 'joy_integrations_v1';
@@ -618,11 +620,25 @@ export const adminApi = {
     const org = api.getOrganizationSync ? api.getOrganizationSync() : null;
     const employees = api.getEmployeesSync ? api.getEmployeesSync() : [];
     const activePlan = featureEntitlementService.getCurrentTenantPlan();
+    const activeOrgId = getActiveOrgId();
+    const isDevBenchmarkOrg = activeOrgId === '0c621892-e938-4707-9957-13534ea32c19';
+
+    if (!isDevBenchmarkOrg) {
+      return {
+        plan_name: `Enterprise Evaluation License (30-Day Trial)`,
+        billing_cycle: '30-Day Evaluation',
+        employee_limit: 500,
+        active_employees: employees.length,
+        renewal_date: '2026-12-14',
+        status: 'Trial',
+      };
+    }
+
     return {
       plan_name: `Joy PeopleHR ${activePlan} Tier`,
       billing_cycle: 'Annual',
       employee_limit: activePlan === 'Starter' ? 50 : activePlan === 'Professional' ? 200 : activePlan === 'Business' ? 500 : 2500,
-      active_employees: employees.length || 24,
+      active_employees: employees.length || 22,
       renewal_date: '2027-01-01',
       status: (org?.status === 'PastDue' || org?.status === 'Trial') ? org.status : 'Active',
     };

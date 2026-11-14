@@ -45,10 +45,11 @@ export class StatutoryOnboardingService {
    * Fetch all employees in onboarding state or active employees
    */
   public static async getEmployeesForOnboarding(organizationId?: string): Promise<Employee[]> {
+    const activeOrg = organizationId || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : undefined);
     try {
-      const emps = await api.getEmployees();
+      const emps = await api.getEmployees(activeOrg ? { organizationId: activeOrg } as any : undefined);
       if (emps && emps.length > 0) {
-        return emps;
+        return emps.filter(e => !activeOrg || activeOrg === 'platform-root' || e.organization_id === activeOrg);
       }
     } catch (err) {
       console.warn('[StatutoryOnboardingService] api.getEmployees notice:', err);
@@ -60,8 +61,8 @@ export class StatutoryOnboardingService {
         .select('id, first_name, middle_name, last_name, display_name, employee_code, work_email, personal_email, phone, department_id, designation_id, employment_status, doj, employment_type, organization_id, company_id')
         .order('created_at', { ascending: false });
 
-      if (organizationId) {
-        q = q.eq('organization_id', organizationId);
+      if (activeOrg && activeOrg !== 'platform-root') {
+        q = q.eq('organization_id', activeOrg);
       }
 
       const { data, error } = await q;
@@ -71,7 +72,7 @@ export class StatutoryOnboardingService {
         return [];
       }
 
-      return (data || []) as unknown as Employee[];
+      return ((data || []) as unknown as Employee[]).filter(e => !activeOrg || activeOrg === 'platform-root' || e.organization_id === activeOrg);
     } catch (err) {
       console.error('[StatutoryOnboardingService] getEmployees failed:', err);
       return [];

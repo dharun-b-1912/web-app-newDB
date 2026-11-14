@@ -22,6 +22,7 @@ const dbClient = (supabaseAdmin || supabase);
 import { hrEventBus } from './hrEventBus';
 import { logger } from './diagnostics/loggerService';
 import { CorrelationService } from './diagnostics/correlationService';
+import { getActiveOrgId } from './attendance/biometricCommandService';
 
 // Storage Keys for temporary offline cache only
 const KEYS = {
@@ -560,10 +561,17 @@ export const hasAuthenticatedSession = async (): Promise<boolean> => {
 };
 
 export function filterEmployeesLocalHelper(list: Employee[], params?: any): Employee[] {
-  if (!params) return list;
+  if (!list || list.length === 0) return [];
 
   const filterObj = typeof params === 'string' ? { companyId: params } : params;
   let filtered = [...list];
+
+  // STRICT MULTI-TENANT ISOLATION: Scoped to target organization
+  const targetOrg = filterObj?.organizationId || getActiveOrgId();
+  if (targetOrg && targetOrg !== 'platform-root') {
+    filtered = filtered.filter((e) => e.organization_id === targetOrg);
+  }
+
   if (filterObj && filterObj.search) {
     const q = typeof filterObj.search === 'string' ? filterObj.search.toLowerCase() : String(filterObj.search).toLowerCase();
     filtered = filtered.filter(
@@ -1316,11 +1324,13 @@ export const api = {
     search?: string;
     departmentId?: string;
     companyId?: string;
+    organizationId?: string;
     status?: string;
     type?: string;
     source?: string;
     vendorId?: string;
   } | string): Employee[] {
+    const targetOrg = (typeof params === 'object' ? params?.organizationId : undefined) || getActiveOrgId();
     // 1. Authoritative in-memory cache takes precedence
     let list: Employee[] = [];
     if (api._empCache?.data && api._empCache.data.length > 0) {
@@ -1341,6 +1351,10 @@ export const api = {
       if (list.length > 0) {
         api._empCache = { data: list, timestamp: Date.now() };
       }
+    }
+
+    if (targetOrg && targetOrg !== 'platform-root') {
+      list = list.filter((e: any) => e.organization_id === targetOrg);
     }
 
     if (isSupabaseEnabled) {
@@ -1494,17 +1508,19 @@ export const api = {
     search?: string;
     departmentId?: string;
     companyId?: string;
+    organizationId?: string;
     status?: string;
     type?: string;
     source?: string;
     vendorId?: string;
     skipEnrichment?: boolean;
   } | string): Promise<Employee[]> {
-    const isUnfiltered = !params || (typeof params === 'object' && Object.keys(params).filter(k => k !== 'skipEnrichment').length === 0);
     const filterObj = typeof params === 'string' ? { companyId: params } : params;
+    const targetOrg = filterObj?.organizationId || getActiveOrgId();
+    const isUnfiltered = !params || (typeof params === 'object' && Object.keys(params).filter(k => k !== 'skipEnrichment' && k !== 'organizationId').length === 0);
     const skipEnrichment = filterObj?.skipEnrichment === true;
     const now = Date.now();
-    const cacheKey = typeof params === 'string' ? `comp:${params}` : JSON.stringify(params || {});
+    const cacheKey = `${targetOrg}_${typeof params === 'string' ? `comp:${params}` : JSON.stringify(params || {})}`;
 
     // Serve from fresh 3-second memory cache to protect browser socket limit
     const existingCache = this._empCacheMap.get(cacheKey);
@@ -1521,8 +1537,7 @@ export const api = {
         try {
           await ensureSupabaseSession();
           let q = (supabaseAdmin || supabase).from('employees').select('*');
-          const targetOrg = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || '0c621892-e938-4707-9957-13534ea32c19') : '0c621892-e938-4707-9957-13534ea32c19';
-          if (isValidUUID(targetOrg)) {
+          if (targetOrg && targetOrg !== 'platform-root') {
             q = q.eq('organization_id', targetOrg);
           }
 
@@ -2075,10 +2090,13 @@ export const api = {
               deduplicated.push(emp);
             }
 
-            // Only permit local-only employees that do NOT collide with any DB record or name
+            // Only permit local-only employees that match the active tenant and do NOT collide with any DB record or name
             const cachedEmployees = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
             for (const ce of cachedEmployees) {
               if (!ce || !ce.id || !isValidUUID(ce.id)) continue;
+              // STRICT MULTI-TENANT ISOLATION: Never merge cached employees belonging to another tenant!
+              if (targetOrg && targetOrg !== 'platform-root' && ce.organization_id && ce.organization_id !== targetOrg) continue;
+              if (targetOrg && targetOrg !== 'platform-root' && !ce.organization_id && targetOrg !== '0c621892-e938-4707-9957-13534ea32c19') continue;
               const idKey = String(ce.id).toLowerCase();
               const codeKey = String(ce.employee_code || '').trim().toUpperCase();
               const emailKey = String(ce.work_email || ce.personal_email || '').trim().toLowerCase();

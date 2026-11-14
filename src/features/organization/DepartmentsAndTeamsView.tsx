@@ -109,7 +109,7 @@ export const DepartmentsAndTeamsView: React.FC<Props> = ({
         organizationStructureService.getTeams(organizationId),
         organizationStructureService.getLegalEntities(organizationId),
         organizationStructureService.getBranches(undefined, organizationId),
-        api.getEmployees(),
+        api.getEmployees(organizationId ? { organizationId } as any : undefined),
       ]);
 
       // Resolve department heads from explicit database assignment or designated Head

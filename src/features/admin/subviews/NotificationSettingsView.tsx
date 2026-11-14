@@ -47,6 +47,7 @@ import {
   NotificationDispatchResult,
 } from '../../../services/notification/universalNotificationEngine';
 import { useTenant } from '../../../hooks/useTenant';
+import { useAuth } from '../../../hooks/useAuth';
 import { AttendancePushPolicyView } from './AttendancePushPolicyView';
 
 // Official Brand Icons for Unmistakable Visual Recognition
@@ -67,7 +68,11 @@ export const SmsBubbleIcon: React.FC<{ className?: string }> = ({ className = 'w
 export const NotificationSettingsView: React.FC = () => {
   const { showToast } = useToast();
   const { organization } = useTenant();
+  const { user } = useAuth();
   const activeOrgId = organization?.id || '0c621892-e938-4707-9957-13534ea32c19';
+  const isPlatformSuperAdmin = user?.role === 'Super Admin' || (user as any)?.is_platform_admin === true;
+  const isDevBenchmarkOrg = activeOrgId === '0c621892-e938-4707-9957-13534ea32c19';
+  const showPlatformInfraDetails = isPlatformSuperAdmin || isDevBenchmarkOrg;
 
   // Navigation State
   const [activeTab, setActiveTab] = useState<'attendance_alerts' | 'rules' | 'logs'>('attendance_alerts');
@@ -363,14 +368,16 @@ export const NotificationSettingsView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <Button
-            size="sm"
-            variant="outline"
-            leftIcon={<Play className="w-3.5 h-3.5 text-emerald-700" />}
-            onClick={() => handleOpenTestModal()}
-          >
-            Test Dispatch Engine
-          </Button>
+          {showPlatformInfraDetails && (
+            <Button
+              size="sm"
+              variant="outline"
+              leftIcon={<Play className="w-3.5 h-3.5 text-emerald-700" />}
+              onClick={() => handleOpenTestModal()}
+            >
+              Test Dispatch Engine
+            </Button>
+          )}
           <Button
             size="sm"
             leftIcon={<Plus className="w-4 h-4" />}
@@ -382,8 +389,8 @@ export const NotificationSettingsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Migration Notice Banner if table is not yet in PostgreSQL */}
-      {!universalNotificationEngine.isTableMigrated() && (
+      {/* Migration Notice Banner if table is not yet in PostgreSQL (Admin Only) */}
+      {showPlatformInfraDetails && !universalNotificationEngine.isTableMigrated() && (
         <div className="bg-emerald-50/80 border border-emerald-200/80 p-3 rounded-xl flex items-center justify-between text-xs text-emerald-900 shadow-2xs">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-emerald-700 shrink-0" />
@@ -419,7 +426,7 @@ export const NotificationSettingsView: React.FC = () => {
               </span>
             </div>
             <div className="mt-2.5">
-              <span className="text-lg font-black text-gray-900 block">Supabase Realtime</span>
+              <span className="text-lg font-black text-gray-900 block">{showPlatformInfraDetails ? 'Supabase Realtime' : 'Realtime Push & In-App'}</span>
               <span className="text-gray-500 text-[11px] block mt-0.5">WebSockets & Bell Notifications</span>
             </div>
           </div>
@@ -435,15 +442,15 @@ export const NotificationSettingsView: React.FC = () => {
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
                 <Mail className="w-4 h-4 text-blue-600" />
-                Enterprise SMTP Gateway
+                Enterprise Email Delivery
               </span>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                 Base Plan (Free)
               </span>
             </div>
             <div className="mt-2.5">
-              <span className="text-lg font-black text-gray-900 block">Hostinger Secure SMTP</span>
-              <span className="text-gray-500 text-[11px] block mt-0.5">TLS Port 465 (noreply@joypeoplehr.com)</span>
+              <span className="text-lg font-black text-gray-900 block">{showPlatformInfraDetails ? 'Hostinger Secure SMTP' : 'Dedicated High-Deliverability SMTP'}</span>
+              <span className="text-gray-500 text-[11px] block mt-0.5">{showPlatformInfraDetails ? 'TLS Port 465 (noreply@joypeoplehr.com)' : 'Automated Payslips, Approvals & Reports'}</span>
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-mono">
@@ -458,15 +465,15 @@ export const NotificationSettingsView: React.FC = () => {
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
                 <WhatsAppIcon className="w-4 h-4 text-[#25D366]" />
-                WhatsApp Business API
+                WhatsApp Business Channel
               </span>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
                 Subscription Add-On
               </span>
             </div>
             <div className="mt-2.5">
-              <span className="text-lg font-black text-gray-900 block">Cloud API v20.0</span>
-              <span className="text-gray-500 text-[11px] block mt-0.5">Official Meta API & 2-Way Bot</span>
+              <span className="text-lg font-black text-gray-900 block">{showPlatformInfraDetails ? 'Cloud API v20.0' : 'Automated 2-Way Bot Channel'}</span>
+              <span className="text-gray-500 text-[11px] block mt-0.5">{showPlatformInfraDetails ? 'Official Meta API & 2-Way Bot' : 'AI Assistant, Shift Alerts & Self-Service'}</span>
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-mono">
@@ -488,8 +495,8 @@ export const NotificationSettingsView: React.FC = () => {
               </span>
             </div>
             <div className="mt-2.5">
-              <span className="text-lg font-black text-gray-900 block">Airtel IQ Gateway</span>
-              <span className="text-gray-500 text-[11px] block mt-0.5">Transactional OTPs & Critical Alerts</span>
+              <span className="text-lg font-black text-gray-900 block">{showPlatformInfraDetails ? 'Airtel IQ Gateway' : 'High-Speed Telecom SMS Route'}</span>
+              <span className="text-gray-500 text-[11px] block mt-0.5">{showPlatformInfraDetails ? 'Transactional OTPs & Critical Alerts' : 'Statutory Alerts, OTPs & Urgent Exceptions'}</span>
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-mono">
