@@ -31,7 +31,7 @@ async function sendAirtelSms(recipientPhone: string, message: string, templateId
   if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
   if (!cleanPhone.startsWith('91') || cleanPhone.length !== 12) {
     console.warn(`[AIRTEL-SMS] Invalid phone format: ${recipientPhone}`);
-    return null;
+    return { ok: false, error: `Invalid phone format: ${recipientPhone}`, messageRequestId: null };
   }
 
   const creds = getAirtelCredentials();
@@ -41,6 +41,7 @@ async function sendAirtelSms(recipientPhone: string, message: string, templateId
     const res = await fetch('https://iqsms.airtel.in/api/v1/send-prepaid-sms', {
       method: 'POST',
       headers: {
+        'Accept': 'application/json',
         'Content-Type': 'application/json',
         'Authorization': authHeader,
       },
@@ -50,15 +51,47 @@ async function sendAirtelSms(recipientPhone: string, message: string, templateId
         message: message,
         sourceAddress: creds.senderId,
         messageType: 'SERVICE_IMPLICIT',
-        priority: 'HIGH',
         dltTemplateId: templateId,
         entityId: creds.peId,
       }),
+      signal: AbortSignal.timeout(8000),
     });
-    return await res.json();
+
+    const payload = await res.json().catch(() => ({}));
+    const messageRequestId =
+      payload?.messageRequestId ||
+      payload?.requestId ||
+      payload?.messageId ||
+      payload?.data?.messageId ||
+      null;
+
+    const succeeded =
+      res.ok &&
+      !payload?.errorCode &&
+      payload?.status !== 400 &&
+      payload?.status !== 'FAILED' &&
+      payload?.status !== 'ERROR' &&
+      Boolean(messageRequestId || res.status === 200);
+
+    const errorMessage = succeeded
+      ? null
+      : (payload?.detail ||
+         payload?.errorMessage ||
+         payload?.displayMessage ||
+         payload?.title ||
+         payload?.message ||
+         `Airtel error (${res.status})`);
+
+    return {
+      ok: succeeded,
+      statusCode: res.status,
+      messageRequestId,
+      error: errorMessage,
+      raw: payload,
+    };
   } catch (err: any) {
     console.warn('[AIRTEL-SMS] Error sending SMS:', err?.message || err);
-    return null;
+    return { ok: false, error: err?.message || 'Network error reaching Airtel IQ', messageRequestId: null };
   }
 }
 
@@ -76,9 +109,10 @@ async function dispatchAndLogAirtelSms(
     return null;
   }
 
+  const cleanPhone = String(emp.phone).replace(/\D/g, '');
   const smsRes = await sendAirtelSms(emp.phone, message, templateId);
-  const providerMessageId = smsRes?.messageId || smsRes?.requestId || smsRes?.data?.messageId || null;
-  const succeeded = Boolean(smsRes && (smsRes.status === 'SUCCESS' || smsRes.code === 200 || providerMessageId));
+  const providerMessageId = smsRes?.messageRequestId || null;
+  const succeeded = Boolean(smsRes?.ok);
 
   try {
     await supabase.from('communication_dispatch_logs').insert({
@@ -86,7 +120,7 @@ async function dispatchAndLogAirtelSms(
       employee_id: emp.id,
       channel: 'SMS',
       provider: 'AIRTEL_IQ',
-      recipient_phone: String(emp.phone).replace(/\D/g, ''),
+      recipient_phone: cleanPhone,
       template_key: templateKey,
       message_content: message,
       dynamic_payload: {
@@ -96,7 +130,7 @@ async function dispatchAndLogAirtelSms(
       },
       provider_message_id: providerMessageId,
       status: succeeded ? 'DELIVERED' : 'FAILED',
-      error_message: succeeded ? null : (smsRes?.errorMessage || smsRes?.message || 'Airtel gateway rejected or unconfirmed'),
+      error_message: succeeded ? null : (smsRes?.error || 'Airtel gateway rejected or unconfirmed'),
       cost_inr: succeeded ? 0.18 : 0.0,
     });
   } catch (logErr: any) {
@@ -451,6 +485,7 @@ serve(async (req: Request) => {
         const month = punchDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: '2-digit' });
         const year = punchDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric' });
         const dateFormatted = `${day}-${month}-${year}`;
+        const empName = (emp.first_name || emp.display_name?.split(' ')[0] || 'Employee').trim();
 
         // Fetch today's daily record for this employee
         const { data: dailyRows } = await supabase
@@ -526,8 +561,8 @@ serve(async (req: Request) => {
               // Dispatch Airtel DLT Checkout SMS for night shift
               if (emp.phone && !smsSentTodayCache.has(yCheckOutKey) && yTotalMins >= 180) {
                 const totalDurationFormatted = `${yHours} hrs ${yMins} mins`;
-                const msg = `Dear ${emp.first_name}, your check-out has been recorded at ${timeFormatted} today. Your total logged time is ${totalDurationFormatted}. Status: Present. - Joy PeopleHR.`;
-                console.log(`[ADMS-EDGE] 🌙 Dispatching Airtel checkout SMS for night shift to ${emp.first_name} (${emp.phone})`);
+                const msg = `Dear ${empName}, your check-out has been recorded at ${timeFormatted} today. Your total logged time is ${totalDurationFormatted}. Status: Present. - Joy PeopleHR.`;
+                console.log(`[ADMS-EDGE] 🌙 Dispatching Airtel checkout SMS for night shift to ${empName} (${emp.phone})`);
                 await dispatchAndLogAirtelSms(supabase, emp, organizationId, msg, DLT_CHECKOUT_TEMPLATE_ID, 'SMS_CHECK_OUT');
                 smsSentTodayCache.add(yCheckOutKey);
               }
@@ -556,7 +591,7 @@ serve(async (req: Request) => {
                 .eq('id', existingDaily.id);
 
               if (emp.phone && !smsSentTodayCache.has(checkInKey)) {
-                const msg = `Dear ${emp.first_name}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
+                const msg = `Dear ${empName}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
                 await dispatchAndLogAirtelSms(supabase, emp, organizationId, msg, DLT_CHECKIN_TEMPLATE_ID, 'SMS_CHECK_IN');
                 smsSentTodayCache.add(checkInKey);
               }
@@ -588,7 +623,7 @@ serve(async (req: Request) => {
             }, { onConflict: 'employee_id,attendance_date' });
 
             if (emp.phone && !smsSentTodayCache.has(checkInKey)) {
-              const msg = `Dear ${emp.first_name}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
+              const msg = `Dear ${empName}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
               await dispatchAndLogAirtelSms(supabase, emp, organizationId, msg, DLT_CHECKIN_TEMPLATE_ID, 'SMS_CHECK_IN');
               smsSentTodayCache.add(checkInKey);
             }
@@ -626,7 +661,7 @@ serve(async (req: Request) => {
           }, { onConflict: 'employee_id,attendance_date' });
 
           if (emp.phone && !smsSentTodayCache.has(checkInKey)) {
-            const msg = `Dear ${emp.first_name}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
+            const msg = `Dear ${empName}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
             await dispatchAndLogAirtelSms(supabase, emp, organizationId, msg, DLT_CHECKIN_TEMPLATE_ID, 'SMS_CHECK_IN');
             smsSentTodayCache.add(checkInKey);
           }
@@ -747,8 +782,8 @@ serve(async (req: Request) => {
         // Dispatch Airtel DLT Checkout SMS
         if (emp.phone && !alreadyHadCheckout && !smsSentTodayCache.has(checkOutKey) && totalMins >= 180) {
           const totalDurationFormatted = `${hours} hrs ${mins} mins`;
-          const msg = `Dear ${emp.first_name}, your check-out has been recorded at ${timeFormatted} today. Your total logged time is ${totalDurationFormatted}. Status: Present. - Joy PeopleHR.`;
-          console.log(`[ADMS-EDGE] 📤 Dispatching Airtel checkout SMS to ${emp.first_name} (${emp.phone})`);
+          const msg = `Dear ${empName}, your check-out has been recorded at ${timeFormatted} today. Your total logged time is ${totalDurationFormatted}. Status: Present. - Joy PeopleHR.`;
+          console.log(`[ADMS-EDGE] 📤 Dispatching Airtel checkout SMS to ${empName} (${emp.phone})`);
           const smsRes = await dispatchAndLogAirtelSms(supabase, emp, organizationId, msg, DLT_CHECKOUT_TEMPLATE_ID, 'SMS_CHECK_OUT');
           console.log(`[ADMS-EDGE] Airtel SMS API response:`, smsRes);
           smsSentTodayCache.add(checkOutKey);

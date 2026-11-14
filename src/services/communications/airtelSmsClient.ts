@@ -134,7 +134,6 @@ export class AirtelSmsClient {
         sourceAddress: senderId,
         dltTemplateId: dltTemplateId,
         messageType: messageType,
-        priority: req.priority || 'HIGH',
       };
 
       if (entityId) {
@@ -153,10 +152,17 @@ export class AirtelSmsClient {
 
       const data = await response.json().catch(() => ({}));
 
-      if (response.ok && (data.status === 'SUCCESS' || data.code === 200 || data.messageId || data.requestId)) {
+      const messageRequestId =
+        data.messageRequestId ||
+        data.messageId ||
+        data.requestId ||
+        data.data?.messageId ||
+        (response.ok ? `airtel-${Date.now()}` : null);
+
+      if (response.ok && !data.errorCode && data.status !== 'FAILED' && data.status !== 'ERROR' && (data.status === 'SUCCESS' || data.code === 200 || messageRequestId)) {
         return {
           success: true,
-          messageId: data.messageId || data.requestId || data.data?.messageId || `airtel-${Date.now()}`,
+          messageId: messageRequestId,
           status: 'DELIVERED',
           statusCode: response.status,
           provider: 'AIRTEL_IQ',
