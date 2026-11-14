@@ -10,6 +10,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') || '9137821052:AAH40OpD041tLdmC0_fheiZbk9_AxGs2TQ0';
 const AUTHORIZED_CHATS = new Set(['-5189746331', '9155594412']);
+const WARM_SECRET = Deno.env.get('SENTINEL_WARM_SECRET') || 'joy_sentinel_keepwarm_secret_99812';
 
 async function sendTelegramMessage(chatId: string | number, textHtml: string, replyMarkup?: any) {
   try {
@@ -92,6 +93,13 @@ serve(async (req: Request) => {
   }
 
   if (req.method !== 'POST') {
+    const inboundSecret = req.headers.get('x-sentinel-warm-secret') || new URL(req.url).searchParams.get('key');
+    if (inboundSecret !== WARM_SECRET) {
+      return new Response(JSON.stringify({ error: 'Unauthorized keep-warm ping' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     return new Response(JSON.stringify({ status: 'warm', function: 'telegram-webhook', timestamp: new Date().toISOString() }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -101,6 +109,13 @@ serve(async (req: Request) => {
   try {
     const url = new URL(req.url);
     if (url.searchParams.get('ping') === '1' || url.pathname.endsWith('/ping')) {
+      const inboundSecret = req.headers.get('x-sentinel-warm-secret') || url.searchParams.get('key');
+      if (inboundSecret !== WARM_SECRET) {
+        return new Response(JSON.stringify({ error: 'Unauthorized ping' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       return new Response(JSON.stringify({ status: 'warm', ping: 'pong', edge_time: Date.now() }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

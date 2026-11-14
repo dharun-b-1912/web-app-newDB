@@ -1,19 +1,29 @@
 /**
- * Cloudflare Worker / Cron Trigger Keep-Warm Script
+ * Cloudflare Worker / Cron Trigger Keep-Warm Script (Hardened & Secured)
  * 
- * Free Tier Limits:
- * - Cloudflare Workers: 100,000 requests/day (FREE)
- * - Cron trigger every 4 mins = 360 requests/day (0.36% of daily quota)
+ * Security Architecture:
+ * 1. Blocks public Internet access to your worker (returns 403 Forbidden).
+ * 2. Only allows requests that provide the secret token: `?token=YOUR_SECRET`
+ * 3. Authenticates outbound ping to Supabase Edge Function with:
+ *    `x-sentinel-warm-secret: joy_sentinel_keepwarm_secret_99812`
+ * 
+ * Free Tier Quota:
+ * - 4-minute cron trigger = 360 requests/day (0.36% of 100,000 free daily quota).
  */
 
+const WARM_SECRET = 'joy_sentinel_keepwarm_secret_99812';
+const PING_TARGET = `https://ysiajemrqakfngasehhi.supabase.co/functions/v1/telegram-webhook?ping=1&key=${WARM_SECRET}`;
+
 export default {
-  // 1. Cron Trigger Handler (fires every 4 minutes)
+  // 1. Cron Trigger Handler (Automated every 4 minutes)
   async scheduled(event, env, ctx) {
-    const PING_URL = 'https://ysiajemrqakfngasehhi.supabase.co/functions/v1/telegram-webhook?ping=1';
     try {
-      const response = await fetch(PING_URL, {
+      const response = await fetch(PING_TARGET, {
         method: 'GET',
-        headers: { 'User-Agent': 'Cloudflare-Worker-KeepWarm/1.0' }
+        headers: {
+          'x-sentinel-warm-secret': WARM_SECRET,
+          'User-Agent': 'Cloudflare-Worker-JoySentinel/1.0',
+        },
       });
       console.log(`[Keep-Warm Ping] Status: ${response.status}`);
     } catch (err) {
@@ -21,19 +31,42 @@ export default {
     }
   },
 
-  // 2. HTTP Fetch Handler (Optional: can also be used as a webhook proxy)
+  // 2. HTTP Fetch Handler (Protected with authorization token)
   async fetch(request, env, ctx) {
-    const PING_URL = 'https://ysiajemrqakfngasehhi.supabase.co/functions/v1/telegram-webhook?ping=1';
+    const url = new URL(request.url);
+    const clientToken = url.searchParams.get('token') || request.headers.get('x-sentinel-auth');
+
+    // Security Gate: Reject public visitors/scanners
+    if (clientToken !== WARM_SECRET) {
+      return new Response(JSON.stringify({
+        error: 'Forbidden',
+        message: 'Access restricted to authorized Joy PeopleHR DevOps maintainers.',
+      }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Authorized manual test trigger
     const t0 = Date.now();
-    const res = await fetch(PING_URL);
+    const res = await fetch(PING_TARGET, {
+      headers: {
+        'x-sentinel-warm-secret': WARM_SECRET,
+        'User-Agent': 'Cloudflare-Worker-JoySentinel/1.0',
+      },
+    });
     const latency = Date.now() - t0;
+
     return new Response(JSON.stringify({
       status: 'warm',
       upstream_status: res.status,
       edge_latency_ms: latency,
-      provider: 'Cloudflare Worker Free Tier'
+      secured: true,
+      provider: 'Cloudflare Worker Free Tier',
+      timestamp: new Date().toISOString(),
     }), {
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
-  }
+  },
 };
+
