@@ -215,81 +215,85 @@ export const FaceAttendAttemptsTab: React.FC<{
                   const info = getDecisionInfo(a);
                   return (
                     <tr key={a.id} className="hover:bg-gray-50/70 transition-colors">
-                      <td className="py-3 px-4 align-top">
-                        <div className="font-semibold text-gray-900">{a.employee_name}</div>
-                        <div className="text-[11px] text-gray-500 font-mono">
+                      <td className="py-3 px-4 align-top min-w-[190px]">
+                        <div className="font-semibold text-gray-900 leading-tight">{a.employee_name}</div>
+                        <div className="text-[11px] text-gray-500 font-mono mt-0.5 whitespace-nowrap">
                           {a.employee_code ? `${a.employee_code} • ` : ''}
-                          {new Date(a.created_at).toLocaleString('en-IN', {
+                          {new Date(a.created_at).toLocaleDateString('en-IN', {
                             day: '2-digit',
                             month: 'short',
                             year: 'numeric',
+                          })}
+                        </div>
+                        <div className="text-[10px] text-gray-400 font-mono mt-0.5 whitespace-nowrap">
+                          {new Date(a.created_at).toLocaleTimeString('en-IN', {
                             hour: '2-digit',
                             minute: '2-digit',
                             second: '2-digit',
                             hour12: true,
-                          })}
-                        </div>
-                        <div className="text-[10px] text-gray-400 font-mono mt-0.5">
-                          ID: {a.correlation_id.slice(0, 8)}
+                          })}{' '}
+                          • ID: {a.correlation_id.slice(0, 8)}
                         </div>
                       </td>
-                      <td className="py-3 px-3 align-top">
+                      <td className="py-3 px-3 align-top whitespace-nowrap">
                         <span
-                          className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${
+                          className={`inline-block px-2.5 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap ${
                             a.punch_type === 'CHECK_IN'
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'bg-purple-50 text-purple-700'
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                              : 'bg-purple-50 text-purple-700 border border-purple-200'
                           }`}
                         >
                           {a.punch_type === 'CHECK_IN' ? 'Check-In' : 'Check-Out'}
                         </span>
                       </td>
-                      <td className="py-3 px-3 align-top">
-                        <div className="font-semibold text-gray-900">
+                      <td className="py-3 px-3 align-top whitespace-nowrap">
+                        <div className="font-semibold text-gray-900 text-xs">
                           {a.face_similarity_score != null ? `${a.face_similarity_score.toFixed(1)}%` : '—'}
                         </div>
-                        <div className="text-[10px] text-gray-400">{a.provider_code || 'BUILTIN'}</div>
+                        <div className="text-[10px] text-gray-400 font-mono mt-0.5 uppercase tracking-wider">
+                          {a.provider_code || 'BUILTIN'}
+                        </div>
                       </td>
-                      <td className="py-3 px-3 align-top">
-                        <div className="font-semibold text-gray-900">
+                      <td className="py-3 px-3 align-top whitespace-nowrap">
+                        <div className="font-semibold text-gray-900 text-xs">
                           {a.liveness_score != null ? `${a.liveness_score.toFixed(0)}%` : '—'}
                         </div>
                         <span
-                          className={`inline-block text-[11px] font-medium ${
+                          className={`inline-block text-[11px] font-medium whitespace-nowrap mt-0.5 ${
                             a.liveness_passed ? 'text-emerald-600' : 'text-rose-600'
                           }`}
                         >
                           {a.liveness_passed ? 'Pass (Real)' : 'Fail (Spoof)'}
                         </span>
                       </td>
-                      <td className="py-3 px-4 align-top">
-                        <div className="flex items-center gap-1 font-medium text-gray-800">
+                      <td className="py-3 px-4 align-top min-w-[190px]">
+                        <div className="flex items-center gap-1.5 font-semibold text-gray-800">
                           <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span className="truncate max-w-[180px]">
+                          <span className="truncate max-w-[170px]" title={a.work_location_name || ''}>
                             {a.work_location_name || (a.geofence_passed ? 'Authorized Site' : 'Unknown Site')}
                           </span>
                         </div>
-                        <div className="text-[11px] text-gray-500 mt-0.5">
+                        <div className="text-[11px] text-gray-500 mt-0.5 whitespace-nowrap">
                           {a.distance_meters != null ? `${Math.round(a.distance_meters)}m from center` : 'No GPS'}{' '}
                           &bull; {a.gps_accuracy_meters != null ? `±${Math.round(a.gps_accuracy_meters)}m` : '—'}
                         </div>
                         {a.is_mock_location && (
-                          <span className="inline-block px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 text-[10px] font-bold mt-0.5">
+                          <span className="inline-block px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 text-[10px] font-bold mt-1">
                             FAKE GPS DETECTED
                           </span>
                         )}
                       </td>
-                      <td className="py-3 px-4 align-top">
-                        <span className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold ${info.badgeClass}`}>
+                      <td className="py-3 px-4 align-top min-w-[160px]">
+                        <span className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap ${info.badgeClass}`}>
                           {info.label}
                         </span>
                         {a.failure_reason && a.decision !== 'MATCH' && (
-                          <div className="text-[11px] text-gray-500 mt-1 max-w-[190px] leading-tight">
+                          <div className="text-[11px] text-gray-500 mt-1.5 max-w-[160px] leading-tight">
                             {a.failure_reason}
                           </div>
                         )}
                       </td>
-                      <td className="py-3 px-4 align-top">
+                      <td className="py-3 px-4 align-top min-w-[320px]">
                         <div className="bg-gray-50 rounded-lg p-2.5 border border-gray-200/80">
                           <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 mb-1">
                             {a.decision === 'MATCH' ? (
@@ -297,7 +301,7 @@ export const FaceAttendAttemptsTab: React.FC<{
                             ) : (
                               <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                             )}
-                            <span>{info.actionHint}</span>
+                            <span className="font-semibold">{info.actionHint}</span>
                           </div>
                           <p className="text-[11px] text-gray-600 leading-relaxed">{info.solution}</p>
                         </div>
