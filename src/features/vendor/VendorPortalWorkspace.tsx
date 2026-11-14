@@ -169,6 +169,10 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
   const { user } = useAuth();
   const { showToast } = useToast();
   const [workerSearchQuery, setWorkerSearchQuery] = useState('');
+  const activeOrgId =
+    user?.organization_id ||
+    (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : null) ||
+    '0c621892-e938-4707-9957-13534ea32c19';
   const primaryRole = user?.roles?.[0]?.name || (user as any)?.role || '';
   const isVendorRole =
     primaryRole === 'Vendor Admin' ||
@@ -3623,7 +3627,7 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
         {activeTab === 'pos' && (
           <VendorPurchaseOrdersTab
             viewMode={isVendorPortal ? 'VENDOR' : 'COMPANY'}
-            organizationId="org-joy-main"
+            organizationId={activeOrgId}
             vendorId={vendorProfile.vendorCode || undefined}
             onNavigateToInvoice={(poId) => {
               setSelectedPoForInvoice(poId);
@@ -3636,7 +3640,7 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
         {activeTab === 'attendance_recon' && (
           <VendorAttendanceEngineTab
             viewMode={isVendorPortal ? 'VENDOR_PORTAL' : 'COMPANY_HR'}
-            organizationId={vendorProfile.organizationId || 'org-joy-main'}
+            organizationId={vendorProfile.organizationId || activeOrgId}
             vendorId={vendorProfile.id || vendorProfile.vendorCode || 'VEN-JOY-001'}
             vendorName={vendorProfile.legalName || vendorProfile.tradeName || 'Joy Manpower Services Private Limited'}
             siteName={contracts[0]?.siteName || 'Chennai Manufacturing Plant (CHE 01)'}
@@ -3648,7 +3652,7 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
         {/* TAB: STATUTORY WAGE STATEMENT, BREAKUP & TAX INVOICE */}
         {activeTab === 'wage_statement' && (
           <VendorAttendanceReconciliationTab
-            organizationId={vendorProfile.organizationId || 'org-joy-main'}
+            organizationId={vendorProfile.organizationId || activeOrgId}
             vendorId={vendorProfile.legalName || 'JOY MANPOWER SERVICE'}
             viewMode={isVendorPortal ? 'VENDOR' : 'COMPANY'}
             onProceedToInvoice={(poId) => {
@@ -3662,7 +3666,7 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
         {activeTab === 'invoices' && (
           <VendorInvoicesTab
             vendorId={isVendorPortal ? (vendorProfile.vendorCode || undefined) : undefined}
-            organizationId="org-joy-main"
+            organizationId={activeOrgId}
             initialPoId={selectedPoForInvoice}
             viewMode={isVendorPortal ? 'VENDOR' : 'COMPANY'}
             onNavigateToPo={(poId) => {
@@ -3678,7 +3682,7 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
         {activeTab === 'assets' && (
           <VendorAssetAllocationTab
             workers={workforceList}
-            organizationId={vendorProfile.organizationId || user?.organization_id || 'org-joy-main'}
+            organizationId={vendorProfile.organizationId || activeOrgId}
             vendorId={vendorProfile.vendorCode || 'VND-JOY-01'}
             vendorName={vendorProfile.legalName || 'Joy Manpower Services Private Limited'}
             selectedSiteId={selectedSiteId}
@@ -3708,7 +3712,7 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
       <VendorOnboardingWizardModal
         isOpen={isVendorWizardOpen}
         onClose={() => setIsVendorWizardOpen(false)}
-        organizationId="org-joy-main"
+        organizationId={activeOrgId}
         onComplete={(submission: VendorOnboardingSubmission) => {
           const { vendorProfile: newProfile, contractMapping: newContract } =
             VendorOnboardingService.convertToActiveProfile(submission);

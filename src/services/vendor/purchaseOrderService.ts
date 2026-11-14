@@ -568,21 +568,29 @@ export class PurchaseOrderService {
       }
     }
 
-    // Merge in-memory POs
-    const memoryFiltered = Array.from(this.inMemoryPOs.values()).filter((p) => {
-      if (params.organizationId && p.organizationId && params.organizationId !== 'default' && params.organizationId !== 'org-joy-main' && p.organizationId !== params.organizationId) return false;
-      if (params.vendorId) {
-        const pVen = p.vendorId.toLowerCase();
-        const paramVen = params.vendorId.toLowerCase();
-        const isExactMatch = pVen === paramVen;
-        const isJoyAlias =
-          (pVen === 'joy manpower service' && (paramVen === 'vnd-joy-01' || paramVen === 'vnd-arjuna-01')) ||
-          ((pVen === 'vnd-joy-01' || pVen === 'vnd-arjuna-01') && paramVen === 'joy manpower service');
-        if (!isExactMatch && !isJoyAlias) return false;
-      }
-      if (params.status && p.status !== params.status) return false;
-      return true;
-    });
+    // Merge in-memory POs ONLY for the benchmark/demo org ('org-joy-main' or dev tenant), NEVER for client tenants
+    const isDevOrBenchmarkOrg =
+      !params.organizationId ||
+      params.organizationId === 'org-joy-main' ||
+      params.organizationId === '0c621892-e938-4707-9957-13534ea32c19' ||
+      params.organizationId === 'default';
+
+    const memoryFiltered = isDevOrBenchmarkOrg
+      ? Array.from(this.inMemoryPOs.values()).filter((p) => {
+          if (params.organizationId && p.organizationId && p.organizationId !== params.organizationId && params.organizationId !== 'org-joy-main' && params.organizationId !== '0c621892-e938-4707-9957-13534ea32c19') return false;
+          if (params.vendorId) {
+            const pVen = p.vendorId.toLowerCase();
+            const paramVen = params.vendorId.toLowerCase();
+            const isExactMatch = pVen === paramVen;
+            const isJoyAlias =
+              (pVen === 'joy manpower service' && (paramVen === 'vnd-joy-01' || paramVen === 'vnd-arjuna-01')) ||
+              ((pVen === 'vnd-joy-01' || pVen === 'vnd-arjuna-01') && paramVen === 'joy manpower service');
+            if (!isExactMatch && !isJoyAlias) return false;
+          }
+          if (params.status && p.status !== params.status) return false;
+          return true;
+        })
+      : [];
 
     // Deduplicate by ID
     const mergedMap = new Map<string, PurchaseOrder>();

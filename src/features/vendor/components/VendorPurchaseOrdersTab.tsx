@@ -36,6 +36,7 @@ import {
 } from '../../../types/vendorPortal';
 import { PurchaseOrderService } from '../../../services/vendor/purchaseOrderService';
 import { useToast } from '../../../components/ui/Toast';
+import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 
 interface Props {
   organizationId?: string;
@@ -46,12 +47,13 @@ interface Props {
 }
 
 export const VendorPurchaseOrdersTab: React.FC<Props> = ({
-  organizationId = 'org-joy-main',
+  organizationId,
   vendorId,
   viewMode = 'COMPANY',
   onCreateInvoiceFromPo,
   onNavigateToInvoice,
 }) => {
+  const effectiveOrgId = organizationId || getActiveOrgId();
   const { showToast } = useToast();
   const [error, setError] = useState<string | null>(null);
   const [pos, setPos] = useState<PurchaseOrder[]>([]);
@@ -102,7 +104,7 @@ export const VendorPurchaseOrdersTab: React.FC<Props> = ({
     setLoading(true);
     setError(null);
     const res = await PurchaseOrderService.getPurchaseOrders({
-      organizationId: viewMode === 'COMPANY' ? organizationId : undefined,
+      organizationId: viewMode === 'COMPANY' ? effectiveOrgId : undefined,
       vendorId: viewMode === 'VENDOR' ? (vendorId || 'JOY MANPOWER SERVICE') : undefined,
     });
 
@@ -117,7 +119,7 @@ export const VendorPurchaseOrdersTab: React.FC<Props> = ({
 
   useEffect(() => {
     fetchOrders();
-  }, [organizationId, vendorId, viewMode]);
+  }, [effectiveOrgId, vendorId, viewMode]);
 
   // Handle PO Creation (Company)
   const handleCreatePo = async (submitForApproval: boolean) => {
@@ -127,7 +129,7 @@ export const VendorPurchaseOrdersTab: React.FC<Props> = ({
     }
 
     const res = await PurchaseOrderService.createPurchaseOrder({
-      organizationId,
+      organizationId: effectiveOrgId,
       vendorId: newVendorId,
       poNumber: newPoNumber,
       contractReference: newContractRef,

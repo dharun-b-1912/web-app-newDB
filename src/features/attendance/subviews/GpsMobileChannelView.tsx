@@ -174,9 +174,10 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
   // Load Real Database Data
   const loadData = useCallback(async () => {
     try {
+      const activeOrgId = await workLocationService.resolveActiveOrgId();
       const [locs, asgns] = await Promise.all([
-        workLocationService.fetchLocationsFromDb(),
-        workLocationService.fetchAssignmentsFromDb(),
+        workLocationService.fetchLocationsFromDb(activeOrgId),
+        workLocationService.fetchAssignmentsFromDb(activeOrgId),
       ]);
       setLocations(locs);
       setAssignments(asgns);
@@ -1110,17 +1111,17 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
             <Button
               onClick={() => {
                 setSelectedLocation({
-                  name: 'Joy Corporate Solutions Private Limited (HQ)',
+                  name: '',
                   code: `LOC-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
                   location_type: 'OFFICE',
-                  address: 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur, Coimbatore, Tamil Nadu 641407',
-                  latitude: 11.0844364,
-                  longitude: 77.1262627,
+                  address: '',
+                  latitude: 11.0168,
+                  longitude: 76.9558,
                   geofence_radius_meters: 100,
                   accuracy_requirement_meters: 50,
                   is_active: true,
                 });
-                setGoogleMapsUrlInput('11.0844364, 77.1262627');
+                setGoogleMapsUrlInput('');
                 setIsEditingLocation(true);
               }}
               className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold rounded-xl text-xs py-2 px-4 shadow-xs flex items-center gap-1.5 cursor-pointer"
@@ -1130,8 +1131,38 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {locations.map((loc) => (
+          {locations.length === 0 ? (
+            <div className="p-12 text-center bg-white border border-dashed border-gray-300 rounded-2xl">
+              <Crosshair className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-gray-800">No Geofence Boundaries Configured</h4>
+              <p className="text-xs text-gray-500 max-w-md mx-auto mt-1 mb-4">
+                Define your facility coordinates and permitted radius to enforce authoritative mobile clock-in geofences for this company.
+              </p>
+              <Button
+                onClick={() => {
+                  setSelectedLocation({
+                    name: '',
+                    code: `LOC-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+                    location_type: 'OFFICE',
+                    address: '',
+                    latitude: 11.0168,
+                    longitude: 76.9558,
+                    geofence_radius_meters: 100,
+                    accuracy_requirement_meters: 50,
+                    is_active: true,
+                  });
+                  setGoogleMapsUrlInput('');
+                  setIsEditingLocation(true);
+                }}
+                className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold rounded-xl text-xs py-2 px-4 shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add First Work Location
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {locations.map((loc) => (
               <div key={loc.id} className="p-5 bg-white border border-gray-200/80 rounded-2xl shadow-2xs space-y-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
@@ -1196,7 +1227,8 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 

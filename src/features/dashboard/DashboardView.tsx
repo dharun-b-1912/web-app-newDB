@@ -120,6 +120,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       const companyId = activeCompany?.id;
 
       // 1. Fetch live employees, departments, approvals, activities & attendance in parallel
+      const targetOrgId = organization?.id || activeCompany?.organization_id || (typeof localStorage !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : null) || user?.organization_id;
       const [
         rawEmployees,
         departments,
@@ -129,9 +130,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       ] = await Promise.all([
         api.getEmployees(companyId ? { companyId } : undefined).catch(() => []),
         api.getDepartments(companyId).catch(() => []),
-        approvalService.getApprovalRequests().catch(() => []),
+        targetOrgId ? approvalService.getApprovalRequests({ organizationId: targetOrgId }).catch(() => []) : Promise.resolve([]),
         api.getAuditLogs().catch(() => []),
-        Promise.resolve(attendanceApi.getDailyAttendance(new Date().toISOString().slice(0, 10))),
+        attendanceApi.getDailyAttendanceAsync(new Date().toISOString().slice(0, 10)),
       ]);
       const employees = rawEmployees;
 

@@ -48,14 +48,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant,
     (primaryRole as string) === 'Vendor Partner' ||
     (user as any)?.role === 'Vendor Admin' ||
     (user as any)?.userType === 'VENDOR' ||
-    Boolean((user as any)?.vendor_id) ||
-    (currentNav && currentNav.startsWith('vendor')) ||
-    (typeof window !== 'undefined' && (
-      window.location.pathname.startsWith('/vendor') ||
-      window.location.pathname.includes('vendor-storage') ||
-      window.location.pathname.includes('vendor-settlement') ||
-      window.location.pathname.includes('vendor-portal')
-    ));
+    Boolean((user as any)?.vendor_id);
 
   // Runtime Environment Resolution
   const envInfo = getAppEnvironment();

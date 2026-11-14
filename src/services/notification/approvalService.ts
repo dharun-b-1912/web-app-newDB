@@ -51,14 +51,24 @@ export const approvalService = {
     organizationId?: string;
   }): Promise<ApprovalRequestItem[]> {
     let list: ApprovalRequestItem[] = [];
+    const targetOrgId = params?.organizationId || getActiveOrgId();
+
+    // Strict multi-tenant isolation: Never fetch cross-tenant data without explicit org ID
+    if (!targetOrgId) {
+      return [];
+    }
 
     if (isSupabaseEnabled) {
       try {
-        // 1. Fetch from approval_instances
+        // 1. Fetch from approval_instances scoped to target organization
         let query = supabase
           .from('approval_instances')
           .select('*')
           .order('created_at', { ascending: false });
+
+        if (targetOrgId !== 'platform-root') {
+          query = query.eq('organization_id', targetOrgId);
+        }
 
         if (params?.status && params.status !== 'ALL') {
           const canonicalStatus = params.status === 'Pending' ? 'IN_PROGRESS' : params.status === 'Approved' ? 'APPROVED' : 'REJECTED';
@@ -93,7 +103,7 @@ export const approvalService = {
           list.push(...instList);
         }
 
-        // 2. Fetch live pending leave requests
+        // 2. Fetch live pending leave requests scoped to target organization
         let leaveQuery = supabase
           .from('leave_requests')
           .select(`
@@ -117,6 +127,10 @@ export const approvalService = {
             )
           `)
           .order('created_at', { ascending: false });
+
+        if (targetOrgId !== 'platform-root') {
+          leaveQuery = leaveQuery.eq('organization_id', targetOrgId);
+        }
 
         if (params?.status && params.status !== 'ALL') {
           leaveQuery = leaveQuery.eq('status', params.status.toUpperCase());
@@ -153,7 +167,7 @@ export const approvalService = {
           list.push(...leaveList);
         }
 
-        // 3. Fetch live attendance regularization requests
+        // 3. Fetch live attendance regularization requests scoped to target organization
         let regQuery = supabase
           .from('attendance_regularizations')
           .select(`
@@ -177,6 +191,10 @@ export const approvalService = {
             )
           `)
           .order('created_at', { ascending: false });
+
+        if (targetOrgId !== 'platform-root') {
+          regQuery = regQuery.eq('organization_id', targetOrgId);
+        }
 
         if (params?.status && params.status !== 'ALL') {
           regQuery = regQuery.eq('status', params.status.toUpperCase());
@@ -216,7 +234,7 @@ export const approvalService = {
       }
     }
 
-    if (list.length === 0) {
+    if (list.length === 0 && targetOrgId === '0c621892-e938-4707-9957-13534ea32c19') {
       const local = getLocalApprovals();
       if (params?.status && params.status !== 'ALL') {
         list = local.filter((a) => a.status === params.status);

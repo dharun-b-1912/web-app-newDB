@@ -14,3 +14,4 @@ DROP FUNCTION IF EXISTS public.fn_sentinel_get_recurring_patterns();
 
 DROP TABLE IF EXISTS public.sentinel_postmortems;
 DROP TABLE IF EXISTS public.sentinel_slos;
+

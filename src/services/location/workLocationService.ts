@@ -264,10 +264,11 @@ class WorkLocationService {
     }
 
     try {
-      // Fetch work_locations from DB with RLS
+      // Fetch work_locations from DB with strict multi-tenant isolation
       const { data, error } = await supabase
         .from('work_locations')
         .select('*')
+        .eq('organization_id', effectiveOrgId)
         .order('name', { ascending: true });
 
       if (error) {
@@ -515,6 +516,7 @@ class WorkLocationService {
         const { data, error } = await supabase
           .from('employee_work_location_assignments')
           .select('*')
+          .eq('organization_id', effectiveOrgId)
           .eq('is_active', true);
 
         if (!error && Array.isArray(data)) {

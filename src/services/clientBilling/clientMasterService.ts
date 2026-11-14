@@ -416,23 +416,35 @@ export class ClientMasterService {
 
   // ─── Client Masters ────────────────────────────────────────────────────────
 
-  public static async getClientsAsync(): Promise<ClientMaster[]> {
-    this.ensureTestDataInitialized();
+  public static async getClientsAsync(orgId?: string): Promise<ClientMaster[]> {
+    const effectiveOrg = orgId || (await getOrgId());
+    const isDevOrg = !effectiveOrg || effectiveOrg === '0c621892-e938-4707-9957-13534ea32c19' || effectiveOrg === 'org-arjuna-natural' || effectiveOrg === 'default';
+
+    if (isDevOrg) {
+      this.ensureTestDataInitialized();
+    }
+
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('client_masters')
         .select('*')
         .order('created_at', { ascending: true });
 
+      if (effectiveOrg && effectiveOrg !== 'default') {
+        query = query.eq('organization_id', effectiveOrg);
+      }
+
+      const { data, error } = await query;
+
       if (error || !data || data.length === 0) {
-        return Array.from(_cache.clients.values());
+        return isDevOrg ? Array.from(_cache.clients.values()) : [];
       }
 
       const mapped = (data ?? []).map(rowToClient);
       mapped.forEach((c) => _cache.clients.set(c.id, c));
-      return Array.from(_cache.clients.values());
+      return mapped;
     } catch (_) {
-      return Array.from(_cache.clients.values());
+      return isDevOrg ? Array.from(_cache.clients.values()) : [];
     }
   }
 
@@ -498,14 +510,20 @@ export class ClientMasterService {
 
   // ─── Contracts ─────────────────────────────────────────────────────────────
 
-  public static async getContractsAsync(clientId?: string): Promise<ClientContract[]> {
-    this.ensureTestDataInitialized();
+  public static async getContractsAsync(clientId?: string, orgId?: string): Promise<ClientContract[]> {
+    const effectiveOrg = orgId || (await getOrgId());
+    const isDevOrg = !effectiveOrg || effectiveOrg === '0c621892-e938-4707-9957-13534ea32c19' || effectiveOrg === 'org-arjuna-natural' || effectiveOrg === 'default';
+
+    if (isDevOrg) {
+      this.ensureTestDataInitialized();
+    }
     try {
       let query = supabase.from('client_contracts').select('*').order('created_at', { ascending: true });
       if (clientId) query = query.eq('client_id', clientId);
 
       const { data, error } = await query;
       if (error || !data || data.length === 0) {
+        if (!isDevOrg) return [];
         const cached = Array.from(_cache.contracts.values());
         return clientId ? cached.filter((c) => c.client_id === clientId) : cached;
       }
@@ -515,6 +533,7 @@ export class ClientMasterService {
       const all = Array.from(_cache.contracts.values());
       return clientId ? all.filter((c) => c.client_id === clientId) : all;
     } catch (_) {
+      if (!isDevOrg) return [];
       const cached = Array.from(_cache.contracts.values());
       return clientId ? cached.filter((c) => c.client_id === clientId) : cached;
     }

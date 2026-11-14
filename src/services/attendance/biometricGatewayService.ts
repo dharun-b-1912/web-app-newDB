@@ -994,12 +994,13 @@ class BiometricGatewayService {
   // 1. GATEWAY AGENT MANAGEMENT
   // ==========================================================================
 
-  getGatewayAgents(): BiometricGatewayAgent[] {
+  getGatewayAgents(orgId?: string): BiometricGatewayAgent[] {
+    const targetOrg = orgId || getActiveOrgId();
     const list = getStore<BiometricGatewayAgent[]>(STORAGE_KEYS.AGENTS, []);
     if (!list || !Array.isArray(list)) {
       return [];
     }
-    return list;
+    return list.filter(a => a.organization_id === targetOrg);
   }
 
   async syncLocalAgentStatus(): Promise<BiometricGatewayAgent | null> {
@@ -1155,29 +1156,33 @@ class BiometricGatewayService {
 
     let list = getStore<BiometricDevice[]>(STORAGE_KEYS.DEVICES, null as any);
     if (list === null) {
-      const defaultDevice: BiometricDevice = {
-        id: 'c7286b0d-d9d5-4cc2-9045-578d1d4cc464',
-        organization_id: targetOrg,
-        gateway_agent_id: 'agent-cbe-01',
-        device_name: 'eSSL AI-FACE MAGNUM Terminal — Main Entrance',
-        device_type: 'Facial Recognition',
-        vendor: 'eSSL',
-        model: 'AI-FACE MAGNUM',
-        serial_number: 'TDBD253600550',
-        ip_address: '192.168.1.201',
-        port: 4370,
-        location_description: 'Main Entrance',
-        branch: 'Coimbatore Plant & Manufacturing Unit',
-        direction_mode: 'BOTH',
-        status: 'Online',
-        registered_users_count: 0,
-        sync_frequency_mins: 1,
-        last_sync: new Date().toISOString(),
-        last_punch_at: '2026-10-09T08:01:34.000Z',
-        last_attendance_sync_at: new Date().toISOString(),
-      };
-      list = [defaultDevice];
-      setStore(STORAGE_KEYS.DEVICES, list);
+      if (targetOrg === '0c621892-e938-4707-9957-13534ea32c19') {
+        const defaultDevice: BiometricDevice = {
+          id: 'c7286b0d-d9d5-4cc2-9045-578d1d4cc464',
+          organization_id: targetOrg,
+          gateway_agent_id: 'agent-cbe-01',
+          device_name: 'eSSL AI-FACE MAGNUM Terminal — Main Entrance',
+          device_type: 'Facial Recognition',
+          vendor: 'eSSL',
+          model: 'AI-FACE MAGNUM',
+          serial_number: 'TDBD253600550',
+          ip_address: '192.168.1.201',
+          port: 4370,
+          location_description: 'Main Entrance',
+          branch: 'Coimbatore Plant & Manufacturing Unit',
+          direction_mode: 'BOTH',
+          status: 'Online',
+          registered_users_count: 0,
+          sync_frequency_mins: 1,
+          last_sync: new Date().toISOString(),
+          last_punch_at: '2026-10-09T08:01:34.000Z',
+          last_attendance_sync_at: new Date().toISOString(),
+        };
+        list = [defaultDevice];
+        setStore(STORAGE_KEYS.DEVICES, list);
+      } else {
+        list = [];
+      }
     }
     if (!Array.isArray(list)) list = [];
 
@@ -1202,9 +1207,9 @@ class BiometricGatewayService {
       }
     }
 
-    // Strict tenant isolation: Filter devices belonging to targetOrg
-    const tenantDevices = list.filter(d => !d.organization_id || d.organization_id === targetOrg);
-    return tenantDevices.length > 0 ? tenantDevices : list;
+    // Strict tenant isolation: ONLY return devices belonging to targetOrg
+    const tenantDevices = list.filter(d => d.organization_id === targetOrg);
+    return tenantDevices;
   }
 
   public findDevice(deviceId?: string): BiometricDevice | undefined {
@@ -1255,16 +1260,6 @@ class BiometricGatewayService {
           .eq('organization_id', targetOrg)
           .abortSignal(ctrl.signal);
         clearTimeout(tid);
-
-        if ((!data || data.length === 0) && targetOrg !== '0c621892-e938-4707-9957-13534ea32c19') {
-          const fallbackDevs = await supabase
-            .from('biometric_devices')
-            .select('*')
-            .eq('organization_id', '0c621892-e938-4707-9957-13534ea32c19');
-          if (fallbackDevs.data && fallbackDevs.data.length > 0) {
-            data = fallbackDevs.data;
-          }
-        }
 
         if (!error && Array.isArray(data) && data.length > 0) {
           const rawPunches = this.getRawPunches(1);

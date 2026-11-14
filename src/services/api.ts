@@ -622,9 +622,14 @@ export const api = {
   },
 
   async getOrganization(): Promise<Organization> {
+    const activeOrgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : null;
     if (isSupabaseEnabled) {
       try {
-        const { data, error } = await supabase.from('organizations').select('*').limit(1).maybeSingle();
+        let q = supabase.from('organizations').select('*');
+        if (activeOrgId && isValidUUID(activeOrgId)) {
+          q = q.eq('id', activeOrgId);
+        }
+        const { data, error } = await q.limit(1).maybeSingle();
         if (!error && data) {
           const org: Organization = {
             id: data.id,

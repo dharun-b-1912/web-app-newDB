@@ -111,9 +111,14 @@ export const roleResolutionService = {
         const profAbort = new AbortController();
         const profTimer = setTimeout(() => profAbort.abort(), 15000);
 
+        const preferredOrgId = userMeta.organization_id || 
+          appMeta.organization_id || 
+          (cachedUser as any)?.organization_id || 
+          (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : null);
+
         // First try finding by auth_user_id
         if (authUserId) {
-          const { data: profById } = await supabase
+          const { data: profsById } = await supabase
             .from('user_profiles')
             .select(`
               id,
@@ -126,6 +131,7 @@ export const roleResolutionService = {
               avatar_url,
               status,
               role,
+              updated_at,
               user_roles (
                 id,
                 role_id,
@@ -140,17 +146,21 @@ export const roleResolutionService = {
               )
             `)
             .eq('auth_user_id', authUserId)
-            .abortSignal(profAbort.signal)
-            .maybeSingle();
+            .order('updated_at', { ascending: false })
+            .abortSignal(profAbort.signal);
 
-          if (profById) {
-            profileRow = profById;
+          if (profsById && profsById.length > 0) {
+            if (preferredOrgId) {
+              profileRow = profsById.find((p: any) => p.organization_id === preferredOrgId) || profsById[0];
+            } else {
+              profileRow = profsById[0];
+            }
           }
         }
 
         // If not found by auth_user_id, search by email
         if (!profileRow && emailLower) {
-          const { data: profByEmail } = await supabase
+          const { data: profsByEmail } = await supabase
             .from('user_profiles')
             .select(`
               id,
@@ -163,6 +173,7 @@ export const roleResolutionService = {
               avatar_url,
               status,
               role,
+              updated_at,
               user_roles (
                 id,
                 role_id,
@@ -177,18 +188,22 @@ export const roleResolutionService = {
               )
             `)
             .eq('email', emailLower)
-            .abortSignal(profAbort.signal)
-            .maybeSingle();
+            .order('updated_at', { ascending: false })
+            .abortSignal(profAbort.signal);
           clearTimeout(profTimer);
 
-          if (profByEmail) {
-            profileRow = profByEmail;
-            if (authUserId && profByEmail.auth_user_id !== authUserId) {
+          if (profsByEmail && profsByEmail.length > 0) {
+            if (preferredOrgId) {
+              profileRow = profsByEmail.find((p: any) => p.organization_id === preferredOrgId) || profsByEmail[0];
+            } else {
+              profileRow = profsByEmail[0];
+            }
+            if (authUserId && profileRow.auth_user_id !== authUserId) {
               try {
                 await supabase
                   .from('user_profiles')
                   .update({ auth_user_id: authUserId, status: 'ACTIVE' })
-                  .eq('id', profByEmail.id);
+                  .eq('id', profileRow.id);
               } catch (_) {}
             }
           }

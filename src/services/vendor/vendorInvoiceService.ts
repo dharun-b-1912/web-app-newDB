@@ -946,8 +946,15 @@ export class VendorInvoiceService {
       }
     }
 
-    // Merge in-memory invoices
+    // Merge in-memory invoices with strict multi-tenant isolation
+    const isDevOrBenchmarkOrg =
+      !params.organizationId ||
+      params.organizationId === 'org-joy-main' ||
+      params.organizationId === '0c621892-e938-4707-9957-13534ea32c19' ||
+      params.organizationId === 'default';
+
     const memoryFiltered = Array.from(this.inMemoryInvoices.values()).filter((inv) => {
+      if (!isDevOrBenchmarkOrg && inv.organizationId !== params.organizationId) return false;
       if (params.organizationId && inv.organizationId && params.organizationId !== 'default' && params.organizationId !== 'org-joy-main' && inv.organizationId !== params.organizationId) return false;
       if (params.vendorId && params.vendorId !== 'ALL') {
         const invVen = inv.vendorId.toLowerCase();
