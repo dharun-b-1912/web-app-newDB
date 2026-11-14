@@ -273,13 +273,19 @@ export const roleResolutionService = {
 
             if (employeeId) {
               empQuery = empQuery.eq('id', employeeId);
+              if (organizationId && isValidUUID(organizationId) && organizationId !== 'platform-root') {
+                empQuery = empQuery.eq('organization_id', organizationId);
+              }
             } else if (emailLower) {
               empQuery = empQuery.or(`work_email.ilike.${emailLower},personal_email.ilike.${emailLower}`);
+              if (organizationId && isValidUUID(organizationId) && organizationId !== 'platform-root') {
+                empQuery = empQuery.eq('organization_id', organizationId);
+              }
             }
 
             const { data: empRow } = await empQuery.maybeSingle();
 
-            if (empRow) {
+            if (empRow && (!organizationId || empRow.organization_id === organizationId)) {
               if (!employeeId) employeeId = empRow.id;
               
               const empFullName = empRow.display_name || `${empRow.first_name || ''} ${empRow.last_name || ''}`.trim();

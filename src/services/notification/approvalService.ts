@@ -15,20 +15,26 @@ const isValidUUID = (id?: string | null): boolean => {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 };
 
-function getLocalApprovals(): ApprovalRequestItem[] {
+function getLocalApprovals(tenantId = getActiveOrgId()): ApprovalRequestItem[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_APPROVALS);
+    const key = `${STORAGE_KEY_APPROVALS}_${tenantId || 'global'}`;
+    const raw = localStorage.getItem(key);
+    if (!raw && (tenantId === '0c621892-e938-4707-9957-13534ea32c19' || tenantId === 'org-joy-01')) {
+      const legacyRaw = localStorage.getItem(STORAGE_KEY_APPROVALS);
+      return legacyRaw ? JSON.parse(legacyRaw) : [];
+    }
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function setLocalApprovals(data: ApprovalRequestItem[]): void {
+function setLocalApprovals(data: ApprovalRequestItem[], tenantId = getActiveOrgId()): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEY_APPROVALS, JSON.stringify(data));
+    const key = `${STORAGE_KEY_APPROVALS}_${tenantId || 'global'}`;
+    localStorage.setItem(key, JSON.stringify(data));
   } catch {
     // ignore
   }
@@ -235,7 +241,7 @@ export const approvalService = {
     }
 
     if (list.length === 0 && targetOrgId === '0c621892-e938-4707-9957-13534ea32c19') {
-      const local = getLocalApprovals();
+      const local = getLocalApprovals(targetOrgId);
       if (params?.status && params.status !== 'ALL') {
         list = local.filter((a) => a.status === params.status);
       } else {

@@ -544,10 +544,23 @@ export default defineConfig(({ mode }) => {
 
             if (req.method === 'GET' && (pathname === '/api/workforce/sync' || pathname === '/api/employees/sync')) {
               try {
+                const urlObj = new URL(req.url || '', 'http://localhost');
+                const orgId = urlObj.searchParams.get('organizationId') || urlObj.searchParams.get('organization_id');
+                if (!orgId || !isValidUUID(orgId) || orgId === 'platform-root') {
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({
+                    success: true,
+                    count: 0,
+                    employees: [],
+                  }));
+                }
+
                 const supabaseAdmin = await getSupabaseAdmin(env);
                 const { data: employees, error } = await supabaseAdmin
                   .from('employees')
                   .select('*')
+                  .eq('organization_id', orgId)
                   .order('created_at', { ascending: false });
 
                 if (error) {
@@ -560,7 +573,7 @@ export default defineConfig(({ mode }) => {
                 res.setHeader('Content-Type', 'application/json');
                 return res.end(JSON.stringify({
                   success: true,
-                  count: employees.length,
+                  count: employees?.length || 0,
                   employees: employees || [],
                 }));
               } catch (err: any) {

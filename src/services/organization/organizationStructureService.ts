@@ -9,6 +9,7 @@ import { Company, Branch, BranchType, Department, Team, Location, OrganizationSu
 import { hrEventBus } from '../hrEventBus';
 import { api, isValidUUID, ensureUUID, DEFAULT_COMPANIES, DEFAULT_BRANCHES, DEFAULT_DEPARTMENTS } from '../api';
 import { appLogger } from '../../lib/appLogger';
+import { OrganizationContextService } from '../organizationContextService';
 
 const DEPT_STORAGE_KEY = 'workforce_departments_custom';
 const BRANCH_STORAGE_KEY = 'workforce_branches_custom';
@@ -204,14 +205,16 @@ class OrganizationStructureService {
   async updateLegalEntity(id: string, updates: Partial<Company>): Promise<Company> {
     if (isSupabaseEnabled && supabase && isValidUUID(id)) {
       try {
-        const dbUpdates: any = {};
+        const dbUpdates: any = { updated_at: new Date().toISOString() };
         if (updates.legal_name) dbUpdates.legal_name = updates.legal_name;
         if (updates.trade_name !== undefined) dbUpdates.trade_name = updates.trade_name;
         if (updates.statutory_registration_no !== undefined) dbUpdates.cin_number = updates.statutory_registration_no;
         if (updates.tax_id !== undefined) dbUpdates.pan_number = updates.tax_id;
         if (updates.address !== undefined) dbUpdates.registered_address = updates.address;
-        if (updates.city) dbUpdates.city = updates.city;
-        if (updates.country) dbUpdates.country = updates.country;
+        if (updates.city !== undefined) dbUpdates.city = updates.city;
+        if (updates.state !== undefined) dbUpdates.state = updates.state;
+        if (updates.country !== undefined) dbUpdates.country = updates.country;
+        if (updates.postal_code !== undefined) dbUpdates.postal_code = updates.postal_code;
         if (updates.status !== undefined) dbUpdates.is_active = updates.status !== 'Inactive';
 
         const { data, error } = await supabase.from('companies').update(dbUpdates).eq('id', id).select().maybeSingle();
@@ -225,6 +228,8 @@ class OrganizationStructureService {
             tax_id: data.pan_number || data.gstin || updates.tax_id || '',
             country: data.country || 'India',
             city: data.city || 'Coimbatore',
+            state: data.state || updates.state || 'Tamil Nadu',
+            postal_code: data.postal_code || updates.postal_code || '',
             currency: 'INR',
             timezone: 'Asia/Kolkata',
             address: data.registered_address || updates.address || '',
@@ -237,6 +242,7 @@ class OrganizationStructureService {
             localStorage.setItem('workforce_companies', JSON.stringify(existingComps.map((c: any) => c.id === id ? updated : c)));
           } catch (_) {}
 
+          OrganizationContextService.clearCache();
           window.dispatchEvent(new CustomEvent('organization:context_updated'));
           hrEventBus.emit('organization.legal_entity_updated', { legalEntity: updated });
           return updated;
@@ -256,6 +262,7 @@ class OrganizationStructureService {
       localStorage.setItem('workforce_companies', JSON.stringify(existingComps.map((c: any) => c.id === id ? localUpdated : c)));
     } catch (_) {}
 
+    OrganizationContextService.clearCache();
     window.dispatchEvent(new CustomEvent('organization:context_updated'));
     hrEventBus.emit('organization.legal_entity_updated', { legalEntity: localUpdated });
     return localUpdated;

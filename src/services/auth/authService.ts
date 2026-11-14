@@ -856,7 +856,20 @@ export const authService = {
 
       localStorage.removeItem('workforce_logged_out');
       if (user.organization_id && user.organization_id !== 'platform-root') {
+        const prevOrg = localStorage.getItem(STORAGE_KEYS.ACTIVE_ORG) || localStorage.getItem('joy_active_tenant_id');
         localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG, user.organization_id);
+        localStorage.setItem('joy_active_tenant_id', user.organization_id);
+        sessionStorage.setItem(STORAGE_KEYS.ACTIVE_ORG, user.organization_id);
+        sessionStorage.setItem('joy_active_tenant_id', user.organization_id);
+
+        // If switching between organizations, flush tenant-scoped caches to prevent cross-tenant data leakage
+        if (prevOrg && prevOrg !== user.organization_id) {
+          localStorage.removeItem('workforceos_employees_v2');
+          localStorage.removeItem('workforceos_locations_v2');
+          localStorage.removeItem('workforce_rosters_v2');
+          localStorage.removeItem('joy_approval_requests_v1');
+          localStorage.removeItem('workforce_context_cache');
+        }
       }
     } catch (e) {
       console.warn('[AuthService] Could not cache session:', e);

@@ -152,6 +152,8 @@ export const OrganizationView: React.FC = () => {
   const [editTaxId, setEditTaxId] = useState('');
   const [editCountry, setEditCountry] = useState('India');
   const [editCity, setEditCity] = useState('');
+  const [editState, setEditState] = useState('Tamil Nadu');
+  const [editPostalCode, setEditPostalCode] = useState('');
   const [editAddress, setEditAddress] = useState('');
 
   const canManageBranches =
@@ -176,6 +178,8 @@ export const OrganizationView: React.FC = () => {
     setEditTaxId(comp.tax_id || '');
     setEditCountry(comp.country || 'India');
     setEditCity(comp.city || 'Coimbatore');
+    setEditState(comp.state || 'Tamil Nadu');
+    setEditPostalCode(comp.postal_code || '');
     setEditAddress(comp.address || '');
     setIsViewEntityModalOpen(false);
     setIsEditEntityModalOpen(true);
@@ -193,6 +197,8 @@ export const OrganizationView: React.FC = () => {
         tax_id: editTaxId,
         country: editCountry,
         city: editCity || 'Coimbatore',
+        state: editState || 'Tamil Nadu',
+        postal_code: editPostalCode,
         address: editAddress,
       });
       await reloadTenant();
@@ -1812,6 +1818,29 @@ export const OrganizationView: React.FC = () => {
                 onChange={e => setEditCity(e.target.value)}
                 required
                 className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#14532D]"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">State / Region</label>
+              <input
+                type="text"
+                value={editState}
+                onChange={e => setEditState(e.target.value)}
+                placeholder="e.g. Tamil Nadu"
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#14532D]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Postal Code (PIN)</label>
+              <input
+                type="text"
+                value={editPostalCode}
+                onChange={e => setEditPostalCode(e.target.value)}
+                placeholder="e.g. 641014"
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#14532D] font-mono"
               />
             </div>
           </div>

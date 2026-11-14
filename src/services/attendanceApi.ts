@@ -99,11 +99,11 @@ export const attendanceApi = {
     } catch {}
   },
 
-  async getDailyAttendanceAsync(date?: string, department?: string, status?: string, search?: string): Promise<AttendanceDaily[]> {
+  async getDailyAttendanceAsync(date?: string, department?: string, status?: string, search?: string, orgId?: string): Promise<AttendanceDaily[]> {
     if (isSupabaseEnabled) {
       try {
         await ensureSupabaseSession();
-        const tenantId = getActiveOrgId();
+        const tenantId = (orgId && isValidUUID(orgId) && orgId !== 'platform-root') ? orgId : getActiveOrgId();
         const ctrl = new AbortController();
         const tid = setTimeout(() => ctrl.abort(), 12000);
 

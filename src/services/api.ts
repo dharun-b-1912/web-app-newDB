@@ -851,14 +851,16 @@ export const api = {
 
     if (isSupabaseEnabled && isValidUUID(id)) {
       try {
-        const dbUpdates: any = {};
+        const dbUpdates: any = { updated_at: new Date().toISOString() };
         if (updates.legal_name) dbUpdates.legal_name = updates.legal_name;
         if (updates.trade_name) dbUpdates.trade_name = updates.trade_name;
         if (updates.statutory_registration_no) dbUpdates.cin_number = updates.statutory_registration_no;
         if (updates.tax_id) dbUpdates.pan_number = updates.tax_id;
-        if (updates.address) dbUpdates.registered_address = updates.address;
-        if (updates.city) dbUpdates.city = updates.city;
-        if (updates.country) dbUpdates.country = updates.country;
+        if (updates.address !== undefined) dbUpdates.registered_address = updates.address;
+        if (updates.city !== undefined) dbUpdates.city = updates.city;
+        if (updates.state !== undefined) dbUpdates.state = updates.state;
+        if (updates.country !== undefined) dbUpdates.country = updates.country;
+        if (updates.postal_code !== undefined) dbUpdates.postal_code = updates.postal_code;
         if (updates.status !== undefined) dbUpdates.is_active = updates.status !== 'Inactive';
 
         const { error } = await supabase.from('companies').update(dbUpdates).eq('id', id);
@@ -878,6 +880,10 @@ export const api = {
     const active = getStorage<Company | null>(KEYS.ACTIVE_COMPANY, null);
     if (active && active.id === id) {
       setStorage(KEYS.ACTIVE_COMPANY, updated);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('organization:context_updated'));
     }
 
     return updated;
@@ -1004,10 +1010,14 @@ export const api = {
       });
     } catch (_) {}
 
-    // 2. Fetch specific work_locations from Supabase if configured
+    // 2. Fetch specific work_locations from Supabase if configured with strict multi-tenant isolation
+    const targetOrg = (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : null) || getActiveOrgId();
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('work_locations').select('*');
+        if (targetOrg && targetOrg !== 'platform-root' && isValidUUID(targetOrg)) {
+          q = q.eq('organization_id', targetOrg);
+        }
         if (branchOrCompanyId && isValidUUID(branchOrCompanyId)) {
           q = q.eq('branch_id', branchOrCompanyId);
         }
@@ -1026,13 +1036,15 @@ export const api = {
       }
     }
 
-    // 3. Include default fallback locations
-    DEFAULT_LOCATIONS.forEach((l) => {
-      if (!locMap.has(l.id)) locMap.set(l.id, l);
-    });
+    // 3. Include default fallback locations ONLY for benchmark JCS tenant
+    if (!targetOrg || targetOrg === '0c621892-e938-4707-9957-13534ea32c19' || targetOrg === 'platform-root') {
+      DEFAULT_LOCATIONS.forEach((l) => {
+        if (!locMap.has(l.id)) locMap.set(l.id, l);
+      });
+    }
 
     const result = Array.from(locMap.values());
-    setStorage(KEYS.LOCATIONS, result);
+    setStorage(targetOrg ? `${KEYS.LOCATIONS}_${targetOrg}` : KEYS.LOCATIONS, result);
     return result;
   },
 
@@ -2136,7 +2148,8 @@ export const api = {
             // Resilient Workforce Sync fallback to backend proxy
             try {
               const syncOrigin = typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'https://app.joypeoplehr.com' : '';
-              const syncRes = await fetch(`${syncOrigin}/api/workforce/sync`, { signal: AbortSignal.timeout(4000) });
+              const syncOrgParam = targetOrg && isValidUUID(targetOrg) && targetOrg !== 'platform-root' ? `?organizationId=${encodeURIComponent(targetOrg)}` : '';
+              const syncRes = await fetch(`${syncOrigin}/api/workforce/sync${syncOrgParam}`, { signal: AbortSignal.timeout(4000) });
               if (syncRes.ok) {
                 const syncData = await syncRes.json();
                 if (syncData.success && Array.isArray(syncData.employees) && syncData.employees.length > 0) {
@@ -2182,7 +2195,8 @@ export const api = {
           // Resilient Workforce Sync fallback to backend proxy
           try {
             const syncOrigin = typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'https://app.joypeoplehr.com' : '';
-            const syncRes = await fetch(`${syncOrigin}/api/workforce/sync`, { signal: AbortSignal.timeout(4000) });
+            const syncOrgParam = targetOrg && isValidUUID(targetOrg) && targetOrg !== 'platform-root' ? `?organizationId=${encodeURIComponent(targetOrg)}` : '';
+            const syncRes = await fetch(`${syncOrigin}/api/workforce/sync${syncOrgParam}`, { signal: AbortSignal.timeout(4000) });
             if (syncRes.ok) {
               const syncData = await syncRes.json();
               if (syncData.success && Array.isArray(syncData.employees) && syncData.employees.length > 0) {

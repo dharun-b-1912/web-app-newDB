@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { useToast } from '../../../components/ui/Toast';
+import { useTenant } from '../../../hooks/useTenant';
 import {
   workLocationService,
   WorkLocation,
@@ -93,10 +94,13 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     else if (currentTab === 'gps' || currentTab === 'gps-attendance') setActiveSubTab('attendance');
   }, [currentTab]);
 
-  // Master Data - initialized synchronously from local store for 0ms initial render
+  const { organization, activeCompany } = useTenant();
+  const currentOrgId = organization?.id || activeCompany?.organization_id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : '');
+
+  // Master Data - initialized synchronously from tenant store
   const [locations, setLocations] = useState<WorkLocation[]>(() => {
     try {
-      return workLocationService.getLocations();
+      return currentOrgId ? workLocationService.getLocations(currentOrgId) : [];
     } catch {
       return [];
     }
@@ -174,7 +178,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
   // Load Real Database Data
   const loadData = useCallback(async () => {
     try {
-      const activeOrgId = await workLocationService.resolveActiveOrgId();
+      const activeOrgId = await workLocationService.resolveActiveOrgId(currentOrgId);
       const [locs, asgns] = await Promise.all([
         workLocationService.fetchLocationsFromDb(activeOrgId),
         workLocationService.fetchAssignmentsFromDb(activeOrgId),
@@ -183,35 +187,37 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
       setAssignments(asgns);
       if (locs.length > 0) {
         setSelectedTargetLocId((prev) => prev || locs[0].id);
+      } else {
+        setSelectedTargetLocId('');
       }
     } catch {
-      const fallback = workLocationService.getLocations();
+      const fallback = workLocationService.getLocations(currentOrgId);
       setLocations(fallback);
-      setAssignments(workLocationService.getAllAssignments());
+      setAssignments(workLocationService.getAllAssignments(currentOrgId));
       if (fallback.length > 0) {
         setSelectedTargetLocId((prev) => prev || fallback[0].id);
       }
     }
 
-    workLocationService.fetchLiveAttendanceLocationEvents().then((liveEvts) => {
+    workLocationService.fetchLiveAttendanceLocationEvents(currentOrgId).then((liveEvts) => {
       setLocationEvents(liveEvts);
     }).catch(() => {
-      setLocationEvents(workLocationService.getLocationEvents());
+      setLocationEvents(workLocationService.getLocationEvents(currentOrgId));
     });
 
-    api.getDepartments().then((depts) => {
+    api.getDepartments(activeCompany?.id).then((depts) => {
       if (depts && depts.length > 0) {
         setDepartments(depts);
       }
     }).catch(() => []);
 
-    api.getEmployees().then((emps) => {
+    api.getEmployees(currentOrgId ? { organizationId: currentOrgId } : undefined).then((emps) => {
       setEmployees(emps);
       if (emps && emps.length > 0) {
         setSelectedEmployeeId((prev) => prev || emps[0].id);
       }
     }).catch(() => []);
-  }, []);
+  }, [currentOrgId, activeCompany?.id]);
 
   // Acquire Real Hardware GPS Coordinates
   const fetchLiveHardwareGps = useCallback(async () => {
@@ -571,11 +577,12 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     try {
       await workLocationService.saveLocation({
         ...selectedLocation,
+        organization_id: currentOrgId,
         latitude: Number(Number(selectedLocation.latitude).toFixed(7)),
         longitude: Number(Number(selectedLocation.longitude).toFixed(7)),
         geofence_radius_meters: Number(selectedLocation.geofence_radius_meters) || 100,
         accuracy_requirement_meters: Number(selectedLocation.accuracy_requirement_meters) || 50,
-      });
+      }, currentOrgId);
 
       showToast(`✓ Work location "${selectedLocation.name}" saved successfully.`, 'success');
       setIsEditingLocation(false);

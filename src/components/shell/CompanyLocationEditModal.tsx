@@ -11,6 +11,9 @@ import { useTenant } from '../../hooks/useTenant';
 import { useToast } from '../../components/ui/Toast';
 import { geocodingService, GeocodeSearchResult } from '../../services/location/geocodingService';
 import { organizationStructureService } from '../../services/organization/organizationStructureService';
+import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { isValidUUID } from '../../services/api';
+import { OrganizationContextService } from '../../services/organizationContextService';
 import {
   MapPin,
   Crosshair,
@@ -31,17 +34,20 @@ export interface CompanyLocationEditModalProps {
 export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> = ({
   isOpen,
   onClose,
+  company,
 }) => {
   const { activeCompany, organization, reloadTenant } = useTenant();
   const { showToast } = useToast();
 
-  const [city, setCity] = useState(activeCompany?.city || 'Coimbatore');
-  const [state, setState] = useState(activeCompany?.state || 'Tamil Nadu');
-  const [country, setCountry] = useState(activeCompany?.country || 'India');
-  const [address, setAddress] = useState(activeCompany?.address || 'Coimbatore, Tamil Nadu, India');
-  const [postalCode, setPostalCode] = useState(activeCompany?.postal_code || '641014');
-  const [latitude, setLatitude] = useState<number>(activeCompany?.latitude || 11.0168);
-  const [longitude, setLongitude] = useState<number>(activeCompany?.longitude || 76.9558);
+  const targetCompany = company || activeCompany;
+
+  const [city, setCity] = useState(targetCompany?.city || 'Coimbatore');
+  const [state, setState] = useState(targetCompany?.state || 'Tamil Nadu');
+  const [country, setCountry] = useState(targetCompany?.country || 'India');
+  const [address, setAddress] = useState(targetCompany?.address || targetCompany?.registered_address || 'Coimbatore, Tamil Nadu, India');
+  const [postalCode, setPostalCode] = useState(targetCompany?.postal_code || '641014');
+  const [latitude, setLatitude] = useState<number>(targetCompany?.latitude || 11.0168);
+  const [longitude, setLongitude] = useState<number>(targetCompany?.longitude || 76.9558);
 
   const [isDetectingGps, setIsDetectingGps] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -49,18 +55,19 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
   const [isSearching, setIsSearching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Synchronize initial state when modal opens or activeCompany changes
+  // Synchronize initial state when modal opens or targetCompany changes
   React.useEffect(() => {
-    if (activeCompany) {
-      setCity(activeCompany.city || 'Coimbatore');
-      setState(activeCompany.state || 'Tamil Nadu');
-      setCountry(activeCompany.country || 'India');
-      setAddress(activeCompany.address || `${activeCompany.city || 'Coimbatore'}, ${activeCompany.country || 'India'}`);
-      setPostalCode(activeCompany.postal_code || '641014');
-      if (activeCompany.latitude) setLatitude(activeCompany.latitude);
-      if (activeCompany.longitude) setLongitude(activeCompany.longitude);
+    const current = company || activeCompany;
+    if (current) {
+      setCity(current.city || 'Coimbatore');
+      setState(current.state || 'Tamil Nadu');
+      setCountry(current.country || 'India');
+      setAddress(current.address || current.registered_address || `${current.city || 'Coimbatore'}, ${current.country || 'India'}`);
+      setPostalCode(current.postal_code || '641014');
+      if (current.latitude) setLatitude(Number(current.latitude));
+      if (current.longitude) setLongitude(Number(current.longitude));
     }
-  }, [activeCompany, isOpen]);
+  }, [company, activeCompany, isOpen]);
 
   const handleDetectGps = async () => {
     setIsDetectingGps(true);
@@ -114,40 +121,122 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
     e.preventDefault();
     setIsSaving(true);
     try {
-      const entityId = activeCompany?.id;
-      const orgId = organization?.id || activeCompany?.organization_id;
+      const current = company || activeCompany;
+      const entityId = current?.id;
+      const orgId = organization?.id || current?.organization_id;
 
-      if (entityId) {
-        // Update local company storage & Supabase
-        const updated = {
-          city,
-          state,
-          country,
-          address,
-          postal_code: postalCode,
-          latitude,
-          longitude,
-        };
-
-        try {
-          const comps = JSON.parse(localStorage.getItem('workforce_companies') || '[]');
-          const idx = comps.findIndex((c: any) => c.id === entityId);
-          if (idx >= 0) {
-            comps[idx] = { ...comps[idx], ...updated };
-          } else {
-            comps.push({ id: entityId, ...updated, legal_name: activeCompany?.legal_name || 'Joy Corporate Solutions Pvt Ltd' });
-          }
-          localStorage.setItem('workforce_companies', JSON.stringify(comps));
-          localStorage.setItem('workforce_active_company', JSON.stringify({ ...activeCompany, ...updated }));
-        } catch (_) {}
-
-        window.dispatchEvent(new CustomEvent('organization:context_updated'));
+      if (!entityId) {
+        throw new Error('No company entity found to update.');
       }
 
+      const trimmedCity = (city || '').trim();
+      const trimmedState = (state || '').trim();
+      const trimmedCountry = (country || '').trim();
+      const trimmedAddress = (address || '').trim();
+      const trimmedPostalCode = (postalCode || '').trim();
+
+      // 1. Direct Multi-Tenant Persistence in Supabase `companies` table
+      if (isSupabaseEnabled && supabase && isValidUUID(entityId)) {
+        const dbCompanyUpdates: Record<string, any> = {
+          city: trimmedCity,
+          state: trimmedState,
+          country: trimmedCountry,
+          postal_code: trimmedPostalCode,
+          registered_address: trimmedAddress,
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error: compError } = await supabase
+          .from('companies')
+          .update(dbCompanyUpdates)
+          .eq('id', entityId);
+
+        if (compError) {
+          console.error('[CompanyLocationEditModal] Supabase companies update error:', compError);
+          throw new Error(compError.message || 'Failed to update company location in database');
+        }
+      }
+
+      // 2. Direct Update to Supabase `organizations` table for tenant alignment
+      if (isSupabaseEnabled && supabase && orgId && isValidUUID(orgId) && orgId !== 'platform-root') {
+        const dbOrgUpdates: Record<string, any> = {
+          registered_address: trimmedAddress,
+          country: trimmedCountry,
+          updated_at: new Date().toISOString(),
+        };
+        const { error: orgError } = await supabase
+          .from('organizations')
+          .update(dbOrgUpdates)
+          .eq('id', orgId);
+
+        if (orgError) {
+          console.warn('[CompanyLocationEditModal] Supabase organizations update notice:', orgError);
+        }
+
+        // Also update primary work location geofence coordinates if present
+        try {
+          const { data: locs } = await supabase
+            .from('work_locations')
+            .select('id')
+            .eq('organization_id', orgId)
+            .limit(1);
+
+          if (locs && locs.length > 0) {
+            await supabase
+              .from('work_locations')
+              .update({
+                latitude,
+                longitude,
+                address_line1: trimmedAddress,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', locs[0].id);
+          }
+        } catch (locErr) {
+          console.warn('[CompanyLocationEditModal] work_locations coordinate update notice:', locErr);
+        }
+      }
+
+      // 3. Update localStorage cache optimistically
+      const updatedCompanyData = {
+        ...current,
+        city: trimmedCity,
+        state: trimmedState,
+        country: trimmedCountry,
+        address: trimmedAddress,
+        registered_address: trimmedAddress,
+        postal_code: trimmedPostalCode,
+        latitude,
+        longitude,
+      };
+
+      try {
+        const comps = JSON.parse(localStorage.getItem('workforce_companies') || '[]');
+        const idx = comps.findIndex((c: any) => c.id === entityId);
+        if (idx >= 0) {
+          comps[idx] = { ...comps[idx], ...updatedCompanyData };
+        } else {
+          comps.push(updatedCompanyData);
+        }
+        localStorage.setItem('workforce_companies', JSON.stringify(comps));
+        if (activeCompany?.id === entityId) {
+          localStorage.setItem('workforce_active_company', JSON.stringify(updatedCompanyData));
+        }
+      } catch (_) {}
+
+      // 4. Invalidate context memory cache so reloadTenant pulls fresh database records
+      OrganizationContextService.clearCache();
+
+      // 5. Notify the rest of the application
+      window.dispatchEvent(new CustomEvent('organization:context_updated'));
+
+      // 6. Reload tenant context from database
       await reloadTenant();
-      showToast(`Company location updated to ${city}, ${country}!`, 'success');
+
+      showToast(`Company location updated to ${trimmedCity}, ${trimmedCountry}!`, 'success');
       onClose();
     } catch (err: any) {
+      console.error('[CompanyLocationEditModal] handleSave error:', err);
       showToast(err.message || 'Error updating location', 'error');
     } finally {
       setIsSaving(false);

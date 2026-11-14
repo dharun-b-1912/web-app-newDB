@@ -112,7 +112,7 @@ export const DEFAULT_LEGAL_ENTITIES: Company[] = [
   },
 ];
 
-class OrganizationContextService {
+export class OrganizationContextService {
   private static cachedOrgs: Organization[] | null = null;
   private static cachedEntities: Company[] | null = null;
   private static cacheTimestamp: number = 0;
@@ -127,6 +127,10 @@ class OrganizationContextService {
     OrganizationContextService.cachedEntities = null;
     OrganizationContextService.cacheTimestamp = 0;
     OrganizationContextService.cachedUserContext.clear();
+  }
+
+  public clearCache(): void {
+    OrganizationContextService.clearCache();
   }
 
   /**

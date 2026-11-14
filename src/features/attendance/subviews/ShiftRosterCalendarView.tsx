@@ -39,6 +39,7 @@ import {
 } from '../../../services/attendance/attendanceRosterService';
 import { ShiftMaster, EmployeeRosterEntry, RosterConflict } from '../../../types/shiftRoster';
 import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
+import { useTenant } from '../../../hooks/useTenant';
 import { api } from '../../../services/api';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { cn } from '../../../lib/utils';
@@ -76,6 +77,9 @@ export const getOffsetDate = (baseDateStr: string, offsetDays: number): string =
 
 export const ShiftRosterCalendarView: React.FC = () => {
   const { showToast } = useToast();
+  const { organization, activeCompany } = useTenant();
+  const currentOrgId = organization?.id || activeCompany?.organization_id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : '') || getActiveOrgId();
+
   const [shifts, setShifts] = useState<ShiftMaster[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [conflicts, setConflicts] = useState<RosterConflict[]>([]);
@@ -167,31 +171,31 @@ export const ShiftRosterCalendarView: React.FC = () => {
   // Load Core Data from Supabase PostgreSQL
   const loadData = useCallback(async () => {
     try {
-      const loadedShifts = await attendanceRosterService.fetchShiftsFromDb();
+      const loadedShifts = await attendanceRosterService.fetchShiftsFromDb(currentOrgId);
       setShifts(loadedShifts);
       if (loadedShifts.length > 0 && !bulkShiftId) {
         setBulkShiftId(loadedShifts[0].id);
         setRotatePatternShifts([loadedShifts[0].id, loadedShifts[1]?.id || loadedShifts[0].id, loadedShifts[2]?.id || loadedShifts[0].id]);
       }
     } catch {
-      const loadedShifts = attendanceRosterService.getShifts();
+      const loadedShifts = attendanceRosterService.getShifts(currentOrgId);
       setShifts(loadedShifts);
     }
 
     try {
-      const emps = await api.getEmployees();
+      const emps = await api.getEmployees({ organizationId: currentOrgId });
       setEmployees(emps || []);
     } catch {
-      // Local fallback
+      setEmployees([]);
     }
 
     try {
       const sDate = activeDays[0] || getMondayOfWeek();
       const eDate = activeDays[6] || getOffsetDate(sDate, 6);
-      await attendanceRosterService.fetchRostersFromDb(sDate, eDate);
+      await attendanceRosterService.fetchRostersFromDb(sDate, eDate, currentOrgId);
       setRosterDataVersion(v => v + 1);
     } catch {}
-  }, [activeDays, bulkShiftId]);
+  }, [activeDays, bulkShiftId, currentOrgId]);
 
   useEffect(() => {
     loadData();

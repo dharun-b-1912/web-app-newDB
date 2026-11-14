@@ -119,7 +119,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       setHasError(false);
       const companyId = activeCompany?.id;
 
-      // 1. Fetch live employees, departments, approvals, activities & attendance in parallel
+      // 1. Fetch live employees, departments, approvals, activities & attendance in parallel with strict tenant isolation
       const targetOrgId = organization?.id || activeCompany?.organization_id || (typeof localStorage !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : null) || user?.organization_id;
       const [
         rawEmployees,
@@ -128,11 +128,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         auditLogs,
         dailyAttendanceList,
       ] = await Promise.all([
-        api.getEmployees(companyId ? { companyId } : undefined).catch(() => []),
+        api.getEmployees(targetOrgId ? { organizationId: targetOrgId, companyId: companyId } : (companyId ? { companyId } : undefined)).catch(() => []),
         api.getDepartments(companyId).catch(() => []),
         targetOrgId ? approvalService.getApprovalRequests({ organizationId: targetOrgId }).catch(() => []) : Promise.resolve([]),
         api.getAuditLogs().catch(() => []),
-        attendanceApi.getDailyAttendanceAsync(new Date().toISOString().slice(0, 10)),
+        attendanceApi.getDailyAttendanceAsync(new Date().toISOString().slice(0, 10), undefined, undefined, undefined, targetOrgId || undefined),
       ]);
       const employees = rawEmployees;
 

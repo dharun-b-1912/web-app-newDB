@@ -525,9 +525,19 @@ const isValidUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4
 // Workforce Synchronization Endpoint (guarantees identical employee list across localhost and production)
 app.get(['/api/workforce/sync', '/api/employees/sync'], async (req, res) => {
   try {
+    const orgId = req.query.organizationId || req.query.organization_id;
+    if (!orgId || !isValidUUID(orgId) || orgId === 'platform-root') {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        employees: []
+      });
+    }
+
     const { data: employees, error } = await supabaseAdminClient
       .from('employees')
       .select('*')
+      .eq('organization_id', orgId)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -537,7 +547,7 @@ app.get(['/api/workforce/sync', '/api/employees/sync'], async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      count: employees.length,
+      count: employees?.length || 0,
       employees: employees || []
     });
   } catch (err) {

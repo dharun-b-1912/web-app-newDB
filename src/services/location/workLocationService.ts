@@ -187,13 +187,20 @@ class WorkLocationService {
    * Resolves canonical active organization ID from auth session or context.
    */
   public async resolveActiveOrgId(overrideOrgId?: string): Promise<string> {
-    if (overrideOrgId && isValidUUID(overrideOrgId)) {
+    if (overrideOrgId && isValidUUID(overrideOrgId) && overrideOrgId !== 'platform-root') {
       return overrideOrgId;
     }
 
     const contextOrg = getActiveOrgId();
-    if (contextOrg && isValidUUID(contextOrg)) {
+    if (contextOrg && isValidUUID(contextOrg) && contextOrg !== 'platform-root') {
       return contextOrg;
+    }
+
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id');
+      if (cached && isValidUUID(cached) && cached !== 'platform-root') {
+        return cached;
+      }
     }
 
     if (isSupabaseEnabled) {
@@ -201,14 +208,22 @@ class WorkLocationService {
         const { data: sessionData } = await supabase.auth.getSession();
         const authUser = sessionData?.session?.user;
         if (authUser) {
-          const { data: profile } = await supabase
+          const userMetaOrg = authUser.user_metadata?.organization_id || authUser.app_metadata?.organization_id;
+          if (userMetaOrg && isValidUUID(userMetaOrg) && userMetaOrg !== 'platform-root') {
+            return userMetaOrg;
+          }
+
+          const { data: profiles } = await supabase
             .from('user_profiles')
             .select('organization_id')
             .eq('auth_user_id', authUser.id)
-            .maybeSingle();
+            .order('updated_at', { ascending: false });
 
-          if (profile?.organization_id && isValidUUID(profile.organization_id)) {
-            return profile.organization_id;
+          if (profiles && profiles.length > 0) {
+            const valid = profiles.find((p: any) => p.organization_id && isValidUUID(p.organization_id));
+            if (valid) {
+              return valid.organization_id;
+            }
           }
         }
       } catch (err) {
@@ -216,7 +231,7 @@ class WorkLocationService {
       }
     }
 
-    return '0c621892-e938-4707-9957-13534ea32c19'; // Canonical Joy Corporate Solutions Org ID fallback
+    return '';
   }
 
   /**
