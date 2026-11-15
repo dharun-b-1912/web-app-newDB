@@ -38,11 +38,13 @@ import { authService } from '../../../services/auth/authService';
 export interface PlatformSuperAdminLoginPageProps {
   onSuccessRoute?: (route: string) => void;
   onBackToCustomer?: () => void;
+  activeCustomerUser?: any;
 }
 
 export const PlatformSuperAdminLoginPage: React.FC<PlatformSuperAdminLoginPageProps> = ({
   onSuccessRoute,
   onBackToCustomer,
+  activeCustomerUser,
 }) => {
   const { signIn, setAuthContextMode } = useAuth();
   const { showToast } = useToast();
@@ -267,6 +269,20 @@ export const PlatformSuperAdminLoginPage: React.FC<PlatformSuperAdminLoginPagePr
                   Authenticate with your registered credentials to access the JOY platform control plane.
                 </p>
               </div>
+
+              {activeCustomerUser && (
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-amber-200">
+                      Currently signed in as {activeCustomerUser.name || 'Customer User'} ({activeCustomerUser.email})
+                    </p>
+                    <p className="text-[11px] text-amber-300/80 mt-0.5">
+                      Sign in with your Platform Administrator credentials below to access the Super Admin Control Center.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {errorMessage && (
                 <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">

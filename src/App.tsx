@@ -474,7 +474,12 @@ const AppContent: React.FC = () => {
         setCurrentRoute(defRoute);
         syncUrlWithRoute(defRoute, undefined, true);
         navPerfTracker.logImmediate('ROUTE_REDIRECT', `/${prevRoute}`, `/${defRoute}`, 0, 'already_logged_in_redirect');
-      } else if (currentRoute.startsWith('platform') || currentRoute.startsWith('saas-')) {
+      } else if (
+        (currentRoute.startsWith('platform') || currentRoute.startsWith('saas-')) &&
+        currentRoute !== 'platform/login' &&
+        currentRoute !== 'platform-login' &&
+        currentRoute !== 'superadmin-login'
+      ) {
         const isLocalhost = typeof window !== 'undefined' &&
           (window.location.hostname === 'localhost' ||
            window.location.hostname === '127.0.0.1' ||
@@ -488,12 +493,7 @@ const AppContent: React.FC = () => {
             return;
           }
         }
-
-        const prevRoute = currentRoute;
-        const defRoute = getDefaultRouteForUser(user);
-        setCurrentRoute(defRoute);
-        syncUrlWithRoute(defRoute, undefined, true);
-        navPerfTracker.logImmediate('ROUTE_REDIRECT', `/${prevRoute}`, `/${defRoute}`, 0, 'non_platform_role_guard');
+        // Non-platform roles attempting to open platform routes on production are gracefully handled by the barrier below
       } else if (
         !isPublicModule(currentRoute) && (
           (roleName === 'Company Admin' && (currentRoute === 'ess-dashboard' || currentRoute.startsWith('ess'))) ||
@@ -520,7 +520,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  const isSuperAdminRoute =
+  const isPlatformLoginRoute =
     currentRoute === 'superadmin-login' ||
     currentRoute === 'platform/login' ||
     currentRoute === 'platform-login' ||
@@ -528,14 +528,18 @@ const AppContent: React.FC = () => {
       window.location.pathname === '/superadmin' ||
       window.location.pathname === '/super-admin' ||
       window.location.pathname === '/platform-login' ||
-      window.location.pathname === '/platform/login' ||
-      (!user && (window.location.pathname.startsWith('/platform') || currentRoute.startsWith('platform')))
+      window.location.pathname === '/platform/login'
     ));
 
-  if (isSuperAdminRoute) {
-    const roleName = user?.roles?.[0]?.name ?? '';
-    const isPlatformRole = ['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(roleName);
+  const isPlatformWorkspaceRoute =
+    currentRoute.startsWith('platform') ||
+    currentRoute.startsWith('saas-') ||
+    (typeof window !== 'undefined' && window.location.pathname.startsWith('/platform'));
 
+  const roleName = user?.roles?.[0]?.name ?? '';
+  const isPlatformRole = ['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(roleName);
+
+  if (isPlatformLoginRoute) {
     if (user && isPlatformRole) {
       return (
         <ErrorBoundary>
@@ -546,6 +550,35 @@ const AppContent: React.FC = () => {
           >
             <Suspense fallback={null}>
               <PlatformAdminMasterModule onNavigateTab={handleNavigate} initialTab="platform-dashboard" />
+            </Suspense>
+          </AppShell>
+        </ErrorBoundary>
+      );
+    }
+
+    return (
+      <Suspense fallback={null}>
+        <SuperAdminLoginPage
+          activeCustomerUser={user && !isPlatformRole ? user : undefined}
+          onSwitchToCustomer={() => handleNavigate(user ? getDefaultRouteForUser(user) : 'dashboard')}
+          onSuccessRoute={handleNavigate}
+        />
+      </Suspense>
+    );
+  }
+
+  if (isPlatformWorkspaceRoute) {
+    if (user && isPlatformRole) {
+      const targetTab = currentRoute.startsWith('platform-') ? currentRoute : 'platform-dashboard';
+      return (
+        <ErrorBoundary>
+          <AppShell
+            activeRoute={targetTab}
+            onNavigate={handleNavigate}
+            onOpenCopilot={() => setIsCopilotOpen(true)}
+          >
+            <Suspense fallback={null}>
+              <PlatformAdminMasterModule onNavigateTab={handleNavigate} initialTab={targetTab} />
             </Suspense>
           </AppShell>
         </ErrorBoundary>
@@ -565,14 +598,23 @@ const AppContent: React.FC = () => {
             </p>
             <div className="pt-2 flex flex-col gap-2">
               <button
+                onClick={async () => {
+                  await logout();
+                  handleNavigate('superadmin-login');
+                }}
+                className="w-full px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <KeyRound className="w-4 h-4" /> Sign In as Platform Super Admin
+              </button>
+              <button
                 onClick={() => handleNavigate(getDefaultRouteForUser(user))}
-                className="w-full px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                className="w-full px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer"
               >
                 Return to Workspace Dashboard
               </button>
               <button
                 onClick={() => logout()}
-                className="w-full px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                className="w-full px-5 py-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 rounded-xl text-xs font-semibold transition-all cursor-pointer"
               >
                 Sign Out
               </button>

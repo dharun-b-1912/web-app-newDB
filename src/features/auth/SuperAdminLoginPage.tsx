@@ -9,16 +9,19 @@ import { PlatformSuperAdminLoginPage } from '../platform/auth/PlatformSuperAdmin
 export interface SuperAdminLoginPageProps {
   onSwitchToCustomer?: () => void;
   onSuccessRoute?: (route: string) => void;
+  activeCustomerUser?: any;
 }
 
 export const SuperAdminLoginPage: React.FC<SuperAdminLoginPageProps> = ({
   onSwitchToCustomer,
   onSuccessRoute,
+  activeCustomerUser,
 }) => {
   return (
     <PlatformSuperAdminLoginPage
       onBackToCustomer={onSwitchToCustomer}
       onSuccessRoute={onSuccessRoute}
+      activeCustomerUser={activeCustomerUser}
     />
   );
 };
