@@ -3781,6 +3781,33 @@ export const api = {
 
         const isAuth = await hasAuthenticatedSession();
         if (isAuth) {
+          // Phase C: Server-Side Seat Limit Pre-Check for Tenant
+          if (validOrgId && isValidUUID(validOrgId) && validOrgId !== 'platform-root') {
+            try {
+              const { data: orgData } = await (supabaseAdmin || supabase)
+                .from('organizations')
+                .select('seat_limit')
+                .eq('id', validOrgId)
+                .maybeSingle();
+
+              if (orgData?.seat_limit && orgData.seat_limit > 0) {
+                const { count: activeCount } = await (supabaseAdmin || supabase)
+                  .from('employees')
+                  .select('id', { count: 'exact', head: true })
+                  .eq('organization_id', validOrgId)
+                  .eq('employment_status', 'ACTIVE');
+
+                if (activeCount !== null && activeCount >= orgData.seat_limit) {
+                  throw new Error(`Seat limit reached for this organization (${activeCount}/${orgData.seat_limit} active seats). Please upgrade your subscription plan to add more employees.`);
+                }
+              }
+            } catch (seatErr: any) {
+              if (seatErr.message?.includes('Seat limit reached')) {
+                throw seatErr;
+              }
+            }
+          }
+
           const cleanEmp = sanitizeEmployeeForSupabase(newEmp);
           const { error } = await supabase.from('employees').upsert(cleanEmp, { onConflict: 'id' });
 

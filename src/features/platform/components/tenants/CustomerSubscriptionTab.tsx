@@ -20,6 +20,7 @@ import {
 import { OrganizationRecord } from '../../../../services/platform/platformTenantService';
 import { billingCalculationEngine } from '../../../../services/billing/billingCalculationEngine';
 import { platformSubscriptionService } from '../../../../services/platform/platformSubscriptionService';
+import { platformTenantEntitlementService } from '../../../../services/platform/platformTenantEntitlementService';
 import { razorpayOrderService } from '../../../../services/platform/razorpayOrderService';
 import { saasPricingEngine } from '../../../../services/platform/saasPricingEngine';
 import { supabase, isSupabaseEnabled } from '../../../../lib/supabase';
@@ -115,26 +116,21 @@ export const CustomerSubscriptionTab: React.FC<CustomerSubscriptionTabProps> = (
   const handleConfirmPlanChange = async () => {
     setIsUpdating(true);
     try {
+      await platformTenantEntitlementService.upgradeSubscriptionPlan(
+        org.id,
+        selectedNewPlan,
+        targetPlanSpec.seats,
+        targetPlanSpec.monthly,
+        selectedBillingCycle,
+        `Plan upgraded to ${selectedNewPlan} with ${targetPlanSpec.seats} seats via Super Admin Console`
+      );
+
       await platformSubscriptionService.updateSubscription(
         `sub-${(org as any).slug || org.id}-01`,
         selectedNewPlan,
         targetPlanSpec.seats,
         selectedBillingCycle
       );
-
-      // Persist to Supabase organizations table
-      if (isSupabaseEnabled && org.id) {
-        await supabase
-          .from('organizations')
-          .update({
-            plan: selectedNewPlan,
-            seat_limit: targetPlanSpec.seats,
-            mrr: targetPlanSpec.monthly,
-            billing_cycle: selectedBillingCycle,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', org.id);
-      }
 
       showToast(`Subscription plan upgraded to ${selectedNewPlan} (₹${targetPlanSpec.monthly.toLocaleString('en-IN')}/mo)`, 'success');
       onChangePlanSuccess?.(selectedNewPlan, targetPlanSpec.monthly);
