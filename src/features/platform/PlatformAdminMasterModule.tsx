@@ -45,6 +45,7 @@ import { SupabaseGovernanceView } from './subviews/SupabaseGovernanceView';
 import { NotificationDeliveryMonitorView } from './subviews/NotificationDeliveryMonitorView';
 import { ObservabilityLiveView } from './subviews/ObservabilityLiveView';
 import { JITSupportAccessView } from './subviews/JITSupportAccessView';
+import { JoyOpsTelegramCommandView } from './subviews/JoyOpsTelegramCommandView';
 import { JoyEngineeringOpsMaster } from '../engineering/JoyEngineeringOpsMaster';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { usePlatformRealtime } from '../../services/platform';
@@ -112,7 +113,10 @@ const TAB_TITLES: Record<string, string> = {
   'platform-account': 'Identity & Account Center',
   'platform-observability': 'Observability & Live Telemetry',
   'platform-jit': 'Just-In-Time Support Access',
-  'engineering-ops': 'Joy Engineering Ops v1 (Reality Audit)',
+  'engineering-ops': 'JOY Ops & Telegram Bot Command Center',
+  'platform-engineering': 'JOY Ops & Telegram Bot Command Center',
+  'platform-ops': 'JOY Ops & Telegram Bot Command Center',
+  'joy-ops': 'JOY Ops & Telegram Bot Command Center',
   'saas-revenue': 'Revenue & Growth',
   'platform-aws-cost-analysis': 'AWS Cloud Cost Analysis & FinOps',
   'aws-cost-analysis': 'AWS Cloud Cost Analysis & FinOps',
@@ -468,6 +472,11 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
         return <JITSupportAccessView />;
       case 'engineering-ops':
       case 'platform-engineering':
+      case 'platform-ops':
+      case 'joy-ops':
+      case 'platform-telegram':
+      case 'telegram-bot':
+        return <JoyOpsTelegramCommandView onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)} />;
       case 'platform-reality-check':
         return <JoyEngineeringOpsMaster />;
       case 'saas-customers':

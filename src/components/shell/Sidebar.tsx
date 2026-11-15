@@ -294,6 +294,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'platform-users' && (currentNav === 'platform-users' || currentNav === 'platform-directory' || currentNav === 'platform-users-directory')) return true;
   if (itemId === 'platform-database' && (currentNav === 'platform-database' || currentNav === 'platform-governance' || currentNav === 'platform-supabase')) return true;
   if (itemId === 'platform-observability' && (currentNav === 'platform-observability' || currentNav === 'platform-telemetry' || currentNav === 'platform-logs' || currentNav === 'platform-errors')) return true;
+  if (itemId === 'platform-engineering' && (currentNav === 'platform-engineering' || currentNav === 'engineering-ops' || currentNav === 'platform-ops' || currentNav === 'joy-ops' || currentNav === 'platform-telegram' || currentNav === 'telegram-bot')) return true;
 
   // ESS & TL mappings
   if (itemId === 'ess-dashboard' && currentNav === 'ess') return true;
@@ -569,6 +570,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'OPERATIONS',
       items: [
+        { id: 'platform-engineering', label: 'JOY Ops & Telegram Bot', icon: Terminal, badge: 'Watchdog', badgeVariant: 'info' },
         { id: 'platform-communication', label: 'Communication Hub', icon: Radio, badge: 'Live' },
         { id: 'platform-biometrics', label: 'Biometric Device Hub', icon: Fingerprint, badge: 'Fleet' },
         { id: 'platform-support', label: 'Support Center', icon: HelpCircle },
