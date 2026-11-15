@@ -43,6 +43,11 @@ export const NotificationsCenter: React.FC = () => {
   const { showToast } = useToast();
   const { user } = useAuth();
   const currentRole = user ? getPrimaryRole(user) : '';
+  const isPlatformContext = Boolean(
+    (typeof window !== 'undefined' && (window.location.pathname.startsWith('/platform') || window.location.pathname.startsWith('/superadmin') || window.location.pathname.startsWith('/saas-'))) ||
+    user?.is_platform_admin ||
+    ['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(currentRole)
+  );
   const isVendorContext = Boolean(
     (typeof window !== 'undefined' && (window.location.pathname.startsWith('/vendor') || window.location.hash.includes('vendor'))) ||
     currentRole.toLowerCase().includes('vendor') ||
@@ -100,7 +105,7 @@ export const NotificationsCenter: React.FC = () => {
     try {
       const [notifRes, apprRes] = await Promise.all([
         notificationService.getNotifications({ limit: 40 }),
-        isVendorContext ? Promise.resolve([]) : approvalService.getApprovalRequests({ status: 'Pending' }),
+        (isVendorContext || isPlatformContext) ? Promise.resolve([]) : approvalService.getApprovalRequests({ status: 'Pending' }),
       ]);
 
       // Scoped role filtering
@@ -208,7 +213,7 @@ export const NotificationsCenter: React.FC = () => {
       setNotifications((prev) => [newItem, ...prev]);
       setUnreadCount((prev) => prev + 1);
 
-      if (event.category === 'APPROVAL' && !isVendorContext) {
+      if (event.category === 'APPROVAL' && !isVendorContext && !isPlatformContext) {
         approvalService.getApprovalRequests({ status: 'Pending' }).then(setApprovals);
       }
 

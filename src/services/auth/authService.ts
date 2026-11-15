@@ -120,6 +120,45 @@ const STORAGE_KEYS = {
   SAVED_ROUTE: 'workforce_active_route',
 };
 
+// Safe Cross-Environment Storage (Guards SSR, Node/Vitest, and Browser environments)
+const memoryStore = new Map<string, string>();
+
+const safeStorage = {
+  getItem(key: string): string | null {
+    if (typeof sessionStorage !== 'undefined') {
+      try {
+        const val = sessionStorage.getItem(key);
+        if (val !== null) return val;
+      } catch {}
+    }
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const val = localStorage.getItem(key);
+        if (val !== null) return val;
+      } catch {}
+    }
+    return memoryStore.get(key) ?? null;
+  },
+  setItem(key: string, value: string) {
+    memoryStore.set(key, value);
+    if (typeof sessionStorage !== 'undefined') {
+      try { sessionStorage.setItem(key, value); } catch {}
+    }
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem(key, value); } catch {}
+    }
+  },
+  removeItem(key: string) {
+    memoryStore.delete(key);
+    if (typeof sessionStorage !== 'undefined') {
+      try { sessionStorage.removeItem(key); } catch {}
+    }
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.removeItem(key); } catch {}
+    }
+  }
+};
+
 // Brute-force & DDoS rate-limiting tracker for authentication
 interface LoginAttemptRecord {
   failedAttempts: number;
@@ -523,7 +562,7 @@ export const authService = {
       const currentUser = this.getCurrentSessionUser();
       if (currentUser) {
         currentUser.must_change_password = false;
-        localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
+        safeStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
       }
 
       await this.logAuditEvent('PASSWORD_CHANGED', { userId: currentUser?.id });
@@ -701,30 +740,29 @@ export const authService = {
   forceClearLocalSession(): void {
     try {
       clearSessionFingerprint();
-      sessionStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-      sessionStorage.removeItem(STORAGE_KEYS.PLATFORM_USER);
-      sessionStorage.removeItem(STORAGE_KEYS.TENANT_USER);
-      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-      localStorage.removeItem(STORAGE_KEYS.PLATFORM_USER);
-      localStorage.removeItem(STORAGE_KEYS.TENANT_USER);
-      localStorage.removeItem(STORAGE_KEYS.ACTIVE_ORG);
-      localStorage.removeItem(STORAGE_KEYS.AUTH_CONTEXT);
-      localStorage.removeItem(STORAGE_KEYS.SAVED_ROUTE);
+      safeStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      safeStorage.removeItem(STORAGE_KEYS.PLATFORM_USER);
+      safeStorage.removeItem(STORAGE_KEYS.TENANT_USER);
+      safeStorage.removeItem(STORAGE_KEYS.ACTIVE_ORG);
+      safeStorage.removeItem(STORAGE_KEYS.AUTH_CONTEXT);
+      safeStorage.removeItem(STORAGE_KEYS.SAVED_ROUTE);
 
       // Clear all Supabase and authentication tokens in localStorage and sessionStorage
       if (typeof window !== 'undefined') {
         const clearAuthKeys = (storage: Storage) => {
-          const keysToRemove: string[] = [];
-          for (let i = 0; i < storage.length; i++) {
-            const k = storage.key(i);
-            if (k && (k.startsWith('sb-') || k.includes('auth-token') || k.startsWith('workforce_session'))) {
-              keysToRemove.push(k);
+          try {
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < storage.length; i++) {
+              const k = storage.key(i);
+              if (k && (k.startsWith('sb-') || k.includes('auth-token') || k.startsWith('workforce_session'))) {
+                keysToRemove.push(k);
+              }
             }
-          }
-          keysToRemove.forEach((k) => storage.removeItem(k));
+            keysToRemove.forEach((k) => storage.removeItem(k));
+          } catch (_) {}
         };
-        clearAuthKeys(localStorage);
-        clearAuthKeys(sessionStorage);
+        if (typeof localStorage !== 'undefined') clearAuthKeys(localStorage);
+        if (typeof sessionStorage !== 'undefined') clearAuthKeys(sessionStorage);
 
         // Expire all cookies across path and domain
         try {
@@ -740,7 +778,7 @@ export const authService = {
           }
         } catch (_) {}
 
-        localStorage.setItem('workforce_logged_out', 'true');
+        safeStorage.setItem('workforce_logged_out', 'true');
       }
 
       resetSupabaseSessionCache();
@@ -757,7 +795,7 @@ export const authService = {
       // Read raw user directly to avoid recursive getCurrentSessionUser call
       let rawUser: AuthSessionUser | null = null;
       try {
-        const raw = sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER) || localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+        const raw = safeStorage.getItem(STORAGE_KEYS.CURRENT_USER);
         if (raw) rawUser = JSON.parse(raw);
       } catch (_) {}
 
@@ -841,34 +879,29 @@ export const authService = {
 
       const isPlatform = context === 'platform' || Boolean(user.is_platform_admin) || user.role === 'Super Admin';
 
-      sessionStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+      safeStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
 
       if (isPlatform) {
-        sessionStorage.setItem(STORAGE_KEYS.PLATFORM_USER, JSON.stringify(user));
-        localStorage.setItem(STORAGE_KEYS.PLATFORM_USER, JSON.stringify(user));
-        localStorage.setItem(STORAGE_KEYS.AUTH_CONTEXT, 'platform');
+        safeStorage.setItem(STORAGE_KEYS.PLATFORM_USER, JSON.stringify(user));
+        safeStorage.setItem(STORAGE_KEYS.AUTH_CONTEXT, 'platform');
       } else {
-        sessionStorage.setItem(STORAGE_KEYS.TENANT_USER, JSON.stringify(user));
-        localStorage.setItem(STORAGE_KEYS.TENANT_USER, JSON.stringify(user));
-        localStorage.setItem(STORAGE_KEYS.AUTH_CONTEXT, context || 'tenant');
+        safeStorage.setItem(STORAGE_KEYS.TENANT_USER, JSON.stringify(user));
+        safeStorage.setItem(STORAGE_KEYS.AUTH_CONTEXT, context || 'tenant');
       }
 
-      localStorage.removeItem('workforce_logged_out');
+      safeStorage.removeItem('workforce_logged_out');
       if (user.organization_id && user.organization_id !== 'platform-root') {
-        const prevOrg = localStorage.getItem(STORAGE_KEYS.ACTIVE_ORG) || localStorage.getItem('joy_active_tenant_id');
-        localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG, user.organization_id);
-        localStorage.setItem('joy_active_tenant_id', user.organization_id);
-        sessionStorage.setItem(STORAGE_KEYS.ACTIVE_ORG, user.organization_id);
-        sessionStorage.setItem('joy_active_tenant_id', user.organization_id);
+        const prevOrg = safeStorage.getItem(STORAGE_KEYS.ACTIVE_ORG) || safeStorage.getItem('joy_active_tenant_id');
+        safeStorage.setItem(STORAGE_KEYS.ACTIVE_ORG, user.organization_id);
+        safeStorage.setItem('joy_active_tenant_id', user.organization_id);
 
         // If switching between organizations, flush tenant-scoped caches to prevent cross-tenant data leakage
         if (prevOrg && prevOrg !== user.organization_id) {
-          localStorage.removeItem('workforceos_employees_v2');
-          localStorage.removeItem('workforceos_locations_v2');
-          localStorage.removeItem('workforce_rosters_v2');
-          localStorage.removeItem('joy_approval_requests_v1');
-          localStorage.removeItem('workforce_context_cache');
+          safeStorage.removeItem('workforceos_employees_v2');
+          safeStorage.removeItem('workforceos_locations_v2');
+          safeStorage.removeItem('workforce_rosters_v2');
+          safeStorage.removeItem('joy_approval_requests_v1');
+          safeStorage.removeItem('workforce_context_cache');
         }
       }
     } catch (e) {
@@ -891,15 +924,15 @@ export const authService = {
         window.location.pathname.startsWith('/super-admin') ||
         window.location.pathname.startsWith('/platform-login')
       );
-      const isPlatformContext = preferredContext === 'platform' || isPlatformRoute || (typeof window !== 'undefined' && localStorage.getItem(STORAGE_KEYS.AUTH_CONTEXT) === 'platform');
+      const isPlatformContext = preferredContext === 'platform' || isPlatformRoute || safeStorage.getItem(STORAGE_KEYS.AUTH_CONTEXT) === 'platform';
 
-      const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('workforce_logged_out') === 'true';
+      const isLoggedOut = safeStorage.getItem('workforce_logged_out') === 'true';
       if (isLoggedOut) {
         return null;
       }
 
       if (isPlatformContext) {
-        const platData = sessionStorage.getItem(STORAGE_KEYS.PLATFORM_USER) || localStorage.getItem(STORAGE_KEYS.PLATFORM_USER);
+        const platData = safeStorage.getItem(STORAGE_KEYS.PLATFORM_USER);
         if (platData) {
           const user: AuthSessionUser = JSON.parse(platData);
           if (user.is_platform_admin || user.role === 'Super Admin') {
@@ -907,7 +940,7 @@ export const authService = {
           }
         }
 
-        const currentData = sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER) || localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+        const currentData = safeStorage.getItem(STORAGE_KEYS.CURRENT_USER);
         if (currentData) {
           const user: AuthSessionUser = JSON.parse(currentData);
           if (user.is_platform_admin || user.role === 'Super Admin') {
@@ -927,12 +960,12 @@ export const authService = {
       }
 
       // Tenant / Standard user retrieval
-      const tenantData = sessionStorage.getItem(STORAGE_KEYS.TENANT_USER) || localStorage.getItem(STORAGE_KEYS.TENANT_USER);
+      const tenantData = safeStorage.getItem(STORAGE_KEYS.TENANT_USER);
       if (tenantData && !isPlatformContext) {
         return JSON.parse(tenantData);
       }
 
-      const data = sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER) || localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+      const data = safeStorage.getItem(STORAGE_KEYS.CURRENT_USER);
       if (!data) return null;
 
       const user: AuthSessionUser = JSON.parse(data);
@@ -942,9 +975,8 @@ export const authService = {
       if (!check.isValid) {
         console.warn('[SECURITY] Session integrity advisory:', check.reason);
       }
-
       return user;
-    } catch {
+    } catch (_) {
       return null;
     }
   },

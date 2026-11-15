@@ -22,6 +22,7 @@ import { AuthContextMode } from '../../services/auth/authService';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
 import { JoyLogo } from '../../components/common/JoyLogo';
+import { PlatformSuperAdminLoginPage } from '../platform/auth/PlatformSuperAdminLoginPage';
 
 export interface AuthPageProps {
   initialContext?: AuthContextMode;
@@ -29,9 +30,19 @@ export interface AuthPageProps {
   onSuccessRoute?: (route: string) => void;
 }
 
-export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', onSuccessRoute }) => {
+export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', onNavigateToSuperAdmin, onSuccessRoute }) => {
   const { authContext, setAuthContextMode } = useAuth();
   const [isForgotOpen, setIsForgotOpen] = useState(false);
+
+  // If platform context requested, render dedicated isolated PlatformSuperAdminLoginPage
+  if (authContext === 'platform' || initialContext === 'platform') {
+    return (
+      <PlatformSuperAdminLoginPage
+        onSuccessRoute={onSuccessRoute}
+        onBackToCustomer={() => setAuthContextMode('tenant')}
+      />
+    );
+  }
 
   // Sync URL slug on mount and reflect deep-linked path
   React.useEffect(() => {
@@ -46,7 +57,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
         currentPath === '/company/login'
       ) {
         setAuthContextMode('admin');
-      } else if (currentPath === '/platform-login' || currentPath === '/superadmin') {
+      } else if (currentPath === '/platform-login' || currentPath === '/superadmin' || currentPath === '/platform/login') {
         setAuthContextMode('platform');
       }
     }
@@ -59,7 +70,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
         mode === 'admin'
           ? '/admin/login'
           : mode === 'platform'
-          ? '/platform-login'
+          ? '/platform/login'
           : '/login';
       window.history.replaceState({ route: slug }, '', slug);
     }
@@ -67,7 +78,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
 
   return (
     <div className="min-h-screen w-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 font-sans antialiased">
-      {/* 1. Context Switcher Bar */}
+      {/* 1. Context Switcher Bar (Customer & Workforce Portals) */}
       <div className="mb-6 bg-white p-1.5 rounded-2xl border border-gray-200/80 shadow-xs flex items-center gap-1.5 flex-wrap justify-center">
         <button
           type="button"
@@ -80,7 +91,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
           )}
         >
           <Building2 className="w-3.5 h-3.5 text-emerald-300" />
-          <span>Employer & Company Admin</span>
+          <span>Employer &amp; Company Admin</span>
         </button>
 
         <button
@@ -95,20 +106,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
         >
           <Users className="w-3.5 h-3.5" />
           <span>Employee Self-Service (ESS)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleContextChange('platform')}
-          className={cn(
-            'px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2',
-            authContext === 'platform'
-              ? 'bg-[#0F172A] text-white shadow-xs'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-          )}
-        >
-          <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Platform Administration</span>
         </button>
 
         <a
@@ -249,6 +246,23 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Discrete Platform Administration Link */}
+      <div className="mt-6 text-center text-xs text-gray-500">
+        <span>Are you a Platform Super Administrator? </span>
+        <a
+          href="/platform/login"
+          onClick={(e) => {
+            e.preventDefault();
+            if (onNavigateToSuperAdmin) onNavigateToSuperAdmin();
+            else if (onSuccessRoute) onSuccessRoute('superadmin-login');
+            else window.location.href = '/platform/login';
+          }}
+          className="font-semibold text-emerald-800 hover:text-emerald-950 underline transition-colors"
+        >
+          Access Platform Control Center →
+        </a>
       </div>
 
       {/* Forgot Password Modal */}

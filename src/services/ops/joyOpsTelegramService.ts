@@ -517,3 +517,4 @@ Use <b>/status</b>, <b>/critical</b>, <b>/devices</b>, or <b>/slo</b>.`;
 }
 
 export const joyOpsTelegramService = JoyOpsTelegramService.getInstance();
+

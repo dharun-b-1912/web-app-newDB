@@ -15,10 +15,19 @@ const isValidUUID = (id?: string | null): boolean => {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 };
 
-function getLocalApprovals(tenantId = getActiveOrgId()): ApprovalRequestItem[] {
-  if (typeof window === 'undefined') return [];
+export function getActiveOrgId(): string | null {
+  if (typeof window === 'undefined') return null;
   try {
-    const key = `${STORAGE_KEY_APPROVALS}_${tenantId || 'global'}`;
+    const cached = localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id');
+    if (cached && isValidUUID(cached)) return cached;
+  } catch (_) {}
+  return null;
+}
+
+function getLocalApprovals(tenantId = getActiveOrgId()): ApprovalRequestItem[] {
+  if (typeof window === 'undefined' || !tenantId || tenantId === 'platform-root') return [];
+  try {
+    const key = `${STORAGE_KEY_APPROVALS}_${tenantId}`;
     const raw = localStorage.getItem(key);
     if (!raw && (tenantId === '0c621892-e938-4707-9957-13534ea32c19' || tenantId === 'org-joy-01')) {
       const legacyRaw = localStorage.getItem(STORAGE_KEY_APPROVALS);
@@ -31,9 +40,9 @@ function getLocalApprovals(tenantId = getActiveOrgId()): ApprovalRequestItem[] {
 }
 
 function setLocalApprovals(data: ApprovalRequestItem[], tenantId = getActiveOrgId()): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || !tenantId || tenantId === 'platform-root') return;
   try {
-    const key = `${STORAGE_KEY_APPROVALS}_${tenantId || 'global'}`;
+    const key = `${STORAGE_KEY_APPROVALS}_${tenantId}`;
     localStorage.setItem(key, JSON.stringify(data));
   } catch {
     // ignore
@@ -59,8 +68,8 @@ export const approvalService = {
     let list: ApprovalRequestItem[] = [];
     const targetOrgId = params?.organizationId || getActiveOrgId();
 
-    // Strict multi-tenant isolation: Never fetch cross-tenant data without explicit org ID
-    if (!targetOrgId) {
+    // Strict multi-tenant isolation: Never fetch cross-tenant data without explicit org ID or in platform root context
+    if (!targetOrgId || targetOrgId === 'platform-root') {
       return [];
     }
 

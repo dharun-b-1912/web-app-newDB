@@ -4,12 +4,21 @@
 // ============================================================================
 
 import React from 'react';
-import { AuthPage } from './AuthPage';
+import { PlatformSuperAdminLoginPage } from '../platform/auth/PlatformSuperAdminLoginPage';
 
 export interface SuperAdminLoginPageProps {
   onSwitchToCustomer?: () => void;
+  onSuccessRoute?: (route: string) => void;
 }
 
-export const SuperAdminLoginPage: React.FC<SuperAdminLoginPageProps> = () => {
-  return <AuthPage initialContext="platform" />;
+export const SuperAdminLoginPage: React.FC<SuperAdminLoginPageProps> = ({
+  onSwitchToCustomer,
+  onSuccessRoute,
+}) => {
+  return (
+    <PlatformSuperAdminLoginPage
+      onBackToCustomer={onSwitchToCustomer}
+      onSuccessRoute={onSuccessRoute}
+    />
+  );
 };

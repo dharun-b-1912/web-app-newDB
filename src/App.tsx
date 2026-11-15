@@ -522,10 +522,15 @@ const AppContent: React.FC = () => {
 
   const isSuperAdminRoute =
     currentRoute === 'superadmin-login' ||
-    window.location.pathname === '/superadmin' ||
-    window.location.pathname === '/super-admin' ||
-    window.location.pathname === '/platform-login' ||
-    window.location.pathname === '/platform/login';
+    currentRoute === 'platform/login' ||
+    currentRoute === 'platform-login' ||
+    (typeof window !== 'undefined' && (
+      window.location.pathname === '/superadmin' ||
+      window.location.pathname === '/super-admin' ||
+      window.location.pathname === '/platform-login' ||
+      window.location.pathname === '/platform/login' ||
+      (!user && (window.location.pathname.startsWith('/platform') || currentRoute.startsWith('platform')))
+    ));
 
   if (isSuperAdminRoute) {
     const roleName = user?.roles?.[0]?.name ?? '';
@@ -547,9 +552,42 @@ const AppContent: React.FC = () => {
       );
     }
 
+    if (user && !isPlatformRole) {
+      return (
+        <div className="min-h-screen w-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6 font-sans">
+          <div className="max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 space-y-4 shadow-2xl text-center">
+            <div className="w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mx-auto text-rose-400">
+              <ShieldAlert className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-white">Platform Access Restricted</h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Your account (<code className="text-slate-300">{user.email}</code>) is authenticated as an organizational user, but is not authorized for the JOY PeopleHR Platform Control Center.
+            </p>
+            <div className="pt-2 flex flex-col gap-2">
+              <button
+                onClick={() => handleNavigate(getDefaultRouteForUser(user))}
+                className="w-full px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Return to Workspace Dashboard
+              </button>
+              <button
+                onClick={() => logout()}
+                className="w-full px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <Suspense fallback={null}>
-        <SuperAdminLoginPage onSwitchToCustomer={() => handleNavigate('dashboard')} />
+        <SuperAdminLoginPage
+          onSwitchToCustomer={() => handleNavigate('dashboard')}
+          onSuccessRoute={handleNavigate}
+        />
       </Suspense>
     );
   }

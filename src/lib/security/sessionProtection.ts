@@ -83,6 +83,7 @@ export function getDeviceFingerprint(): DeviceFingerprint {
  */
 export function bindSessionFingerprint(userId: string): void {
   try {
+    if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return;
     const fp = getDeviceFingerprint();
     const payload = JSON.stringify({
       userId,
@@ -101,7 +102,7 @@ export function bindSessionFingerprint(userId: string): void {
  */
 export function validateSessionIntegrity(userId?: string): { isValid: boolean; reason?: string } {
   try {
-    if (typeof window === 'undefined') return { isValid: true };
+    if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return { isValid: true };
 
     const storedRaw = sessionStorage.getItem(SESSION_FINGERPRINT_KEY);
     
