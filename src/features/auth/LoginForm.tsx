@@ -678,6 +678,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             <input
               type="text"
               autoFocus
+              autoComplete="username"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               placeholder="e.g. EMP-101 or JCS0042"
@@ -713,6 +714,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                 type="tel"
                 inputMode="numeric"
                 autoFocus
+                autoComplete="tel"
                 disabled={selectedMethod === 'mobile_otp' && Boolean(otpChallengeId)}
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
@@ -734,6 +736,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             <input
               type="email"
               autoFocus
+              autoComplete="username"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               placeholder="name@company.com"
@@ -760,6 +763,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password"

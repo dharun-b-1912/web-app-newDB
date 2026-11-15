@@ -994,9 +994,8 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api\/connector/, ''),
         },
       },
-      // HMR configuration with explicit clientPort to stabilize socket during network throttling
+      // HMR configuration with flexible dynamic port resolution (avoids failing on alternate dev ports e.g. 3001, 3002)
       hmr: process.env.DISABLE_HMR === 'true' ? false : {
-        clientPort: 3000,
         overlay: true,
       },
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.

@@ -292,6 +292,7 @@ export const PlatformSuperAdminLoginPage: React.FC<PlatformSuperAdminLoginPagePr
                       placeholder="superadmin@joypeoplehr.com"
                       required
                       autoFocus
+                      autoComplete="username"
                       disabled={isLoading}
                       className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-slate-800/90 border border-slate-700 text-white placeholder:text-slate-500 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all font-medium"
                     />
@@ -319,6 +320,7 @@ export const PlatformSuperAdminLoginPage: React.FC<PlatformSuperAdminLoginPagePr
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••••••"
                       required
+                      autoComplete="current-password"
                       disabled={isLoading}
                       className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-slate-800/90 border border-slate-700 text-white placeholder:text-slate-500 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all font-medium"
                     />
