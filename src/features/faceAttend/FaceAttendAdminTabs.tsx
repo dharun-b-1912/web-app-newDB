@@ -249,7 +249,7 @@ export const FaceAttendSettingsTab: React.FC<{
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
           <label className="flex items-start justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer gap-2">
             <div>
               <span className="font-semibold text-gray-900 block">GPS Location Verification</span>
@@ -265,18 +265,47 @@ export const FaceAttendSettingsTab: React.FC<{
               className="w-4 h-4 mt-0.5 accent-emerald-600 shrink-0"
             />
           </label>
+
+          <label className="flex items-start justify-between p-3 rounded-lg border-2 border-emerald-100 bg-emerald-50/40 hover:bg-emerald-50 cursor-pointer gap-2">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-emerald-950 block">Strict Check-In Only (Allow Check-Out with Warning)</span>
+                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-200 text-emerald-800 rounded">Recommended</span>
+              </div>
+              <span className="text-[11px] text-emerald-800">
+                Strictly blocks Check-In outside workplace boundary. Allows Check-Out outside boundary with distance warning (prevents frustrating employees who already stepped out or are traveling).
+              </span>
+            </div>
+            <input
+              type="checkbox"
+              checked={draft.strict_geofence_checkin_only !== false}
+              disabled={!isAdmin}
+              onChange={() => {
+                const nextVal = draft.strict_geofence_checkin_only === false;
+                setDraft({
+                  ...draft,
+                  strict_geofence_checkin_only: nextVal,
+                  geofence_mode_checkout: nextVal ? 'WARN_ONLY' : draft.geofence_mode,
+                });
+              }}
+              className="w-4 h-4 mt-0.5 accent-emerald-600 shrink-0"
+            />
+          </label>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-1 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1 text-xs">
           <div className="p-3 bg-gray-50/70 border border-gray-200 rounded-lg">
-            <label className="block font-semibold text-gray-800 mb-0.5">Geofence Enforcement Mode</label>
+            <label className="block font-semibold text-gray-800 mb-0.5">Check-In Geofence Mode</label>
             <p className="text-[11px] text-gray-500 mb-2">
-              <strong>REQUIRED</strong>: Blocks punch if outside radius. <strong>WARN_ONLY</strong>: Logs distance warning. <strong>OPTIONAL</strong>: Records GPS only.
+              <strong>REQUIRED</strong>: Strictly blocks check-in outside workplace boundary.
             </p>
             <select
-              value={draft.geofence_mode}
+              value={draft.geofence_mode_checkin || draft.geofence_mode || 'REQUIRED'}
               disabled={!isAdmin}
-              onChange={(e) => setDraft({ ...draft, geofence_mode: e.target.value as GeofenceMode })}
+              onChange={(e) => {
+                const val = e.target.value as GeofenceMode;
+                setDraft({ ...draft, geofence_mode_checkin: val, geofence_mode: val });
+              }}
               className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-medium"
             >
               <option value="REQUIRED">REQUIRED (Strictly block outside boundary)</option>
@@ -285,10 +314,37 @@ export const FaceAttendSettingsTab: React.FC<{
             </select>
           </div>
 
+          <div className="p-3 bg-emerald-50/50 border border-emerald-200 rounded-lg">
+            <div className="flex items-center justify-between mb-0.5">
+              <label className="block font-semibold text-emerald-950">Check-Out Geofence Mode</label>
+              <span className="text-[9px] text-emerald-700 font-bold bg-emerald-100 px-1 rounded">Safe Departure</span>
+            </div>
+            <p className="text-[11px] text-emerald-800 mb-2">
+              <strong>WARN_ONLY</strong>: Logs GPS distance & allows clock-out when traveling.
+            </p>
+            <select
+              value={draft.geofence_mode_checkout || (draft.strict_geofence_checkin_only !== false ? 'WARN_ONLY' : draft.geofence_mode)}
+              disabled={!isAdmin}
+              onChange={(e) => {
+                const val = e.target.value as GeofenceMode;
+                setDraft({
+                  ...draft,
+                  geofence_mode_checkout: val,
+                  strict_geofence_checkin_only: val === 'WARN_ONLY',
+                });
+              }}
+              className="w-full px-3 py-1.5 rounded-lg border border-emerald-300 bg-white font-medium text-emerald-950"
+            >
+              <option value="WARN_ONLY">WARN_ONLY (Recommended — allow punch & flag distance)</option>
+              <option value="OPTIONAL">OPTIONAL (Capture GPS coordinates without blocking)</option>
+              <option value="REQUIRED">REQUIRED (Strictly block outside boundary)</option>
+            </select>
+          </div>
+
           <div className="p-3 bg-gray-50/70 border border-gray-200 rounded-lg">
             <label className="block font-semibold text-gray-800 mb-0.5">Max GPS Accuracy Drift (m)</label>
             <p className="text-[11px] text-gray-500 mb-2">
-              Maximum allowable horizontal drift radius. Recommended: <strong>80m</strong> to reject inaccurate cell-tower fixes.
+              Maximum allowable drift radius. Recommended: <strong>80m</strong>.
             </p>
             <input
               type="number"
@@ -306,7 +362,7 @@ export const FaceAttendSettingsTab: React.FC<{
           <div className="p-3 bg-gray-50/70 border border-gray-200 rounded-lg">
             <label className="block font-semibold text-gray-800 mb-0.5">GPS Freshness Window (Seconds)</label>
             <p className="text-[11px] text-gray-500 mb-2">
-              Maximum age of device GPS fix. Recommended: <strong>60s</strong> to prevent cached or spoofed location apps.
+              Max age of GPS fix. Recommended: <strong>60s</strong> to prevent cached locations.
             </p>
             <input
               type="number"
@@ -319,6 +375,18 @@ export const FaceAttendSettingsTab: React.FC<{
               }
               className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white font-medium"
             />
+          </div>
+        </div>
+
+        {/* Dual-Mode Geofence Guidance Banner */}
+        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-emerald-50/60 border border-emerald-200 text-xs text-emerald-900">
+          <Info className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+          <div>
+            <span className="font-semibold block">Smart Dual-Mode Geofence Enforcement:</span>
+            <span>
+              <strong>Check-In</strong> strictly verifies physical presence at the designated workplace to prevent remote/proxy attendance.
+              <strong>Check-Out</strong> allows employees to punch out smoothly after stepping outside, boarding transit, or traveling to a client location without getting blocked, recording the GPS coordinates and distance warning automatically.
+            </span>
           </div>
         </div>
       </div>

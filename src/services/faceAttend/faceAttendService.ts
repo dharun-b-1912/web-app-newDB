@@ -12,16 +12,29 @@ import type {
 
 export const faceAttendService = {
   async getSettings(organizationId: string): Promise<FaceAttendOrgSettings> {
-    const { data, error } = await supabase
-      .from('faceattend_org_settings')
-      .select('*')
-      .eq('organization_id', organizationId)
-      .maybeSingle();
+    const [{ data, error }, { data: ent }] = await Promise.all([
+      supabase
+        .from('faceattend_org_settings')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .maybeSingle(),
+      supabase
+        .from('organization_addon_entitlements')
+        .select('config_json')
+        .eq('organization_id', organizationId)
+        .eq('addon_key', 'face_attend')
+        .maybeSingle(),
+    ]);
+
+    const extraConfig = (ent?.config_json && typeof ent.config_json === 'object') ? ent.config_json : {};
 
     if (error || !data) {
       return {
         organization_id: organizationId,
         ...DEFAULT_FACEATTEND_POLICY,
+        geofence_mode_checkin: extraConfig.geofence_mode_checkin ?? DEFAULT_FACEATTEND_POLICY.geofence_mode_checkin,
+        geofence_mode_checkout: extraConfig.geofence_mode_checkout ?? DEFAULT_FACEATTEND_POLICY.geofence_mode_checkout,
+        strict_geofence_checkin_only: extraConfig.strict_geofence_checkin_only ?? DEFAULT_FACEATTEND_POLICY.strict_geofence_checkin_only,
       };
     }
 
@@ -29,6 +42,9 @@ export const faceAttendService = {
       organization_id: organizationId,
       ...DEFAULT_FACEATTEND_POLICY,
       ...data,
+      geofence_mode_checkin: extraConfig.geofence_mode_checkin ?? (data as any)?.geofence_mode_checkin ?? data?.geofence_mode ?? DEFAULT_FACEATTEND_POLICY.geofence_mode_checkin,
+      geofence_mode_checkout: extraConfig.geofence_mode_checkout ?? (data as any)?.geofence_mode_checkout ?? (extraConfig.strict_geofence_checkin_only !== false ? 'WARN_ONLY' : data?.geofence_mode ?? 'WARN_ONLY'),
+      strict_geofence_checkin_only: extraConfig.strict_geofence_checkin_only ?? (data as any)?.strict_geofence_checkin_only ?? true,
       match_threshold: Number(data.match_threshold ?? DEFAULT_FACEATTEND_POLICY.match_threshold),
       liveness_threshold: Number(data.liveness_threshold ?? DEFAULT_FACEATTEND_POLICY.liveness_threshold),
       max_gps_accuracy_meters: Number(
@@ -48,22 +64,70 @@ export const faceAttendService = {
     const current = await this.getSettings(organizationId);
     const nextVersion = (current.policy_version || 1) + 1;
 
-    const payload = {
-      ...current,
-      ...updates,
+    // Filter payload strictly to valid PostgreSQL columns of faceattend_org_settings
+    const dbPayload = {
       organization_id: organizationId,
       policy_version: nextVersion,
+      module_enabled: updates.module_enabled ?? current.module_enabled,
+      face_verification_enabled: updates.face_verification_enabled ?? current.face_verification_enabled,
+      liveness_enabled: updates.liveness_enabled ?? current.liveness_enabled,
+      gps_verification_enabled: updates.gps_verification_enabled ?? current.gps_verification_enabled,
+      geofence_mode: updates.geofence_mode ?? updates.geofence_mode_checkin ?? current.geofence_mode,
+      require_face_on_checkin: updates.require_face_on_checkin ?? current.require_face_on_checkin,
+      require_face_on_checkout: updates.require_face_on_checkout ?? current.require_face_on_checkout,
+      offline_queue_enabled: updates.offline_queue_enabled ?? current.offline_queue_enabled,
+      manual_fallback_enabled: updates.manual_fallback_enabled ?? current.manual_fallback_enabled,
+      self_enrolment_requires_approval: updates.self_enrolment_requires_approval ?? current.self_enrolment_requires_approval,
+      match_threshold: updates.match_threshold ?? current.match_threshold,
+      liveness_threshold: updates.liveness_threshold ?? current.liveness_threshold,
+      max_gps_accuracy_meters: updates.max_gps_accuracy_meters ?? current.max_gps_accuracy_meters,
+      gps_freshness_seconds: updates.gps_freshness_seconds ?? current.gps_freshness_seconds,
+      retention_days_images: updates.retention_days_images ?? current.retention_days_images,
+      consent_version_required: updates.consent_version_required ?? current.consent_version_required,
+      provider_preference: updates.provider_preference ?? current.provider_preference,
+      allow_non_face_fallback_on_provider_outage: updates.allow_non_face_fallback_on_provider_outage ?? current.allow_non_face_fallback_on_provider_outage,
       updated_by: actorUserId || null,
       updated_at: new Date().toISOString(),
     };
 
     const { data, error } = await supabase
       .from('faceattend_org_settings')
-      .upsert(payload, { onConflict: 'organization_id' })
+      .upsert(dbPayload, { onConflict: 'organization_id' })
       .select('*')
       .single();
 
     if (error) return { ok: false, error: error.message };
+
+    // Persist granular geofence configuration to organization_addon_entitlements config_json
+    const checkinMode = updates.geofence_mode_checkin ?? updates.geofence_mode ?? current.geofence_mode_checkin ?? 'REQUIRED';
+    const checkoutMode = updates.geofence_mode_checkout ?? current.geofence_mode_checkout ?? 'WARN_ONLY';
+    const strictCheckinOnly = updates.strict_geofence_checkin_only ?? current.strict_geofence_checkin_only ?? true;
+
+    try {
+      const { data: ent } = await supabase
+        .from('organization_addon_entitlements')
+        .select('config_json')
+        .eq('organization_id', organizationId)
+        .eq('addon_key', 'face_attend')
+        .maybeSingle();
+
+      const currentConfig = (ent?.config_json && typeof ent.config_json === 'object') ? ent.config_json : {};
+      await supabase
+        .from('organization_addon_entitlements')
+        .update({
+          config_json: {
+            ...currentConfig,
+            geofence_mode_checkin: checkinMode,
+            geofence_mode_checkout: checkoutMode,
+            strict_geofence_checkin_only: strictCheckinOnly,
+          },
+          updated_by: actorUserId || null,
+        })
+        .eq('organization_id', organizationId)
+        .eq('addon_key', 'face_attend');
+    } catch (e) {
+      console.warn('[FaceAttendService] Could not persist extra geofence modes to entitlement config:', e);
+    }
 
     await supabase.from('faceattend_audit_logs').insert({
       organization_id: organizationId,
@@ -77,10 +141,20 @@ export const faceAttendService = {
         liveness_enabled: data.liveness_enabled,
         gps_verification_enabled: data.gps_verification_enabled,
         geofence_mode: data.geofence_mode,
+        geofence_mode_checkin: checkinMode,
+        geofence_mode_checkout: checkoutMode,
+        strict_geofence_checkin_only: strictCheckinOnly,
       },
     });
 
-    return { ok: true, data: data as FaceAttendOrgSettings };
+    const fullResult: FaceAttendOrgSettings = {
+      ...data,
+      geofence_mode_checkin: checkinMode,
+      geofence_mode_checkout: checkoutMode,
+      strict_geofence_checkin_only: strictCheckinOnly,
+    };
+
+    return { ok: true, data: fullResult };
   },
 
   async listTemplates(organizationId: string): Promise<FaceAttendTemplateRecord[]> {

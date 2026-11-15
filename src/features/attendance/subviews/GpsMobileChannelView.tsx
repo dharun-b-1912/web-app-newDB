@@ -346,11 +346,18 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     setVerificationOutcome(verification);
 
     if (verification.requiresReason && !skipReasonCheck) {
-      setPendingPunchType(punchType);
-      setPunchReason('');
-      setIsReasonModalOpen(true);
-      return;
+      if (punchType === 'CHECK_IN') {
+        // Strict geofence enforcement on Check-in: requires verified prompt
+        setPendingPunchType('CHECK_IN');
+        setPunchReason('');
+        setIsReasonModalOpen(true);
+        return;
+      }
+      // For Check-out: allow punch immediately without blocking employee, recording transit warning
+      setPendingPunchType('CHECK_OUT');
     }
+
+    const effectiveReason = punchReason || (punchType === 'CHECK_OUT' && verification.requiresReason ? 'Mobile off-site check-out (departed workplace / in transit)' : undefined);
 
     setIsPunching(true);
     try {
@@ -360,10 +367,14 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
         punchType,
         evidence: coords || undefined,
         locationVerificationStatus: verification.verificationStatus,
-        locationReason: punchReason,
+        locationReason: effectiveReason,
       });
 
-      showToast(res.message, 'success');
+      if (punchType === 'CHECK_OUT' && verification.requiresReason) {
+        showToast('Check-out recorded successfully (off-site location logged with warning).', 'success');
+      } else {
+        showToast(res.message, 'success');
+      }
       setIsReasonModalOpen(false);
       setPunchReason('');
       await loadData();

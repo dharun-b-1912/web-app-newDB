@@ -284,8 +284,9 @@ describe('JOY FaceAttend — Core 1:1 Face, Liveness, GPS & SaaS Verification En
       expect(gps.matchedLocationId).toBe(SAMPLE_OFFICE.id);
     });
 
-    it('blocks outside geofence under REQUIRED, flags as warning under WARN_ONLY', () => {
-      const outsideRequired = evaluateGpsAndGeofence(
+    it('blocks outside geofence under REQUIRED on check-in, but allows checkout outside geofence with distance warning', () => {
+      // 1. Strict Check-In outside geofence: BLOCKED
+      const checkinOutside = evaluateGpsAndGeofence(
         {
           latitude: 11.03,
           longitude: 76.97,
@@ -295,11 +296,53 @@ describe('JOY FaceAttend — Core 1:1 Face, Liveness, GPS & SaaS Verification En
           isMockLocation: false,
           locations: [SAMPLE_OFFICE],
         },
-        DEFAULT_FACEATTEND_POLICY
+        DEFAULT_FACEATTEND_POLICY,
+        'CHECK_IN'
       );
-      expect(outsideRequired.passed).toBe(false);
-      expect(outsideRequired.decisionIfFailed).toBe('GEOFENCE_FAILED');
+      expect(checkinOutside.passed).toBe(false);
+      expect(checkinOutside.decisionIfFailed).toBe('GEOFENCE_FAILED');
 
+      // 2. Safe Departure Check-Out outside geofence: ALLOWED with warning
+      const checkoutOutside = evaluateGpsAndGeofence(
+        {
+          latitude: 11.03,
+          longitude: 76.97,
+          accuracyMeters: 12,
+          capturedAtIso: '2026-11-12T18:00:00.000Z',
+          nowIso: '2026-11-12T18:00:05.000Z',
+          isMockLocation: false,
+          locations: [SAMPLE_OFFICE],
+        },
+        DEFAULT_FACEATTEND_POLICY,
+        'CHECK_OUT'
+      );
+      expect(checkoutOutside.passed).toBe(true);
+      expect(checkoutOutside.insideGeofence).toBe(false);
+      expect(checkoutOutside.deviceRiskFlags).toContain('OUTSIDE_GEOFENCE');
+      expect(checkoutOutside.deviceRiskFlags).toContain('OUTSIDE_GEOFENCE_CHECKOUT_ALLOWED');
+      expect(checkoutOutside.reason).toContain('Check-out allowed with location warning');
+
+      // 3. Combined Verification Decision allows punch commit for checkout outside boundary
+      const combinedCheckout = evaluateCombinedAttendanceDecision({
+        entitlementEnabled: true,
+        subscriptionStatus: 'ACTIVE',
+        hasActiveConsent: true,
+        templateStatus: 'ACTIVE',
+        punchType: 'CHECK_OUT',
+        policy: DEFAULT_FACEATTEND_POLICY,
+        challengeValid: true,
+        challengeExpiredOrUsed: false,
+        imageQualityOk: true,
+        livenessPassed: true,
+        livenessScore: 92,
+        faceSimilarityScore: 91.5,
+        providerAvailable: true,
+        gpsResult: checkoutOutside,
+      });
+      expect(combinedCheckout.decision).toBe('MATCH');
+      expect(combinedCheckout.allowPunchCommit).toBe(true);
+
+      // 4. Manual WARN_ONLY mode allows punch
       const outsideWarnOnly = evaluateGpsAndGeofence(
         {
           latitude: 11.03,
@@ -310,7 +353,8 @@ describe('JOY FaceAttend — Core 1:1 Face, Liveness, GPS & SaaS Verification En
           isMockLocation: false,
           locations: [SAMPLE_OFFICE],
         },
-        { ...DEFAULT_FACEATTEND_POLICY, geofence_mode: 'WARN_ONLY' }
+        { ...DEFAULT_FACEATTEND_POLICY, geofence_mode: 'WARN_ONLY', geofence_mode_checkin: 'WARN_ONLY' },
+        'CHECK_IN'
       );
       expect(outsideWarnOnly.passed).toBe(true);
       expect(outsideWarnOnly.insideGeofence).toBe(false);
@@ -471,7 +515,7 @@ describe('JOY FaceAttend — Core 1:1 Face, Liveness, GPS & SaaS Verification En
       expect(migrationSql).toContain('ENABLE ROW LEVEL SECURITY');
       expect(migrationSql).toContain('pg_advisory_xact_lock');
       expect(migrationSql).toContain('verification_mode');
-      expect(migrationSql).toContain("'Face'");
+      expect(migrationSql).toContain("'FACE'");
       expect(migrationSql).toContain("'JOY_FACEATTEND'");
 
       const edgeFn = fs.readFileSync(

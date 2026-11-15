@@ -175,9 +175,14 @@ class MobileAttendanceClientService {
     const locName = effectiveLoc ? effectiveLoc.name : (effectiveStatus === 'GPS_UNAVAILABLE' ? 'Unverified Location (No GPS)' : 'External / Client Site');
     const locId = effectiveLoc ? effectiveLoc.id : 'loc-external';
 
-    // 2. Validate reason requirement if punch is from different location or no GPS
+    // 2. Validate reason requirement: Check-in strictly requires geofence/reason; Check-out auto-flags departure/transit
     if (verification.requiresReason && !request.locationReason?.trim()) {
-      throw new Error(`Reason required for ${effectiveStatus === 'GPS_UNAVAILABLE' ? 'unverified GPS' : 'external/different location'}: Please provide an explanation before completing check-${request.punchType === 'CHECK_IN' ? 'in' : 'out'}.`);
+      if (request.punchType === 'CHECK_OUT') {
+        // Auto-record departure/transit location reason so employees are never blocked or frustrated on check-out
+        request.locationReason = 'Mobile off-site check-out (departed workplace / in transit)';
+      } else {
+        throw new Error(`Reason required for ${effectiveStatus === 'GPS_UNAVAILABLE' ? 'unverified GPS' : 'external/different location'}: Please provide an explanation before completing check-in.`);
+      }
     }
 
     // Resolve real employee details

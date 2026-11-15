@@ -69,7 +69,7 @@ async function loadTenantContext(supabaseAdmin: any, organizationId: string) {
   const [{ data: ent }, { data: sub }, { data: settings }] = await Promise.all([
     supabaseAdmin
       .from('organization_addon_entitlements')
-      .select('is_enabled, plan_tier, max_units, max_workers')
+      .select('is_enabled, plan_tier, max_units, max_workers, config_json')
       .eq('organization_id', organizationId)
       .eq('addon_key', 'face_attend')
       .maybeSingle(),
@@ -85,9 +85,14 @@ async function loadTenantContext(supabaseAdmin: any, organizationId: string) {
       .maybeSingle(),
   ]);
 
+  const extraConfig = (ent?.config_json && typeof ent.config_json === 'object') ? ent.config_json : {};
+
   const policy: FaceAttendPolicyConfig = {
     ...DEFAULT_FACEATTEND_POLICY,
     ...(settings || {}),
+    geofence_mode_checkin: extraConfig.geofence_mode_checkin ?? (settings as any)?.geofence_mode_checkin ?? settings?.geofence_mode ?? DEFAULT_FACEATTEND_POLICY.geofence_mode_checkin,
+    geofence_mode_checkout: extraConfig.geofence_mode_checkout ?? (settings as any)?.geofence_mode_checkout ?? (extraConfig.strict_geofence_checkin_only !== false ? 'WARN_ONLY' : settings?.geofence_mode ?? 'WARN_ONLY'),
+    strict_geofence_checkin_only: extraConfig.strict_geofence_checkin_only ?? (settings as any)?.strict_geofence_checkin_only ?? true,
     match_threshold: Number(settings?.match_threshold ?? DEFAULT_FACEATTEND_POLICY.match_threshold),
     liveness_threshold: Number(settings?.liveness_threshold ?? DEFAULT_FACEATTEND_POLICY.liveness_threshold),
     max_gps_accuracy_meters: Number(
@@ -890,7 +895,8 @@ async function downloadStorageImageBase64(supabaseAdmin: any, path: string): Pro
         isMockLocation: Boolean(body.is_mock_location),
         locations,
       },
-      tenantCtx.policy
+      tenantCtx.policy,
+      punchType
     );
 
     // Validate challenge nonce server-side
@@ -1084,7 +1090,7 @@ async function downloadStorageImageBase64(supabaseAdmin: any, path: string): Pro
         p_work_location_name: gpsResult.matchedLocationName,
         p_distance_meters: gpsResult.distanceMeters ?? 0,
         p_location_authorized: gpsResult.insideGeofence,
-        p_reason: body.reason || null,
+        p_reason: body.reason || (punchType === 'CHECK_OUT' && !gpsResult.insideGeofence ? (gpsResult.reason || 'Off-site check-out (traveling/departed facility)') : null),
         p_idempotency_key: idempotencyKey,
       }
     );

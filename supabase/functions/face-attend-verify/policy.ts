@@ -30,6 +30,9 @@ export interface FaceAttendPolicyConfig {
   liveness_enabled: boolean;
   gps_verification_enabled: boolean;
   geofence_mode: GeofenceMode;
+  geofence_mode_checkin?: GeofenceMode;
+  geofence_mode_checkout?: GeofenceMode;
+  strict_geofence_checkin_only?: boolean;
   require_face_on_checkin: boolean;
   require_face_on_checkout: boolean;
   offline_queue_enabled: boolean;
@@ -52,6 +55,9 @@ export const DEFAULT_FACEATTEND_POLICY: FaceAttendPolicyConfig = {
   liveness_enabled: true,
   gps_verification_enabled: true,
   geofence_mode: 'REQUIRED',
+  geofence_mode_checkin: 'REQUIRED',
+  geofence_mode_checkout: 'WARN_ONLY',
+  strict_geofence_checkin_only: true,
   require_face_on_checkin: true,
   require_face_on_checkout: true,
   offline_queue_enabled: false,
@@ -117,10 +123,31 @@ export function evaluateGpsAndGeofence(
   input: GpsVerificationInput,
   policy: Pick<
     FaceAttendPolicyConfig,
-    'gps_verification_enabled' | 'geofence_mode' | 'max_gps_accuracy_meters' | 'gps_freshness_seconds'
-  >
+    | 'gps_verification_enabled'
+    | 'geofence_mode'
+    | 'geofence_mode_checkin'
+    | 'geofence_mode_checkout'
+    | 'strict_geofence_checkin_only'
+    | 'max_gps_accuracy_meters'
+    | 'gps_freshness_seconds'
+  >,
+  punchType: 'CHECK_IN' | 'CHECK_OUT' = 'CHECK_IN'
 ): GpsVerificationResult {
   const riskFlags: string[] = [];
+
+  // Determine effective enforcement mode based on punch type (Check-in strictly enforced, Check-out flexible)
+  let effectiveMode: GeofenceMode = policy.geofence_mode || 'REQUIRED';
+  if (punchType === 'CHECK_OUT') {
+    if (policy.geofence_mode_checkout) {
+      effectiveMode = policy.geofence_mode_checkout;
+    } else if (policy.strict_geofence_checkin_only !== false) {
+      effectiveMode = 'WARN_ONLY';
+    }
+  } else {
+    if (policy.geofence_mode_checkin) {
+      effectiveMode = policy.geofence_mode_checkin;
+    }
+  }
 
   if (!policy.gps_verification_enabled) {
     return {
@@ -156,7 +183,7 @@ export function evaluateGpsAndGeofence(
     Number.isNaN(input.longitude)
   ) {
     riskFlags.push('GPS_MISSING');
-    if (policy.geofence_mode === 'REQUIRED') {
+    if (effectiveMode === 'REQUIRED') {
       return {
         passed: false,
         decisionIfFailed: 'GEOFENCE_FAILED',
@@ -171,7 +198,9 @@ export function evaluateGpsAndGeofence(
     return {
       passed: true,
       decisionIfFailed: null,
-      reason: 'GPS coordinates unavailable; allowed under non-strict geofence policy.',
+      reason: punchType === 'CHECK_OUT'
+        ? 'GPS coordinates unavailable on check-out; permitted under flexible checkout policy.'
+        : 'GPS coordinates unavailable; allowed under non-strict geofence policy.',
       matchedLocationId: null,
       matchedLocationName: null,
       distanceMeters: null,
@@ -188,7 +217,7 @@ export function evaluateGpsAndGeofence(
       const ageSec = (nowMs - capturedMs) / 1000;
       if (ageSec > policy.gps_freshness_seconds || ageSec < -30) {
         riskFlags.push('STALE_GPS_FIX');
-        if (policy.geofence_mode === 'REQUIRED') {
+        if (effectiveMode === 'REQUIRED') {
           return {
             passed: false,
             decisionIfFailed: 'GEOFENCE_FAILED',
@@ -210,7 +239,7 @@ export function evaluateGpsAndGeofence(
     input.accuracyMeters > policy.max_gps_accuracy_meters
   ) {
     riskFlags.push('LOW_GPS_ACCURACY');
-    if (policy.geofence_mode === 'REQUIRED') {
+    if (effectiveMode === 'REQUIRED') {
       return {
         passed: false,
         decisionIfFailed: 'GEOFENCE_FAILED',
@@ -230,7 +259,7 @@ export function evaluateGpsAndGeofence(
 
   if (validLocations.length === 0) {
     riskFlags.push('NO_ASSIGNED_GEOFENCE');
-    if (policy.geofence_mode === 'REQUIRED') {
+    if (effectiveMode === 'REQUIRED') {
       return {
         passed: false,
         decisionIfFailed: 'GEOFENCE_FAILED',
@@ -291,7 +320,7 @@ export function evaluateGpsAndGeofence(
   }
 
   riskFlags.push('OUTSIDE_GEOFENCE');
-  if (policy.geofence_mode === 'REQUIRED') {
+  if (effectiveMode === 'REQUIRED') {
     return {
       passed: false,
       decisionIfFailed: 'GEOFENCE_FAILED',
@@ -304,10 +333,16 @@ export function evaluateGpsAndGeofence(
     };
   }
 
+  if (punchType === 'CHECK_OUT') {
+    riskFlags.push('OUTSIDE_GEOFENCE_CHECKOUT_ALLOWED');
+  }
+
   return {
     passed: true,
     decisionIfFailed: null,
-    reason: `Outside geofence (${Math.round(nearestDist)}m from ${nearestLoc?.name ?? 'site'}); flagged as warning only.`,
+    reason: punchType === 'CHECK_OUT'
+      ? `Outside workplace geofence on check-out (${Math.round(nearestDist)}m from ${nearestLoc?.name ?? 'site'}). Check-out allowed with location warning.`
+      : `Outside geofence (${Math.round(nearestDist)}m from ${nearestLoc?.name ?? 'site'}); flagged as warning only.`,
     matchedLocationId: nearestLoc?.id ?? null,
     matchedLocationName: nearestLoc?.name ?? null,
     distanceMeters: nearestDist,
