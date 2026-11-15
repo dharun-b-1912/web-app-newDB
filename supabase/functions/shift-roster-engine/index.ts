@@ -35,6 +35,50 @@ serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    // 0. Multi-Tenant Authorization Gate
+    const authHeader = req.headers.get('authorization') || '';
+    const internalApiKey = req.headers.get('x-api-key') || req.headers.get('x-device-token') || '';
+    const expectedServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+
+    let authenticatedUserId: string | null = null;
+    let isPlatformAdmin = false;
+    let callerOrgId: string | null = null;
+
+    if (internalApiKey && (internalApiKey === expectedServiceKey || internalApiKey.startsWith('bio-gw-'))) {
+      // Internal system dispatcher or trusted biometric gateway
+      isPlatformAdmin = true;
+    } else if (authHeader) {
+      const token = authHeader.replace(/^Bearer\s+/i, '');
+      const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+      if (userErr || !userData.user) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Unauthorized: Invalid or expired authentication token' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      authenticatedUserId = userData.user.id;
+      isPlatformAdmin = Boolean(
+        userData.user.app_metadata?.is_platform_admin === true ||
+        userData.user.email === 'superadmin@joypeoplehr.com'
+      );
+      callerOrgId = (userData.user.app_metadata?.organization_id as string) || (userData.user.user_metadata?.organization_id as string) || null;
+
+      if (!callerOrgId) {
+        // Query user_profiles for organization_id
+        const { data: prof } = await supabase
+          .from('user_profiles')
+          .select('organization_id')
+          .or(`auth_user_id.eq.${authenticatedUserId},id.eq.${authenticatedUserId}`)
+          .maybeSingle();
+        if (prof?.organization_id) callerOrgId = prof.organization_id;
+      }
+    } else {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized: Missing Authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Parse parameters from query string or JSON body
     const url = new URL(req.url);
     let phone = url.searchParams.get('phone') || '';
@@ -89,6 +133,20 @@ serve(async (req: Request) => {
     const emp = emps[0];
     const orgId = emp.organization_id;
 
+    // 1.1 Tenant Boundary Isolation Gate:
+    // If not a platform admin, caller must either be the employee themselves OR belong to the same organization!
+    if (!isPlatformAdmin) {
+      const isSelf = (emp.user_id && emp.user_id === authenticatedUserId) ||
+                     (authenticatedUserId && (emp.id === authenticatedUserId));
+      const isSameOrg = callerOrgId && (callerOrgId === orgId);
+      if (!isSelf && !isSameOrg) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Forbidden: Cross-tenant access to another organization roster is prohibited' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // 2. Fetch parallel: Designation, Company, Shift, Holidays, and Today's Attendance
     const now = new Date();
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -97,7 +155,7 @@ serve(async (req: Request) => {
     endDate.setDate(now.getDate() + daysCount);
     const endStr = endDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-    const [desigRes, compRes, shiftRes, holidayRes, todayAttRes] = await Promise.all([
+    const [desigRes, compRes, orgRes, shiftRes, holidayRes, todayAttRes] = await Promise.all([
       emp.designation_id
         ? supabase.from('designations').select('title').eq('id', emp.designation_id).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
@@ -105,6 +163,9 @@ serve(async (req: Request) => {
         ? supabase.from('companies').select('trade_name, legal_name').eq('id', emp.company_id).maybeSingle()
         : orgId
         ? supabase.from('companies').select('trade_name, legal_name').eq('organization_id', orgId).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      orgId
+        ? supabase.from('organizations').select('display_name, legal_name').eq('id', orgId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
       orgId
         ? supabase.from('shifts').select('id, name, code, start_time, end_time, grace_entry_minutes, grace_exit_minutes, min_full_day_hours').eq('organization_id', orgId).eq('is_active', true).limit(1)
@@ -116,7 +177,7 @@ serve(async (req: Request) => {
     ]);
 
     const designation = desigRes.data?.title || 'Team Member';
-    const companyName = compRes.data?.trade_name || compRes.data?.legal_name || 'Joy Corporate Solutions Pvt. Ltd.';
+    const companyName = compRes.data?.trade_name || compRes.data?.legal_name || orgRes.data?.display_name || orgRes.data?.legal_name || 'Enterprise Workplace';
 
     const activeShift = (shiftRes.data && shiftRes.data[0]) || {
       id: null,

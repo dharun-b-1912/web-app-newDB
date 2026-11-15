@@ -73,7 +73,7 @@ export function buildMidnightObsidianHtmlEmail(params: BuildEmailParams): string
   const isMorning = params.reportType === 'MORNING_CHECKIN';
   const isWeekly = params.reportType === 'WEEKLY';
   const isMonthly = params.reportType === 'MONTHLY';
-  const company = params.company || 'Joy Corporate Solutions Pvt. Ltd.';
+  const company = params.company || 'Enterprise Workforce';
   const dateStr = params.reportDate;
   const rows = params.rows || [];
 

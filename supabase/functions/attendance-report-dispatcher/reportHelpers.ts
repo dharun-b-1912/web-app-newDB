@@ -326,7 +326,7 @@ export function generateMisReportFilename(params: {
   reportType?: 'MORNING_CHECKIN' | 'EVENING_FINAL' | 'AUDIT' | 'WORKFORCE_MIS' | string;
   reportDate: string;
 }): string {
-  const { companyName = 'Joy Corporate Solutions', reportType, reportDate } = params;
+  const { companyName = 'Enterprise Workforce', reportType, reportDate } = params;
 
   let orgPrefix = 'JOY';
   const cleanCompany = (companyName || '').trim();

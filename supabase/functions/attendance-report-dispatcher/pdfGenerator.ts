@@ -36,9 +36,9 @@ export async function generatePdfDocument(
 
   let company = options.companyName && options.companyName !== 'Workforce Organization'
     ? options.companyName
-    : 'Joy Corporate Solutions Pvt. Ltd.';
+    : 'Enterprise Workforce';
   if (company === 'Workforce Organization' || company === 'Enterprise Workforce Management') {
-    company = 'Joy Corporate Solutions Pvt. Ltd.';
+    company = 'Enterprise Workforce';
   }
 
   const dateStr = options.reportDate || new Date().toISOString().split('T')[0];

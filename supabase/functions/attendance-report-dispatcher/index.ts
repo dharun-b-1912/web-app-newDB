@@ -229,7 +229,7 @@ serve(async (req: Request) => {
     }
 
     if (!companyName || /workforce organization/i.test(companyName) || companyName === "Enterprise Workforce Management") {
-      companyName = "Joy Corporate Solutions Pvt. Ltd.";
+      companyName = orgData?.display_name || orgData?.legal_name || "Enterprise Workplace";
     }
 
     const safeComp = companyName.replace(/[^a-zA-Z0-9]/g, "_");

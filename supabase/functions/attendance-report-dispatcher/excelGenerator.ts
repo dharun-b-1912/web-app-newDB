@@ -25,7 +25,7 @@ export async function generateExcelWorkbook(
     wb.creator = options.generatedBy || 'Joy PeopleHR Time Engine';
     wb.created = new Date();
 
-    const company = (options.companyName && options.companyName !== 'Workforce Organization' && options.companyName !== 'Enterprise Workforce Management') ? options.companyName : 'Joy Corporate Solutions Pvt. Ltd.';
+    const company = (options.companyName && options.companyName !== 'Workforce Organization' && options.companyName !== 'Enterprise Workforce Management') ? options.companyName : 'Enterprise Workforce';
     const dateStr = options.reportDate;
 
     // Palette Colors — Executive Corporate Palette
