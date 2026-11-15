@@ -212,3 +212,4 @@ $$;
 
 REVOKE ALL ON FUNCTION public.get_platform_edge_functions_telemetry() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_platform_edge_functions_telemetry() TO authenticated, service_role;
+

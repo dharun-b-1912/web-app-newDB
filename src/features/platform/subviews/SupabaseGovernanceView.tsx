@@ -496,3 +496,4 @@ export const SupabaseGovernanceView: React.FC<SupabaseGovernanceViewProps> = ({
     </div>
   );
 };
+

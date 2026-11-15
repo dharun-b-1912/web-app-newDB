@@ -212,3 +212,4 @@ class PlatformDatabaseGovernanceService {
 }
 
 export const platformDatabaseGovernanceService = new PlatformDatabaseGovernanceService();
+
