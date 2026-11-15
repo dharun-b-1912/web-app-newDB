@@ -24,6 +24,23 @@ import { logger } from './diagnostics/loggerService';
 import { CorrelationService } from './diagnostics/correlationService';
 import { getActiveOrgId } from './attendance/biometricCommandService';
 
+export function isValidUUID(id?: string | null): boolean {
+  if (!id) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+export function ensureUUID(id?: string | null): string {
+  if (id && isValidUUID(id)) return id;
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // Storage Keys for temporary offline cache only
 const KEYS = {
   ORG: 'workforce_organization',
@@ -537,23 +554,6 @@ export function saveExtendedEmployeeRecord(empId: string, data: any) {
 const DEFAULT_LEGAL_ENTITIES: Company[] = [];
 
 export const DEFAULT_EMPLOYEES: Employee[] = [];
-
-export const isValidUUID = (id?: string | null): boolean => {
-  if (!id) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-};
-
-export const ensureUUID = (id?: string | null): string => {
-  if (id && isValidUUID(id)) return id;
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-};
 
 export const hasAuthenticatedSession = async (): Promise<boolean> => {
   if (!isSupabaseEnabled || !supabase) return false;

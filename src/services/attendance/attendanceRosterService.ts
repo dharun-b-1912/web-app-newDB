@@ -20,11 +20,29 @@ import {
   RosterConflict,
 } from '../../types/shiftRoster';
 import { hrEventBus } from '../hrEventBus';
-import { api, isValidUUID, ensureUUID } from '../api';
+import { api } from '../api';
 import { supabase, supabaseAdmin, isSupabaseEnabled } from '../../lib/supabase';
 import { getActiveOrgId } from './biometricCommandService';
 import { notificationService } from '../notification/notificationService';
 import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
+
+// Resilient local UUID validation to guarantee zero TDZ/circular-dependency errors
+function isValidUUID(id?: string | null): boolean {
+  if (!id) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+function ensureUUID(id?: string | null): string {
+  if (id && isValidUUID(id)) return id;
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 const STORAGE_KEYS = {
   SHIFTS: 'workforce_shifts_v2',
@@ -789,101 +807,10 @@ class AttendanceRosterService {
     return this._dbShiftAssignmentsCache;
   }
 
-  async fetchShiftsFromDb(tenantId = getActiveOrgId()): Promise<ShiftMaster[]> {
-    if (!isSupabaseEnabled) return this.getShifts(tenantId);
-
-    try {
-      let q = supabase.from('shifts').select('*');
-      if (tenantId && isValidUUID(tenantId) && tenantId !== 'platform-root') {
-        q = q.eq('organization_id', tenantId);
-      }
-      const { data, error } = await q.order('created_at', { ascending: true });
-
-      if (!error && data && data.length > 0) {
-        const localShifts = this.getShifts(tenantId);
-        const localMap = new Map<string, ShiftMaster>();
-        localShifts.forEach(s => {
-          if (s.id) localMap.set(s.id, s);
-          if (s.shift_code) localMap.set(s.shift_code.toUpperCase(), s);
-        });
-
-        const seenIds = new Set<string>();
-        const seenCodes = new Set<string>();
-        const mapped: ShiftMaster[] = [];
-
-        for (const d of data) {
-          if (!d.id || seenIds.has(d.id)) continue;
-          const codeKey = (d.code || '').toUpperCase();
-          if (codeKey && seenCodes.has(codeKey)) continue;
-          seenIds.add(d.id);
-          if (codeKey) seenCodes.add(codeKey);
-
-          const existingLocal = localMap.get(d.id) || (codeKey ? localMap.get(codeKey) : undefined);
-          const sTime = (d.start_time || '09:00:00').slice(0, 5);
-          const eTime = (d.end_time || '18:00:00').slice(0, 5);
-          const cutoff = (d as any).attendance_date_cutoff
-            ? (d as any).attendance_date_cutoff.slice(0, 5)
-            : (existingLocal?.attendance_date_cutoff || (d.is_overnight ? '12:00' : '06:00'));
-
-          mapped.push({
-            id: d.id,
-            tenant_id: d.organization_id || tenantId,
-            shift_code: d.code,
-            shift_name: d.name,
-            description: `${d.name} (${sTime} - ${eTime})`,
-            shift_type: (d.is_overnight ? 'NIGHT_SHIFT' : 'FIXED') as any,
-            start_time: sTime,
-            end_time: eTime,
-            scheduled_duration_minutes: this.calculateDurationMinutes(sTime, eTime, d.is_overnight),
-            net_working_minutes: (Number(d.min_full_day_hours) || 8) * 60,
-            cross_midnight: Boolean(d.is_overnight),
-            attendance_date_cutoff: cutoff,
-            grace_in_minutes: d.grace_entry_minutes ?? 15,
-            grace_out_minutes: d.grace_exit_minutes ?? 15,
-            early_out_tolerance_minutes: 15,
-            late_threshold_minutes: 30,
-            min_hours_full_day: Number(d.min_full_day_hours) || 8,
-            min_hours_half_day: Number(d.min_half_day_hours) || 4,
-            break_mode: 'FIXED',
-            breaks: [
-              { id: `brk-${d.id}`, name: 'Lunch Break', start_time: '13:00', end_time: '14:00', duration_minutes: 60, is_paid: false }
-            ],
-            ot_enabled: true,
-            min_ot_threshold_minutes: 30,
-            weekday_ot_rate: 1.0,
-            weekly_off_ot_rate: 1.5,
-            holiday_ot_rate: 2.0,
-            max_ot_daily_minutes: 240,
-            requires_manager_approval: true,
-            requires_hr_approval: false,
-            applies_to: { type: 'ORGANIZATION', ids: [] },
-            effective_from: '2026-01-01',
-            status: d.is_active ? 'ACTIVE' : 'INACTIVE',
-            version: 1,
-            created_at: d.created_at || new Date().toISOString(),
-            updated_at: d.updated_at || new Date().toISOString(),
-          });
-        }
-
-        if (mapped.length > 0) {
-          this._dbShiftsCache.set(tenantId, mapped);
-          return mapped;
-        }
-      }
-    } catch (e) {
-      console.warn('[attendanceRosterService] Error fetching shifts from DB:', e);
-    }
-    return this.getShifts(tenantId);
-  }
-
-  getShifts(tenantId = getActiveOrgId()): ShiftMaster[] {
+  getLocalShifts(tenantId = getActiveOrgId()): ShiftMaster[] {
     const cached = this._dbShiftsCache.get(tenantId);
     if (cached && cached.length > 0) {
       return cached;
-    }
-    if (isSupabaseEnabled) {
-      this.fetchShiftsFromDb(tenantId).catch(() => {});
-      return DEFAULT_SHIFTS.map(s => ({ ...s, tenant_id: tenantId }));
     }
     const list = getStore<ShiftMaster[]>(STORAGE_KEYS.SHIFTS, [], tenantId);
     if (!list || list.length === 0) {
@@ -892,6 +819,119 @@ class AttendanceRosterService {
       return tenantShifts;
     }
     return list;
+  }
+
+  async fetchShiftsFromDb(tenantId = getActiveOrgId()): Promise<ShiftMaster[]> {
+    if (!isSupabaseEnabled) return this.getLocalShifts(tenantId);
+
+    if (this._shiftsInFlight) {
+      return this._shiftsInFlight;
+    }
+
+    this._shiftsInFlight = (async () => {
+      try {
+        let q = supabase.from('shifts').select('*');
+        if (tenantId && isValidUUID(tenantId) && tenantId !== 'platform-root') {
+          q = q.eq('organization_id', tenantId);
+        }
+        const { data, error } = await q.order('created_at', { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          const localShifts = this.getLocalShifts(tenantId);
+          const localMap = new Map<string, ShiftMaster>();
+          localShifts.forEach(s => {
+            if (s.id) localMap.set(s.id, s);
+            if (s.shift_code) localMap.set(s.shift_code.toUpperCase(), s);
+          });
+
+          const seenIds = new Set<string>();
+          const seenCodes = new Set<string>();
+          const mapped: ShiftMaster[] = [];
+
+          for (const d of data) {
+            if (!d.id || seenIds.has(d.id)) continue;
+            const codeKey = (d.code || '').toUpperCase();
+            if (codeKey && seenCodes.has(codeKey)) continue;
+            seenIds.add(d.id);
+            if (codeKey) seenCodes.add(codeKey);
+
+            const existingLocal = localMap.get(d.id) || (codeKey ? localMap.get(codeKey) : undefined);
+            const sTime = (d.start_time || '09:00:00').slice(0, 5);
+            const eTime = (d.end_time || '18:00:00').slice(0, 5);
+            const cutoff = (d as any).attendance_date_cutoff
+              ? (d as any).attendance_date_cutoff.slice(0, 5)
+              : (existingLocal?.attendance_date_cutoff || (d.is_overnight ? '12:00' : '06:00'));
+
+            mapped.push({
+              id: d.id,
+              tenant_id: d.organization_id || tenantId,
+              shift_code: d.code,
+              shift_name: d.name,
+              description: `${d.name} (${sTime} - ${eTime})`,
+              shift_type: (d.is_overnight ? 'NIGHT_SHIFT' : 'FIXED') as any,
+              start_time: sTime,
+              end_time: eTime,
+              scheduled_duration_minutes: this.calculateDurationMinutes(sTime, eTime, d.is_overnight),
+              net_working_minutes: (Number(d.min_full_day_hours) || 8) * 60,
+              cross_midnight: Boolean(d.is_overnight),
+              attendance_date_cutoff: cutoff,
+              grace_in_minutes: d.grace_entry_minutes ?? 15,
+              grace_out_minutes: d.grace_exit_minutes ?? 15,
+              early_out_tolerance_minutes: 15,
+              late_threshold_minutes: 30,
+              min_hours_full_day: Number(d.min_full_day_hours) || 8,
+              min_hours_half_day: Number(d.min_half_day_hours) || 4,
+              break_mode: 'FIXED',
+              breaks: [
+                { id: `brk-${d.id}`, name: 'Lunch Break', start_time: '13:00', end_time: '14:00', duration_minutes: 60, is_paid: false }
+              ],
+              ot_enabled: true,
+              min_ot_threshold_minutes: 30,
+              weekday_ot_rate: 1.0,
+              weekly_off_ot_rate: 1.5,
+              holiday_ot_rate: 2.0,
+              max_ot_daily_minutes: 240,
+              requires_manager_approval: true,
+              requires_hr_approval: false,
+              applies_to: { type: 'ORGANIZATION', ids: [] },
+              effective_from: '2026-01-01',
+              status: d.is_active ? 'ACTIVE' : 'INACTIVE',
+              version: 1,
+              created_at: d.created_at || new Date().toISOString(),
+              updated_at: d.updated_at || new Date().toISOString(),
+            });
+          }
+
+          if (mapped.length > 0) {
+            this._dbShiftsCache.set(tenantId, mapped);
+            return mapped;
+          }
+        }
+      } catch (e) {
+        console.warn('[attendanceRosterService] Error fetching shifts from DB:', e);
+      } finally {
+        setTimeout(() => {
+          this._shiftsInFlight = null;
+        }, 5000);
+      }
+      return this.getLocalShifts(tenantId);
+    })();
+
+    return this._shiftsInFlight;
+  }
+
+  getShifts(tenantId = getActiveOrgId()): ShiftMaster[] {
+    const cached = this._dbShiftsCache.get(tenantId);
+    if (cached && cached.length > 0) {
+      return cached;
+    }
+    if (isSupabaseEnabled) {
+      if (!this._shiftsInFlight) {
+        this.fetchShiftsFromDb(tenantId).catch(() => {});
+      }
+      return this.getLocalShifts(tenantId);
+    }
+    return this.getLocalShifts(tenantId);
   }
 
   getShiftById(shiftId?: string | null, tenantId = getActiveOrgId()): ShiftMaster | null {
