@@ -41,6 +41,7 @@ import { BiometricHubMasterView } from './subviews/BiometricHubMasterView';
 import { PlatformAccountMasterView } from './subviews/PlatformAccountMasterView';
 import { PlatformStaffView } from './subviews/PlatformStaffView';
 import { PlatformUsersDirectoryView } from './subviews/PlatformUsersDirectoryView';
+import { SupabaseGovernanceView } from './subviews/SupabaseGovernanceView';
 import { NotificationDeliveryMonitorView } from './subviews/NotificationDeliveryMonitorView';
 import { ObservabilityLiveView } from './subviews/ObservabilityLiveView';
 import { JITSupportAccessView } from './subviews/JITSupportAccessView';
@@ -98,6 +99,8 @@ const TAB_TITLES: Record<string, string> = {
   'platform-api': 'API & Integrations',
   'platform-keys': 'API Keys & Secrets',
   'platform-users': 'Global User Directory & IAM',
+  'platform-database': 'Database Architecture & RLS Governance',
+  'platform-governance': 'Database Governance & Telemetry',
   'platform-settings': 'Platform System Settings',
   'platform-staff': 'Platform Staff & Delegated IAM',
   'platform-communication': 'Communication Hub',
@@ -456,6 +459,10 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       case 'platform-logs':
       case 'platform-errors':
         return <ObservabilityLiveView />;
+      case 'platform-database':
+      case 'platform-governance':
+      case 'platform-supabase':
+        return <SupabaseGovernanceView onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)} />;
       case 'platform-jit':
       case 'platform-support-access':
         return <JITSupportAccessView />;

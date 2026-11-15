@@ -292,6 +292,8 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'platform-api' && (currentNav === 'platform-api' || currentNav === 'platform-keys')) return true;
   if (itemId === 'platform-staff' && (currentNav === 'platform-staff' || currentNav.startsWith('platform-staff/') || currentNav === 'platform-iam')) return true;
   if (itemId === 'platform-users' && (currentNav === 'platform-users' || currentNav === 'platform-directory' || currentNav === 'platform-users-directory')) return true;
+  if (itemId === 'platform-database' && (currentNav === 'platform-database' || currentNav === 'platform-governance' || currentNav === 'platform-supabase')) return true;
+  if (itemId === 'platform-observability' && (currentNav === 'platform-observability' || currentNav === 'platform-telemetry' || currentNav === 'platform-logs' || currentNav === 'platform-errors')) return true;
 
   // ESS & TL mappings
   if (itemId === 'ess-dashboard' && currentNav === 'ess') return true;
@@ -578,6 +580,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'SYSTEM',
       items: [
+        { id: 'platform-database', label: 'Database & Governance', icon: Database },
+        { id: 'platform-observability', label: 'Observability & Live Telemetry', icon: Activity },
         { id: 'platform-settings', label: 'Platform Settings', icon: Settings },
         { id: 'platform-api', label: 'API & Integrations', icon: KeyRound },
       ],

@@ -201,3 +201,4 @@ $$;
 
 REVOKE ALL ON FUNCTION public.upgrade_tenant_subscription_plan(UUID, TEXT, INT, NUMERIC, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.upgrade_tenant_subscription_plan(UUID, TEXT, INT, NUMERIC, TEXT, TEXT) TO authenticated, service_role;
+
