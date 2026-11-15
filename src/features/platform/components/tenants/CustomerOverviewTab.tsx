@@ -3,7 +3,7 @@
 // Joy PeopleHR — Customer Overview Executive Summary Tab
 // ============================================================
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Building2,
   Users,
@@ -24,9 +24,16 @@ import {
   Globe,
   MapPin,
   FileText,
+  PauseCircle,
+  PlayCircle,
+  Lock,
+  RefreshCw,
 } from 'lucide-react';
 import { OrganizationRecord } from '../../../../services/platform/platformTenantService';
+import { platformUserManagementService } from '../../../../services/platform/platformUserManagementService';
 import { Button } from '../../../../components/ui/Button';
+import { Modal } from '../../../../components/ui/Modal';
+import { useToast } from '../../../../components/ui/Toast';
 import { cn } from '../../../../lib/utils';
 
 export interface CustomerOverviewTabProps {
@@ -34,6 +41,7 @@ export interface CustomerOverviewTabProps {
   onNavigateTab: (tab: string) => void;
   onEditCustomer: () => void;
   onChangePlan: () => void;
+  onStatusChanged?: (newStatus: string) => void;
 }
 
 export const CustomerOverviewTab: React.FC<CustomerOverviewTabProps> = ({
@@ -41,7 +49,49 @@ export const CustomerOverviewTab: React.FC<CustomerOverviewTabProps> = ({
   onNavigateTab,
   onEditCustomer,
   onChangePlan,
+  onStatusChanged,
 }) => {
+  const { showToast } = useToast();
+  const [currentStatus, setCurrentStatus] = useState<string>(org.status || 'Active');
+  const [lifecycleModalOpen, setLifecycleModalOpen] = useState(false);
+  const [targetStatus, setTargetStatus] = useState<string>('Active');
+  const [transitionReason, setTransitionReason] = useState('');
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  const handleOpenTransition = (newStatus: string) => {
+    setTargetStatus(newStatus);
+    setTransitionReason('');
+    setLifecycleModalOpen(true);
+  };
+
+  const handleConfirmTransition = async () => {
+    if (!transitionReason.trim() || transitionReason.trim().length < 5) {
+      showToast('A detailed audit reason (at least 5 characters) is required.', 'error');
+      return;
+    }
+
+    setIsTransitioning(true);
+    try {
+      const res = await platformUserManagementService.transitionOrganizationStatus(
+        org.id,
+        targetStatus,
+        transitionReason.trim()
+      );
+
+      if (res.success) {
+        setCurrentStatus(targetStatus);
+        showToast(`Tenant status updated to ${targetStatus} successfully.`, 'success');
+        setLifecycleModalOpen(false);
+        if (onStatusChanged) onStatusChanged(targetStatus);
+      } else {
+        showToast(res.error || 'Failed to update organization status.', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Error executing lifecycle transition.', 'error');
+    } finally {
+      setIsTransitioning(false);
+    }
+  };
   return (
     <div className="space-y-6">
       {/* ----------------------------------------------------
@@ -347,6 +397,82 @@ export const CustomerOverviewTab: React.FC<CustomerOverviewTabProps> = ({
             </div>
           </div>
 
+          {/* Organization Lifecycle & Status Governance Card */}
+          <div className="p-6 bg-white rounded-3xl border border-gray-200 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-[#047857]" />
+                <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider">Tenant Lifecycle</h3>
+              </div>
+              <span
+                className={cn(
+                  'text-[10px] font-bold px-2 py-0.5 rounded-full border',
+                  currentStatus === 'Active'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : currentStatus === 'Trial'
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : currentStatus === 'Suspended'
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : currentStatus === 'Locked'
+                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                    : 'bg-gray-100 text-gray-700 border-gray-200'
+                )}
+              >
+                {currentStatus.toUpperCase()}
+              </span>
+            </div>
+
+            <p className="text-[11px] text-gray-600 leading-relaxed">
+              Super Admin state transitions enforce strict database audit trails. Suspended tenants are barred from employee logins while retaining data integrity.
+            </p>
+
+            <div className="grid grid-cols-2 gap-2">
+              {currentStatus !== 'Active' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleOpenTransition('Active')}
+                  className="w-full text-xs font-bold border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                >
+                  <PlayCircle className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Reactivate
+                </Button>
+              )}
+
+              {currentStatus !== 'Suspended' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleOpenTransition('Suspended')}
+                  className="w-full text-xs font-bold border-amber-300 text-amber-800 hover:bg-amber-50"
+                >
+                  <PauseCircle className="w-3.5 h-3.5 mr-1 text-amber-600" /> Suspend
+                </Button>
+              )}
+
+              {currentStatus !== 'Locked' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleOpenTransition('Locked')}
+                  className="w-full text-xs font-bold border-rose-200 text-rose-700 hover:bg-rose-50"
+                >
+                  <Lock className="w-3.5 h-3.5 mr-1 text-rose-600" /> Lock Tenant
+                </Button>
+              )}
+
+              {currentStatus !== 'Trial' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleOpenTransition('Trial')}
+                  className="w-full text-xs font-bold border-blue-200 text-blue-700 hover:bg-blue-50"
+                >
+                  <Clock className="w-3.5 h-3.5 mr-1 text-blue-600" /> Extend Trial
+                </Button>
+              )}
+            </div>
+          </div>
+
           {/* Quick Actions Toolbox */}
           <div className="p-6 bg-gray-50 rounded-3xl border border-gray-200 space-y-3">
             <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider">Quick Actions</h4>
@@ -376,6 +502,71 @@ export const CustomerOverviewTab: React.FC<CustomerOverviewTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Lifecycle Transition Reason Modal */}
+      <Modal
+        isOpen={lifecycleModalOpen}
+        onClose={() => !isTransitioning && setLifecycleModalOpen(false)}
+        title={`Transition Tenant State to ${targetStatus}`}
+        description={`Audit-governed lifecycle change for ${org.legal_name || org.display_name}.`}
+      >
+        <div className="p-6 space-y-4 text-xs">
+          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-bold">Privileged Administrative Operation</p>
+              <p className="text-[11px] leading-relaxed text-amber-800">
+                This state change is written to immutable database tables (`organization_lifecycle_history` and `platform_audit_events`). Please specify the business justification.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block font-bold text-gray-700">
+              Audit Reason / Business Justification <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              rows={3}
+              value={transitionReason}
+              onChange={(e) => setTransitionReason(e.target.value)}
+              placeholder="e.g. Requested account hold due to billing review or annual contract extension..."
+              className="w-full p-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#047857] text-xs"
+            />
+            <span className="text-[10px] text-gray-400">Minimum 5 characters required.</span>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLifecycleModalOpen(false)}
+              disabled={isTransitioning}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleConfirmTransition}
+              disabled={isTransitioning || transitionReason.trim().length < 5}
+              className={cn(
+                'text-white font-bold',
+                targetStatus === 'Suspended' || targetStatus === 'Locked'
+                  ? 'bg-rose-600 hover:bg-rose-700'
+                  : 'bg-[#047857] hover:bg-[#036246]'
+              )}
+            >
+              {isTransitioning ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5" /> Committing...
+                </>
+              ) : (
+                `Confirm Transition to ${targetStatus}`
+              )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -40,6 +40,7 @@ import { CommunicationHubMasterView } from './subviews/CommunicationHubMasterVie
 import { BiometricHubMasterView } from './subviews/BiometricHubMasterView';
 import { PlatformAccountMasterView } from './subviews/PlatformAccountMasterView';
 import { PlatformStaffView } from './subviews/PlatformStaffView';
+import { PlatformUsersDirectoryView } from './subviews/PlatformUsersDirectoryView';
 import { NotificationDeliveryMonitorView } from './subviews/NotificationDeliveryMonitorView';
 import { ObservabilityLiveView } from './subviews/ObservabilityLiveView';
 import { JITSupportAccessView } from './subviews/JITSupportAccessView';
@@ -96,6 +97,7 @@ const TAB_TITLES: Record<string, string> = {
   'platform-webhooks': 'Webhooks & Event Mesh',
   'platform-api': 'API & Integrations',
   'platform-keys': 'API Keys & Secrets',
+  'platform-users': 'Global User Directory & IAM',
   'platform-settings': 'Platform System Settings',
   'platform-staff': 'Platform Staff & Delegated IAM',
   'platform-communication': 'Communication Hub',
@@ -403,9 +405,12 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       case 'platform-whatsapp':
         return <WhatsAppControlCenterView />;
       case 'platform-settings':
-      case 'platform-users':
       case 'platform-marketplace':
         return <PlatformSettingsView />;
+      case 'platform-users':
+      case 'platform-directory':
+      case 'platform-users-directory':
+        return <PlatformUsersDirectoryView onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)} />;
       case 'platform-staff':
       case 'platform-roles':
       case 'platform-permissions':

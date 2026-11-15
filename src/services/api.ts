@@ -1343,9 +1343,9 @@ export const api = {
     vendorId?: string;
   } | string): Employee[] {
     const targetOrg = (typeof params === 'object' ? params?.organizationId : undefined) || getActiveOrgId();
-    // 1. Authoritative in-memory cache takes precedence
+    // 1. Authoritative in-memory cache takes precedence (isolated per tenant)
     let list: Employee[] = [];
-    if (api._empCache?.data && api._empCache.data.length > 0) {
+    if (api._empCache?.data && api._empCache.data.length > 0 && (!api._empCache.tenantId || api._empCache.tenantId === targetOrg)) {
       list = [...api._empCache.data];
     } else {
       list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
@@ -1361,7 +1361,7 @@ export const api = {
         }
       }
       if (list.length > 0) {
-        api._empCache = { data: list, timestamp: Date.now() };
+        api._empCache = { data: list, timestamp: Date.now(), tenantId: targetOrg };
       }
     }
 
@@ -1504,7 +1504,7 @@ export const api = {
     return filterEmployeesLocalHelper(list, params);
   },
 
-  _empCache: null as { data: Employee[]; timestamp: number } | null,
+  _empCache: null as { data: Employee[]; timestamp: number; tenantId?: string } | null,
   _empInFlight: null as Promise<Employee[]> | null,
   _empCacheMap: new Map<string, { data: Employee[]; timestamp: number }>(),
   _empInFlightMap: new Map<string, Promise<Employee[]>>(),
@@ -2133,7 +2133,7 @@ export const api = {
             const resultList = filterObj ? filterEmployeesLocalHelper(combined, filterObj) : combined;
             if (isUnfiltered) {
               setStorage(KEYS.EMPLOYEES, combined);
-              api._empCache = { data: combined, timestamp: Date.now() };
+              api._empCache = { data: combined, timestamp: Date.now(), tenantId: targetOrg };
             }
             return resultList;
           }
@@ -2177,7 +2177,7 @@ export const api = {
                     updated_at: row.updated_at,
                   }));
                   setStorage(KEYS.EMPLOYEES, mapped);
-                  api._empCache = { data: mapped, timestamp: Date.now() };
+                  api._empCache = { data: mapped, timestamp: Date.now(), tenantId: targetOrg };
                   return mapped;
                 }
               }
@@ -2224,14 +2224,14 @@ export const api = {
                   updated_at: row.updated_at,
                 }));
                 setStorage(KEYS.EMPLOYEES, mapped);
-                api._empCache = { data: mapped, timestamp: Date.now() };
+                api._empCache = { data: mapped, timestamp: Date.now(), tenantId: targetOrg };
                 return mapped;
               }
             }
           } catch (_) {}
 
           const cached = api._empCache?.data;
-          if (cached && cached.length > 0) return cached;
+          if (cached && cached.length > 0 && (!api._empCache?.tenantId || api._empCache.tenantId === targetOrg)) return cached;
           const fallback = api.getEmployeesSync(params);
           if (fallback && fallback.length > 0) return fallback;
           return [];
@@ -2240,7 +2240,7 @@ export const api = {
 
       const syncResult = api.getEmployeesSync(params);
       if (isUnfiltered) {
-        api._empCache = { data: syncResult, timestamp: Date.now() };
+        api._empCache = { data: syncResult, timestamp: Date.now(), tenantId: targetOrg };
       }
       return syncResult;
     })();

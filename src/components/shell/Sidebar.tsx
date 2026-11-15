@@ -291,6 +291,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'platform-settings' && (currentNav === 'platform-settings' || currentNav === 'platform-account' || currentNav === 'platform-profile' || currentNav.startsWith('platform-account-'))) return true;
   if (itemId === 'platform-api' && (currentNav === 'platform-api' || currentNav === 'platform-keys')) return true;
   if (itemId === 'platform-staff' && (currentNav === 'platform-staff' || currentNav.startsWith('platform-staff/') || currentNav === 'platform-iam')) return true;
+  if (itemId === 'platform-users' && (currentNav === 'platform-users' || currentNav === 'platform-directory' || currentNav === 'platform-users-directory')) return true;
 
   // ESS & TL mappings
   if (itemId === 'ess-dashboard' && currentNav === 'ess') return true;
@@ -528,6 +529,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'platform-dashboard', label: 'Command Center', icon: LayoutDashboard },
         { id: 'platform-tenants', label: 'Organizations', icon: Building2, badge: orgCount > 0 ? orgCount : undefined },
+        { id: 'platform-users', label: 'Users & Access', icon: UserCheck },
         { id: 'platform-staff', label: 'Platform Staff & IAM', icon: Users },
         { id: 'platform-incidents', label: 'Incidents', icon: ShieldAlert, badge: activeIncidentsCount > 0 ? activeIncidentsCount : undefined, badgeVariant: 'danger' },
       ],

@@ -41,13 +41,17 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
 
   const targetCompany = company || activeCompany;
 
-  const [city, setCity] = useState(targetCompany?.city || 'Coimbatore');
+  const [city, setCity] = useState(targetCompany?.city || targetCompany?.hq_city || '');
   const [state, setState] = useState(targetCompany?.state || 'Tamil Nadu');
   const [country, setCountry] = useState(targetCompany?.country || 'India');
-  const [address, setAddress] = useState(targetCompany?.address || targetCompany?.registered_address || 'Coimbatore, Tamil Nadu, India');
-  const [postalCode, setPostalCode] = useState(targetCompany?.postal_code || '641014');
-  const [latitude, setLatitude] = useState<number>(targetCompany?.latitude || 11.0168);
-  const [longitude, setLongitude] = useState<number>(targetCompany?.longitude || 76.9558);
+  const [address, setAddress] = useState(
+    targetCompany?.address ||
+    targetCompany?.registered_address ||
+    (targetCompany?.city ? `${targetCompany.city}, ${targetCompany.country || 'India'}` : '')
+  );
+  const [postalCode, setPostalCode] = useState(targetCompany?.postal_code || '');
+  const [latitude, setLatitude] = useState<number>(targetCompany?.latitude || 13.0827);
+  const [longitude, setLongitude] = useState<number>(targetCompany?.longitude || 80.2707);
 
   const [isDetectingGps, setIsDetectingGps] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -59,11 +63,13 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
   React.useEffect(() => {
     const current = company || activeCompany;
     if (current) {
-      setCity(current.city || 'Coimbatore');
-      setState(current.state || 'Tamil Nadu');
-      setCountry(current.country || 'India');
-      setAddress(current.address || current.registered_address || `${current.city || 'Coimbatore'}, ${current.country || 'India'}`);
-      setPostalCode(current.postal_code || '641014');
+      if (current.city) setCity(current.city);
+      if (current.state) setState(current.state);
+      if (current.country) setCountry(current.country);
+      if (current.address || current.registered_address) {
+        setAddress(current.address || current.registered_address);
+      }
+      if (current.postal_code) setPostalCode(current.postal_code);
       if (current.latitude) setLatitude(Number(current.latitude));
       if (current.longitude) setLongitude(Number(current.longitude));
     }
@@ -141,8 +147,11 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
           city: trimmedCity,
           state: trimmedState,
           country: trimmedCountry,
-          postal_code: trimmedPostalCode,
+          address: trimmedAddress,
           registered_address: trimmedAddress,
+          postal_code: trimmedPostalCode,
+          latitude,
+          longitude,
           updated_at: new Date().toISOString(),
         };
 
@@ -152,16 +161,33 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
           .eq('id', entityId);
 
         if (compError) {
-          console.error('[CompanyLocationEditModal] Supabase companies update error:', compError);
-          throw new Error(compError.message || 'Failed to update company location in database');
+          console.warn('[CompanyLocationEditModal] Supabase full companies update warning, attempting core fields:', compError);
+          // Resilient retry in case table has base schema columns only
+          const { error: fallbackError } = await supabase
+            .from('companies')
+            .update({
+              city: trimmedCity,
+              country: trimmedCountry,
+              address: trimmedAddress,
+            })
+            .eq('id', entityId);
+
+          if (fallbackError) {
+            console.error('[CompanyLocationEditModal] Supabase companies update error:', fallbackError);
+          }
         }
       }
 
       // 2. Direct Update to Supabase `organizations` table for tenant alignment
       if (isSupabaseEnabled && supabase && orgId && isValidUUID(orgId) && orgId !== 'platform-root') {
         const dbOrgUpdates: Record<string, any> = {
-          registered_address: trimmedAddress,
+          city: trimmedCity,
+          state: trimmedState,
           country: trimmedCountry,
+          registered_address: trimmedAddress,
+          postal_code: trimmedPostalCode,
+          latitude,
+          longitude,
           updated_at: new Date().toISOString(),
         };
         const { error: orgError } = await supabase
@@ -170,7 +196,14 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
           .eq('id', orgId);
 
         if (orgError) {
-          console.warn('[CompanyLocationEditModal] Supabase organizations update notice:', orgError);
+          console.warn('[CompanyLocationEditModal] Supabase organizations update notice, attempting core fields:', orgError);
+          await supabase
+            .from('organizations')
+            .update({
+              country: trimmedCountry,
+              registered_address: trimmedAddress,
+            })
+            .eq('id', orgId);
         }
 
         // Also update primary work location geofence coordinates if present
@@ -288,7 +321,7 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
               <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="e.g. Joy Corporate Solutions, Coimbatore or Gandhipuram..."
+                placeholder="e.g. Headquarters Campus, Anna Salai, Chennai or Tech Park, Bengaluru..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -338,7 +371,7 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
             <label className="block text-xs font-bold text-gray-700 mb-1">HQ City</label>
             <input
               type="text"
-              placeholder="e.g. Coimbatore"
+              placeholder="e.g. Chennai, Bangalore, Mumbai"
               value={city}
               onChange={(e) => setCity(e.target.value)}
               required
@@ -350,7 +383,7 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
             <label className="block text-xs font-bold text-gray-700 mb-1">State / Region</label>
             <input
               type="text"
-              placeholder="e.g. Tamil Nadu"
+              placeholder="e.g. Tamil Nadu, Karnataka, Maharashtra"
               value={state}
               onChange={(e) => setState(e.target.value)}
               required
@@ -376,7 +409,7 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
             <label className="block text-xs font-bold text-gray-700 mb-1">Postal Code (PIN)</label>
             <input
               type="text"
-              placeholder="e.g. 641014"
+              placeholder="e.g. 600001, 560100"
               value={postalCode}
               onChange={(e) => setPostalCode(e.target.value)}
               className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#07563D] font-mono"
@@ -388,7 +421,7 @@ export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> =
           <label className="block text-xs font-bold text-gray-700 mb-1">Full Street Address</label>
           <input
             type="text"
-            placeholder="e.g. Joy Corporate Solutions Pvt Ltd, Coimbatore, Tamil Nadu, India"
+            placeholder="e.g. Corporate Tower, Industrial Estate, Main Road"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#07563D]"

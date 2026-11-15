@@ -709,6 +709,7 @@ class AttendanceRosterService {
   private _dbShiftsCache: Map<string, ShiftMaster[]> = new Map();
   private _dbRostersCache: Map<string, EmployeeRosterEntry> = new Map();
   private _dbShiftAssignmentsCache: Map<string, EmployeeShiftAssignmentEntry> = new Map();
+  private _currentShiftAssignmentsTenant: string = '';
   private _realtimeSubscribed: boolean = false;
   private _shiftsInFlight: Promise<ShiftMaster[]> | null = null;
   private _shiftAssignmentsInFlight: Promise<Map<string, EmployeeShiftAssignmentEntry>> | null = null;
@@ -747,9 +748,22 @@ class AttendanceRosterService {
     this._shiftAssignmentsInFlight = (async () => {
       try {
         const orgId = isValidUUID(tenantId) ? tenantId : getActiveOrgId();
-        const { data, error } = await supabase
+
+        // Invalidate in-memory shift assignments cache when tenant changes
+        if (this._currentShiftAssignmentsTenant !== orgId) {
+          this._dbShiftAssignmentsCache.clear();
+          this._currentShiftAssignmentsTenant = orgId;
+        }
+
+        let query = supabase
           .from('employee_shift_assignments')
           .select('*, shifts(*), employees(id, employee_code, first_name, last_name)');
+
+        if (orgId && isValidUUID(orgId) && orgId !== 'platform-root') {
+          query = query.eq('organization_id', orgId);
+        }
+
+        const { data, error } = await query;
 
         if (!error && data && data.length > 0) {
           for (const item of data) {
