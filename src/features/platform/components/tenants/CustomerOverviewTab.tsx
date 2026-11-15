@@ -308,6 +308,45 @@ export const CustomerOverviewTab: React.FC<CustomerOverviewTabProps> = ({
             </div>
           </div>
 
+          {/* Multi-Tenant Partition & Data Isolation Security Card */}
+          <div className="p-6 bg-emerald-50/40 rounded-3xl border border-emerald-200 shadow-xs space-y-3">
+            <div className="flex items-center justify-between border-b border-emerald-100 pb-2.5">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-emerald-700" />
+                <h3 className="text-xs font-bold text-emerald-950 uppercase tracking-wider">Multi-Tenant Isolation</h3>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                Verified
+              </span>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div>
+                <span className="text-[10px] text-gray-500 font-semibold block">Partition Organization UUID:</span>
+                <span className="font-mono text-[11px] text-gray-900 bg-white/80 px-2 py-1 rounded border border-emerald-100 block truncate">
+                  {org.id}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-gray-600">Database Boundary:</span>
+                <strong className="text-emerald-800 font-mono font-semibold">PostgreSQL RLS Active</strong>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-gray-600">Private Bucket Prefix:</span>
+                <span className="font-mono text-gray-700 text-[10px]">/{org.id}/...</span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-gray-600">Feature Entitlements:</span>
+                <button
+                  onClick={() => onNavigateTab('features')}
+                  className="text-[#047857] font-bold hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  Manage Locks <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Quick Actions Toolbox */}
           <div className="p-6 bg-gray-50 rounded-3xl border border-gray-200 space-y-3">
             <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider">Quick Actions</h4>

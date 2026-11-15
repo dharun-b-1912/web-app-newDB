@@ -22,6 +22,7 @@ import { billingCalculationEngine } from '../../../../services/billing/billingCa
 import { platformSubscriptionService } from '../../../../services/platform/platformSubscriptionService';
 import { razorpayOrderService } from '../../../../services/platform/razorpayOrderService';
 import { saasPricingEngine } from '../../../../services/platform/saasPricingEngine';
+import { supabase, isSupabaseEnabled } from '../../../../lib/supabase';
 import { Button } from '../../../../components/ui/Button';
 import { useToast } from '../../../../components/ui/Toast';
 import { cn } from '../../../../lib/utils';
@@ -120,6 +121,21 @@ export const CustomerSubscriptionTab: React.FC<CustomerSubscriptionTabProps> = (
         targetPlanSpec.seats,
         selectedBillingCycle
       );
+
+      // Persist to Supabase organizations table
+      if (isSupabaseEnabled && org.id) {
+        await supabase
+          .from('organizations')
+          .update({
+            plan: selectedNewPlan,
+            seat_limit: targetPlanSpec.seats,
+            mrr: targetPlanSpec.monthly,
+            billing_cycle: selectedBillingCycle,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', org.id);
+      }
+
       showToast(`Subscription plan upgraded to ${selectedNewPlan} (₹${targetPlanSpec.monthly.toLocaleString('en-IN')}/mo)`, 'success');
       onChangePlanSuccess?.(selectedNewPlan, targetPlanSpec.monthly);
       setShowChangePlanModal(false);

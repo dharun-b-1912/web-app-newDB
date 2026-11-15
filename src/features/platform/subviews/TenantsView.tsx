@@ -82,6 +82,7 @@ import { CustomerSupportTab } from '../components/tenants/CustomerSupportTab';
 import { CustomerSecurityTab } from '../components/tenants/CustomerSecurityTab';
 import { CustomerActivityTab } from '../components/tenants/CustomerActivityTab';
 import { CustomerIntegrationsTab } from '../components/tenants/CustomerIntegrationsTab';
+import { CustomerFeaturesTab } from '../components/tenants/CustomerFeaturesTab';
 import { Button } from '../../../components/ui/Button';
 import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
@@ -106,6 +107,7 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
     | 'overview'
     | 'people'
     | 'subscription'
+    | 'features'
     | 'billing'
     | 'usage'
     | 'health'
@@ -376,6 +378,7 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
               { id: 'overview', label: 'Overview' },
               { id: 'people', label: 'People & Admins' },
               { id: 'subscription', label: 'Subscription' },
+              { id: 'features', label: 'Features & Entitlements' },
               { id: 'billing', label: 'Billing & Invoices' },
               { id: 'usage', label: 'Usage & Quotas' },
               { id: 'health', label: 'Tenant Health' },
@@ -420,6 +423,10 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
                 fetchData();
               }}
             />
+          )}
+
+          {activeTab === 'features' && (
+            <CustomerFeaturesTab organization={selectedOrg} />
           )}
 
           {activeTab === 'billing' && <CustomerBillingTab organization={selectedOrg} />}
