@@ -80,6 +80,7 @@ import {
   Crosshair,
   Smartphone,
   Navigation,
+  Car,
   Coffee,
   ArrowRightLeft,
   CheckCircle2,
@@ -209,7 +210,32 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
     if (currentNav === 'biometric' || currentNav === '/biometric' || currentNav === 'biometric-devices' || currentNav === '/biometric/devices') return false;
     if (currentNav === 'attendance-rules' || currentNav === 'rules' || currentNav === 'biometric-rules' || currentNav === 'rules-engine' || currentNav === 'biometric/rules' || currentNav === '/biometric/rules' || currentNav === '/attendance-rules') return true;
   }
-  if (itemId === 'gps' && (currentNav === 'gps' || currentNav === 'gps-attendance' || currentNav === 'mobile-clocking' || currentNav === 'biometric/gps' || currentNav === '/biometric/gps' || currentNav === 'tracking' || currentNav === 'live-tracking' || currentNav === 'shift-tracking' || currentNav === 'attendance/tracking' || currentNav === '/attendance/tracking')) return true;
+  if (itemId === 'live-tracking') {
+    if (
+      currentNav === 'live-tracking' ||
+      currentNav === 'tracking' ||
+      currentNav === 'shift-tracking' ||
+      currentNav === 'attendance/tracking' ||
+      currentNav === '/attendance/tracking' ||
+      currentNav === 'gps-tracking-radar' ||
+      (currentNav.includes('biometric/gps') && (typeof window !== 'undefined' && (window.location.search.includes('subTab=tracking') || window.location.search.includes('tab=tracking'))))
+    ) return true;
+  }
+  if (itemId === 'gps-travel-fare') {
+    if (
+      currentNav === 'gps-travel-fare' ||
+      currentNav === 'travel-fare' ||
+      (currentNav.includes('biometric/gps') && (typeof window !== 'undefined' && (window.location.search.includes('subTab=travel-fare') || window.location.search.includes('tab=travel-fare'))))
+    ) return true;
+  }
+  if (itemId === 'gps') {
+    if (
+      currentNav === 'gps' ||
+      currentNav === 'gps-attendance' ||
+      currentNav === 'mobile-clocking' ||
+      (currentNav.includes('biometric/gps') && (typeof window === 'undefined' || (!window.location.search.includes('subTab=tracking') && !window.location.search.includes('subTab=travel-fare'))))
+    ) return true;
+  }
   if (itemId === 'geofences' && (currentNav === 'geofences' || currentNav === 'geofencing' || currentNav === 'geofence-boundaries' || currentNav === 'biometric/geofences' || currentNav === '/biometric/geofences')) return true;
   if (itemId === 'face-attendance' && (currentNav === 'face-attendance' || currentNav === 'face-enrollment' || currentNav === 'face-devices' || currentNav === 'face-recognition' || currentNav === 'biometric/face' || currentNav === '/biometric/face')) return true;
   if (itemId === 'calculation-audit' && (currentNav === 'calculation-audit' || currentNav === 'payroll-inputs' || currentNav === 'payable-days' || currentNav === 'lop-desk' || currentNav === 'payroll-freeze' || currentNav === 'audit/ledger' || currentNav === '/audit/ledger')) return true;
@@ -734,9 +760,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'face-attend-dashboard', label: 'JOY FaceAttend', icon: Camera, badge: 'Add-On', badgeVariant: 'info' },
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
-        { id: 'attendance-rules', label: 'Attendance Rules', icon: SlidersHorizontal },
-        { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
+        { id: 'attendance-rules', label: 'Biometric Rules & Automation', icon: SlidersHorizontal },
+        { id: 'gps', label: 'GPS & Mobile Clocking', icon: MapPin },
         { id: 'geofences', label: 'Geofence Boundaries', icon: Crosshair },
+        { id: 'live-tracking', label: 'Shift Route & Live Fleet Radar', icon: Navigation, badge: 'Live' },
+        { id: 'gps-travel-fare', label: 'Field Travel & KM Fare Config', icon: Car },
       ],
     },
     {
@@ -854,7 +882,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
         { id: 'history', label: 'Attendance Ledger', icon: Clock },
         { id: 'shifts', label: 'Shifts & Rosters', icon: CalendarRange },
-        { id: 'attendance-rules', label: 'Attendance Rules', icon: SlidersHorizontal },
+        { id: 'attendance-rules', label: 'Biometric Rules & Automation', icon: SlidersHorizontal },
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
         { id: 'regularization', label: 'Exceptions & Regularization', icon: AlertTriangle },
         { id: 'overtime', label: 'Overtime Governance', icon: TrendingUp },
@@ -1023,8 +1051,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'face-attend-dashboard', label: 'JOY FaceAttend', icon: Camera, badge: 'Add-On', badgeVariant: 'info' },
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
         { id: 'attendance-rules', label: 'Biometric Rules & Automation', icon: SlidersHorizontal },
-        { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
+        { id: 'gps', label: 'GPS & Mobile Clocking', icon: MapPin },
         { id: 'geofences', label: 'Geofence Boundaries', icon: Crosshair },
+        { id: 'live-tracking', label: 'Shift Route & Live Fleet Radar', icon: Navigation, badge: 'Live' },
+        { id: 'gps-travel-fare', label: 'Field Travel & KM Fare Config', icon: Car },
       ],
     },
     {
@@ -1167,8 +1197,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'face-attend-dashboard', label: 'JOY FaceAttend', icon: Camera, badge: 'Add-On', badgeVariant: 'info' },
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
         { id: 'attendance-rules', label: 'Biometric Rules & Automation', icon: SlidersHorizontal },
-        { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
+        { id: 'gps', label: 'GPS & Mobile Clocking', icon: MapPin },
         { id: 'geofences', label: 'Geofence Boundaries', icon: Crosshair },
+        { id: 'live-tracking', label: 'Shift Route & Live Fleet Radar', icon: Navigation, badge: 'Live' },
+        { id: 'gps-travel-fare', label: 'Field Travel & KM Fare Config', icon: Car },
       ],
     },
     {
@@ -1385,7 +1417,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   // Dynamic tenant-level subscription and feature entitlement resolution
   const filteredNavGroups = navGroups
     .filter((group) => {
-      if (group.groupName === 'GARMENT WORKFORCE' && !garmentEnabled && !isPlatformAdmin) {
+      if (group.groupName === 'GARMENT WORKFORCE' && !garmentEnabled) {
         return false;
       }
 

@@ -179,7 +179,8 @@ export class WhatsAppTemplateRegistry {
     imageUrl?: string;
   }): WhatsAppSendTemplatePayload {
     const to = normalizeIndianPhone(params.to);
-    const mediaId = params.mediaId || import.meta.env.VITE_WA_WELCOME_IMAGE_MEDIA_ID || '1833658240976922';
+    // Prioritize reliable public CDN/server image over perishable mediaId
+    const imageUrl = params.imageUrl || 'https://app.joypeoplehr.com/welcome-to-joy-people-hr.png';
     const email = params.workEmail || 'support@joyglobalcorp.com';
 
     return {
@@ -195,7 +196,7 @@ export class WhatsAppTemplateRegistry {
           parameters: [
             {
               type: 'image',
-              image: params.imageUrl ? { link: params.imageUrl } : { id: mediaId },
+              image: { link: imageUrl },
             },
           ],
         },

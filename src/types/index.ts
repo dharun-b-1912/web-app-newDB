@@ -656,6 +656,8 @@ export interface Employee {
   bank?: EmployeeBankAccount;
   statutory?: EmployeeStatutory;
   emergency_contacts?: EmergencyContact[];
+  face_attendance_enabled?: boolean;
+  face_attendance_exemption_reason?: string | null;
   created_at?: string;
   updated_at?: string;
   updated_by?: string;

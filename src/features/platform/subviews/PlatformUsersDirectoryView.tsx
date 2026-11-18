@@ -543,7 +543,7 @@ export const PlatformUsersDirectoryView: React.FC<PlatformUsersDirectoryViewProp
                 Cancel
               </Button>
               <Button
-                variant={selectedUserForStatus.status === 'ACTIVE' ? 'destructive' : 'primary'}
+                variant={selectedUserForStatus.status === 'ACTIVE' ? 'danger' : 'primary'}
                 size="sm"
                 onClick={handleStatusSubmit}
                 disabled={isSubmittingStatus || statusReason.trim().length < 5}

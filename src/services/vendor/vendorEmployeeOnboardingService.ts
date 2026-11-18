@@ -22,7 +22,7 @@ export class VendorEmployeeOnboardingService {
 
     if (!payload.employeeCode?.trim()) errors.push('Employee Code is required.');
     if (!payload.firstName?.trim()) errors.push('First Name is required.');
-    if (!payload.lastName?.trim()) errors.push('Last Name is required.');
+    // Last name is non-mandatory
     if (!payload.joiningDate) errors.push('Date of Joining is required.');
     if (!payload.mobileNumber || payload.mobileNumber.length < 10) errors.push('Valid 10-digit Mobile Number is required.');
     if (!payload.aadhaarNumberMasked || payload.aadhaarNumberMasked.length < 4) errors.push('Aadhaar Reference is required.');

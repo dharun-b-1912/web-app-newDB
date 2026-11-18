@@ -26,10 +26,14 @@ import {
   Receipt,
   MapPin,
   FileCheck2,
+  Scissors,
+  Camera,
 } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
 import { useTenant } from '../../../hooks/useTenant';
 import { useAuth } from '../../../hooks/useAuth';
+import { garmentEntitlementService } from '../../../services/garment/garmentEntitlementService';
+import { faceAttendEntitlementService } from '../../../services/faceAttend/faceAttendEntitlementService';
 import {
   featureEntitlementService,
   PlanTier,
@@ -135,6 +139,22 @@ const COMMERCIAL_MODULE_CATALOGUE: CommercialModuleCard[] = [
     icon: FileCheck2,
     description: 'Digital pre-boarding candidate conversion, statutory document upload, and automated welcome kits.',
   },
+  {
+    key: 'garment_workforce' as any,
+    name: 'Garment & Piece-Rate Workforce',
+    category: 'Manufacturing & Piece-Rate',
+    minPlan: 'Business',
+    icon: Scissors,
+    description: 'Factory production units, sewing lines, styles, operations, daily piece tracking, and piece-rate payroll.',
+  },
+  {
+    key: 'face_attend' as any,
+    name: 'JOY FaceAttend Biometrics',
+    category: 'Hardware & IoT',
+    minPlan: 'Professional',
+    icon: Camera,
+    description: 'AI 1:1 facial verification, anti-spoof liveness detection, and mobile camera clocking.',
+  },
 ];
 
 export const SubscriptionView: React.FC = () => {
@@ -151,27 +171,46 @@ export const SubscriptionView: React.FC = () => {
   const [features, setFeatures] = useState<Record<TenantFeatureKey, boolean>>(() =>
     featureEntitlementService.getTenantFeatures()
   );
+  const [addonStates, setAddonStates] = useState<Record<string, boolean>>({
+    garment_workforce: false,
+    face_attend: true,
+  });
   const [subInfo, setSubInfo] = useState(() => adminApi.getSubscription());
 
-  const reloadEntitlements = () => {
+  const reloadEntitlements = async () => {
     const plan = featureEntitlementService.getCurrentTenantPlan();
     setCurrentPlan(plan);
     setFeatures(featureEntitlementService.getTenantFeatures());
     setSubInfo(adminApi.getSubscription());
+
+    const orgId = organization?.id || '0c621892-e938-4707-9957-13534ea32c19';
+    try {
+      const [gEnabled, fEnabled] = await Promise.all([
+        garmentEntitlementService.isEnabled(orgId, true),
+        faceAttendEntitlementService.isEnabled(orgId, true),
+      ]);
+      setAddonStates({
+        garment_workforce: gEnabled,
+        face_attend: fEnabled,
+      });
+    } catch (_) {}
   };
 
   useEffect(() => {
+    reloadEntitlements();
     const handleUpdate = () => reloadEntitlements();
     window.addEventListener('tenant:plan_updated', handleUpdate);
     window.addEventListener('tenant:features_updated', handleUpdate);
     window.addEventListener('tenant:addons_updated', handleUpdate);
+    window.addEventListener('garment:entitlement-changed', handleUpdate);
 
     return () => {
       window.removeEventListener('tenant:plan_updated', handleUpdate);
       window.removeEventListener('tenant:features_updated', handleUpdate);
       window.removeEventListener('tenant:addons_updated', handleUpdate);
+      window.removeEventListener('garment:entitlement-changed', handleUpdate);
     };
-  }, []);
+  }, [organization?.id]);
 
   const handleSelectPlan = (newPlan: PlanTier) => {
     featureEntitlementService.setTenantPlan(newPlan);
@@ -179,14 +218,48 @@ export const SubscriptionView: React.FC = () => {
     showToast(`Switched active subscription plan to ${newPlan}. Portal navigation & page access updated.`);
   };
 
-  const handleToggleAddon = (featureKey: TenantFeatureKey, currentlyEnabled: boolean) => {
+  const handleToggleAddon = async (featureKey: string, currentlyEnabled: boolean) => {
     const nextState = !currentlyEnabled;
-    featureEntitlementService.setFeatureOverride(featureKey, nextState);
+    const orgId = organization?.id || '0c621892-e938-4707-9957-13534ea32c19';
+
+    if (featureKey === 'garment_workforce') {
+      try {
+        await garmentEntitlementService.setEnabled(orgId, nextState);
+        setAddonStates((prev) => ({ ...prev, garment_workforce: nextState }));
+        showToast(
+          nextState
+            ? '✓ Garment & Piece-Rate Workforce enabled. Visible in Web & Mobile for relevant workers/supervisors.'
+            : '✓ Garment & Piece-Rate Workforce disabled. Hidden across Web & Mobile.',
+          'success'
+        );
+      } catch (err: any) {
+        showToast(err.message || 'Failed to update garment add-on', 'error');
+      }
+      return;
+    }
+
+    if (featureKey === 'face_attend') {
+      try {
+        await faceAttendEntitlementService.setEnabled(orgId, nextState, user?.id);
+        setAddonStates((prev) => ({ ...prev, face_attend: nextState }));
+        showToast(
+          nextState
+            ? '✓ JOY FaceAttend add-on enabled for organization.'
+            : '✓ JOY FaceAttend add-on disabled for organization.',
+          'success'
+        );
+      } catch (err: any) {
+        showToast(err.message || 'Failed to update FaceAttend add-on', 'error');
+      }
+      return;
+    }
+
+    featureEntitlementService.setFeatureOverride(featureKey as TenantFeatureKey, nextState);
     reloadEntitlements();
     showToast(
       nextState
-        ? `Added ${FEATURE_DISPLAY_NAMES[featureKey]} add-on. Module is now visible in the portal.`
-        : `Removed ${FEATURE_DISPLAY_NAMES[featureKey]} add-on. Module is now hidden.`
+        ? `Added ${FEATURE_DISPLAY_NAMES[featureKey as TenantFeatureKey] || featureKey} add-on. Module is now visible in the portal.`
+        : `Removed ${FEATURE_DISPLAY_NAMES[featureKey as TenantFeatureKey] || featureKey} add-on. Module is now hidden.`
     );
   };
 
@@ -353,7 +426,9 @@ export const SubscriptionView: React.FC = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {COMMERCIAL_MODULE_CATALOGUE.map((mod) => {
-            const isEnabled = features[mod.key] ?? false;
+            const isEnabled = ((mod.key as string) === 'garment_workforce' || (mod.key as string) === 'face_attend')
+              ? (addonStates[mod.key] ?? false)
+              : (features[mod.key] ?? false);
             const Icon = mod.icon;
 
             return (

@@ -134,7 +134,7 @@ export const EmployeeOnboardingModal: React.FC<EmployeeOnboardingModalProps> = (
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-700">Last Name *</label>
+              <label className="text-xs font-medium text-gray-700">Last Name</label>
               <input
                 type="text"
                 value={payload.lastName}

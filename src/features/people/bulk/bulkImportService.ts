@@ -871,14 +871,35 @@ export class BulkImportService {
    */
   public normalizeDate(raw: any): string | null {
     if (!raw) return null;
+
+    // Handle Excel numeric serial dates (e.g. 46041 -> 2026-01-19, 38225 -> 2004-08-26)
+    if (typeof raw === 'number' && raw > 1000 && raw < 100000) {
+      const parsedExcel = new Date(Math.round((raw - 25569) * 86400 * 1000));
+      if (!isNaN(parsedExcel.getTime())) {
+        return parsedExcel.toISOString().split('T')[0];
+      }
+    }
+
     const clean = String(raw).trim();
     if (!clean) return null;
+
+    // Numeric serial formatted as string
+    if (/^\d{4,5}$/.test(clean)) {
+      const serial = parseInt(clean, 10);
+      if (serial > 1000 && serial < 100000) {
+        const parsedExcel = new Date(Math.round((serial - 25569) * 86400 * 1000));
+        if (!isNaN(parsedExcel.getTime())) {
+          return parsedExcel.toISOString().split('T')[0];
+        }
+      }
+    }
 
     if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
       return clean;
     }
 
-    const dmyMatch = clean.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+    // Handles DD-MM-YYYY, DD/MM/YYYY, and DD.MM.YYYY
+    const dmyMatch = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
     if (dmyMatch) {
       const day = dmyMatch[1].padStart(2, '0');
       const month = dmyMatch[2].padStart(2, '0');
@@ -886,12 +907,26 @@ export class BulkImportService {
       return `${year}-${month}-${day}`;
     }
 
-    const mdyMatch = clean.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
-    if (mdyMatch && parseInt(mdyMatch[1], 10) <= 12) {
-      const month = mdyMatch[1].padStart(2, '0');
-      const day = mdyMatch[2].padStart(2, '0');
-      const year = mdyMatch[3].length === 2 ? `20${mdyMatch[3]}` : mdyMatch[3];
-      return `${year}-${month}-${day}`;
+    // Handles MM-DD-YYYY or MM/DD/YYYY or M/D/YY (2-digit year)
+    const mdyMatch = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+    if (mdyMatch) {
+      const p1 = parseInt(mdyMatch[1], 10);
+      const p2 = parseInt(mdyMatch[2], 10);
+      let rawYear = mdyMatch[3];
+      let year = rawYear;
+      if (rawYear.length === 2) {
+        const yNum = parseInt(rawYear, 10);
+        // If year <= current year (e.g. 26 -> 2026, 04 -> 2004), else 19xx (e.g. 87 -> 1987)
+        year = yNum <= 30 ? `20${rawYear.padStart(2, '0')}` : `19${rawYear.padStart(2, '0')}`;
+      }
+
+      // If p1 > 12, then it must be DD/MM/YY
+      if (p1 > 12) {
+        return `${year}-${String(p2).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
+      } else {
+        // Assume MM/DD/YY or DD/MM/YY depending on context, standard US/Excel export is MM/DD/YY
+        return `${year}-${String(p1).padStart(2, '0')}-${String(p2).padStart(2, '0')}`;
+      }
     }
 
     const parsed = new Date(clean);
@@ -979,6 +1014,17 @@ export class BulkImportService {
       }
     });
 
+    let tempCounter = 1;
+    existingEmployees.forEach((emp) => {
+      const c = (emp.employee_code || '').trim().toUpperCase();
+      if (c.startsWith('TEMP-')) {
+        const n = parseInt(c.replace('TEMP-', ''), 10);
+        if (!isNaN(n) && n >= tempCounter) {
+          tempCounter = n + 1;
+        }
+      }
+    });
+
     // Second pass: construct complete candidate row
     rawRows.forEach((row, idx) => {
       const rowNumber = idx + 2;
@@ -986,13 +1032,36 @@ export class BulkImportService {
       let status: 'READY' | 'UPDATE' | 'NEEDS_ACTION' = 'READY';
       let existingDbId: string | undefined;
 
-      // 1. Employee Code
-      const empCode = getMapped(row, 'employee_code').trim();
+      // 1. Employee Code & Provisional Auto-Assignment
+      let empCode = getMapped(row, 'employee_code').trim();
+      let isProvisional = false;
+
       if (!empCode) {
-        issues.push({ field: 'employee_code', message: 'Employee Code is required.', severity: 'error' });
-      } else {
+        empCode = `TEMP-${String(tempCounter++).padStart(3, '0')}`;
+        isProvisional = true;
+        issues.push({
+          field: 'employee_code',
+          message: `Employee Code was missing; auto-assigned provisional ID "${empCode}". Update once permanent company ID is provided.`,
+          severity: 'warning',
+        });
+      } else if (/^\d{1,2}$/.test(empCode) || /^[a-zA-Z]$/.test(empCode) || /^sub\d+$/i.test(empCode)) {
+        const rawCode = empCode;
+        if (/^\d{1,2}$/.test(empCode)) {
+          empCode = `TEMP-${empCode.padStart(2, '0')}`;
+        } else {
+          empCode = `TEMP-${empCode.toUpperCase()}`;
+        }
+        isProvisional = true;
+        issues.push({
+          field: 'employee_code',
+          message: `Provisional token "${rawCode}" detected; standardized as "${empCode}". Update once permanent company ID is provided.`,
+          severity: 'warning',
+        });
+      }
+
+      if (empCode) {
         const lowerCode = empCode.toLowerCase();
-        if ((fileCodes.get(lowerCode) || 0) > 1) {
+        if ((fileCodes.get(lowerCode) || 0) > 1 && !isProvisional) {
           issues.push({ field: 'employee_code', message: `Duplicate code "${empCode}" appears multiple times in file.`, severity: 'error' });
         }
         const matched = existingCodeMap.get(lowerCode) || existingCodeMap.get(normalizeCode(empCode));
@@ -1029,13 +1098,28 @@ export class BulkImportService {
       }
 
       // 3. Work Email & Personal Email
-      const email = getMapped(row, 'work_email').trim();
+      let email = getMapped(row, 'work_email').trim();
       const personalEmail = getMapped(row, 'personal_email').trim();
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!email) {
-        issues.push({ field: 'work_email', message: 'Email address is required.', severity: 'error' });
+        if (personalEmail && emailRegex.test(personalEmail)) {
+          email = personalEmail;
+        } else if (empCode) {
+          const slug = empCode.toLowerCase().replace(/[^a-z0-9]/g, '');
+          email = `${slug}@noemail.joypeoplehr.local`;
+          issues.push({ field: 'work_email', message: `Work Email empty; auto-assigned placeholder ${email}`, severity: 'warning' });
+        } else {
+          issues.push({ field: 'work_email', message: 'Email address is required.', severity: 'error' });
+        }
       } else if (!emailRegex.test(email)) {
-        issues.push({ field: 'work_email', message: `Invalid email format: "${email}".`, severity: 'error' });
+        // Auto-correct common typos like ",com", typo domains, and internal spaces
+        const fixedEmail = email.replace(/,com$/i, '.com').replace(/@gmai\.com$/i, '@gmail.com').replace(/@gamil\.com$/i, '@gmail.com').replace(/\s+/g, '');
+        if (emailRegex.test(fixedEmail)) {
+          email = fixedEmail;
+          issues.push({ field: 'work_email', message: `Auto-corrected email typo to "${fixedEmail}"`, severity: 'warning' });
+        } else {
+          issues.push({ field: 'work_email', message: `Invalid email format: "${email}".`, severity: 'error' });
+        }
       } else {
         const lowerEmail = email.toLowerCase();
         if ((fileEmails.get(lowerEmail) || 0) > 1) {
@@ -1049,7 +1133,12 @@ export class BulkImportService {
 
       // 4. Phone & Alternate Phone
       const rawPhone = getMapped(row, 'phone').trim();
-      const cleanPhone = rawPhone.replace(/[^0-9]/g, '');
+      let cleanPhone = rawPhone.replace(/[^0-9]/g, '');
+      if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) {
+        cleanPhone = cleanPhone.slice(1);
+      } else if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
+        cleanPhone = cleanPhone.slice(2);
+      }
       const altPhone = getMapped(row, 'alternate_phone').trim().replace(/[^0-9]/g, '');
 
       if (!rawPhone) {
@@ -1373,12 +1462,23 @@ export class BulkImportService {
       if (b.id) branchByName.set(b.id.toLowerCase().trim(), b);
     });
 
+    let legacyTempCounter = 1;
+    existingEmployees.forEach((emp) => {
+      const c = (emp.employee_code || '').trim().toUpperCase();
+      if (c.startsWith('TEMP-')) {
+        const n = parseInt(c.replace('TEMP-', ''), 10);
+        if (!isNaN(n) && n >= legacyTempCounter) {
+          legacyTempCounter = n + 1;
+        }
+      }
+    });
+
     rows.forEach((row, idx) => {
       const rowNum = idx + 2;
       const rowErrors: BulkImportRowError[] = [];
       let existingDbId: string | undefined;
 
-      const empCode = this.getVal(
+      let empCode = this.getVal(
         row,
         'Employee Code *', 'employee_code', 'Employee Code', 'code', 'emp_code', 'emp code',
         'empid', 'emp_id', 'employee_id', 'employee id', 'staff_id', 'staff id', 'staff_no',
@@ -1386,13 +1486,19 @@ export class BulkImportService {
       ).trim();
 
       if (!empCode) {
-        rowErrors.push({
-          rowNumber: rowNum,
-          field: 'employee_code',
-          value: '',
-          message: 'Employee Code is mandatory.',
-        });
-      } else {
+        empCode = `TEMP-${String(legacyTempCounter++).padStart(3, '0')}`;
+        warnings.push(`Row ${rowNum}: Employee Code was missing. Auto-assigned provisional ID: ${empCode}`);
+      } else if (/^\d{1,2}$/.test(empCode) || /^[a-zA-Z]$/.test(empCode) || /^sub\d+$/i.test(empCode)) {
+        const raw = empCode;
+        if (/^\d{1,2}$/.test(empCode)) {
+          empCode = `TEMP-${empCode.padStart(2, '0')}`;
+        } else {
+          empCode = `TEMP-${empCode.toUpperCase()}`;
+        }
+        warnings.push(`Row ${rowNum}: Provisional code "${raw}" detected. Standardized as temporary ID: ${empCode}`);
+      }
+
+      if (empCode) {
         const lowerCode = empCode.toLowerCase();
         if (fileCodes.has(lowerCode)) {
           rowErrors.push({
@@ -1493,13 +1599,19 @@ export class BulkImportService {
           });
         }
       } else if (!emailRegex.test(email)) {
-        rowErrors.push({
-          rowNumber: rowNum,
-          employeeCode: empCode,
-          field: 'work_email',
-          value: email,
-          message: `Invalid email format: "${email}".`,
-        });
+        const fixedEmail = email.replace(/,com$/i, '.com').replace(/@gmai\.com$/i, '@gmail.com').replace(/@gamil\.com$/i, '@gmail.com').replace(/\s+/g, '');
+        if (emailRegex.test(fixedEmail)) {
+          email = fixedEmail;
+          warnings.push(`Row ${rowNum}: Auto-corrected email typo to "${fixedEmail}"`);
+        } else {
+          rowErrors.push({
+            rowNumber: rowNum,
+            employeeCode: empCode,
+            field: 'work_email',
+            value: email,
+            message: `Invalid email format: "${email}".`,
+          });
+        }
       } else {
         const lowerEmail = email.toLowerCase();
         if (fileEmails.has(lowerEmail)) {

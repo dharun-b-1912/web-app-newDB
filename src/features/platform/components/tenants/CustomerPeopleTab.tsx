@@ -4,7 +4,7 @@
 // Realtime Resend Email Gateway Integration & Direct Authentication Dispatch
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   Shield,
@@ -27,8 +27,14 @@ import {
   Sparkles,
   Loader2,
   Check,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
-import { OrganizationRecord } from '../../../../services/platform/platformTenantService';
+import {
+  OrganizationRecord,
+  platformTenantService,
+  TenantMemberRecord,
+} from '../../../../services/platform/platformTenantService';
 import {
   platformAuthInvitationService,
   OrganizationInvitation,
@@ -42,17 +48,6 @@ import { cn } from '../../../../lib/utils';
 
 export interface CustomerPeopleTabProps {
   organization: OrganizationRecord;
-}
-
-interface CustomerUserItem {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  role: UserRole;
-  status: 'Active' | 'Invited' | 'Suspended';
-  department: string;
-  lastActive: string;
 }
 
 export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organization: org }) => {
@@ -78,19 +73,25 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
     sendSupabaseEmail: true,
   });
 
-  // Active Users Directory (Initialized purely with real Primary Administrator)
-  const [users, setUsers] = useState<CustomerUserItem[]>([
-    {
-      id: 'u-admin',
-      name: org.primary_admin_name || 'Organization Administrator',
-      email: org.primary_admin_email || `admin@${org.domain}`,
-      phone: org.primary_admin_phone || 'Not provided',
-      role: 'Organization Owner',
-      status: 'Active',
-      department: 'Executive Operations',
-      lastActive: 'Just now',
-    },
-  ]);
+  // Directory State: 100% database-backed from Supabase
+  const [users, setUsers] = useState<TenantMemberRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadMembers = async () => {
+    setIsLoading(true);
+    try {
+      const realMembers = await platformTenantService.fetchOrganizationMembers(org.id);
+      setUsers(realMembers);
+    } catch (err) {
+      console.error('[CustomerPeopleTab] Failed to load organization members:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMembers();
+  }, [org.id]);
 
   // Invitations State
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>(() =>
@@ -185,10 +186,10 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
     }
   };
 
-  const handleSendAuthLink = async (user: CustomerUserItem) => {
+  const handleSendAuthLink = async (user: TenantMemberRecord) => {
     setIsSendingAuth((prev) => ({ ...prev, [user.id]: true }));
     try {
-      const canonicalRole = platformAuthInvitationService.mapRoleToCanonicalCode(user.role) as ProvisionableRole;
+      const canonicalRole = platformAuthInvitationService.mapRoleToCanonicalCode(user.role as any) as ProvisionableRole;
       const result = await userAuthProvisionerService.provisionUser({
         email: user.email,
         fullName: user.name,
@@ -213,15 +214,16 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
 
   const handleCompleteAuthPreview = (inv: OrganizationInvitation) => {
     // Convert invite to active user
-    const newUser: CustomerUserItem = {
+    const newUser: TenantMemberRecord = {
       id: `u-${Date.now().toString().slice(-4)}`,
       name: inv.full_name,
       email: inv.email,
-      phone: inv.phone || '+91 98765 00000',
+      phone: inv.phone || 'Not provided',
       role: inv.role,
       status: 'Active',
       department: inv.department,
       lastActive: 'Just now',
+      source: 'user_profile',
     };
     setUsers([newUser, ...users]);
     setInvitations(platformAuthInvitationService.getInvitations(org.id));
@@ -291,16 +293,26 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
 
           <div className="flex items-center gap-2">
             {activeSubTab === 'members' && (
-              <div className="relative">
-                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search staff..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8 pr-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200 text-xs focus:ring-2 focus:ring-[#047857]"
-                />
-              </div>
+              <>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search staff..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-8 pr-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200 text-xs focus:ring-2 focus:ring-[#047857]"
+                  />
+                </div>
+                <button
+                  onClick={loadMembers}
+                  disabled={isLoading}
+                  title="Refresh verified members from Supabase"
+                  className="p-1.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition cursor-pointer"
+                >
+                  <RefreshCw className={cn('w-3.5 h-3.5 text-gray-500', isLoading && 'animate-spin text-[#047857]')} />
+                </button>
+              </>
             )}
 
             <Button
@@ -319,73 +331,100 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
            ---------------------------------------------------- */}
         {activeSubTab === 'members' && (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-gray-50/70 border-b border-gray-100 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
-                <tr>
-                  <th className="py-3 px-5">Staff Member</th>
-                  <th className="py-3 px-4">Contact</th>
-                  <th className="py-3 px-4">Role</th>
-                  <th className="py-3 px-4">Department</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Last Active</th>
-                  <th className="py-3 px-5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
-                {filteredUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-gray-50/60 transition">
-                    <td className="py-3.5 px-5">
-                      <div className="font-bold text-gray-900">{u.name}</div>
-                      <span className="text-[11px] text-gray-400 font-mono">{u.id}</span>
-                    </td>
-                    <td className="py-3.5 px-4 text-xs font-mono text-gray-600">
-                      <div>{u.email}</div>
-                      <span className="text-[10px] text-gray-400 font-sans">{u.phone}</span>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={cn(
-                          'text-[10px] font-bold px-2 py-0.5 rounded-full border',
-                          u.role === 'Organization Owner'
-                            ? 'bg-purple-50 text-purple-700 border-purple-200'
-                            : u.role === 'HR Head'
-                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                            : u.role.includes('Admin')
-                            ? 'bg-blue-50 text-blue-700 border-blue-200'
-                            : 'bg-gray-100 text-gray-700 border-gray-200'
-                        )}
-                      >
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-gray-600">{u.department}</td>
-                    <td className="py-3.5 px-4">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-[#047857]">
-                        {u.status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-gray-500">{u.lastActive}</td>
-                    <td className="py-3.5 px-5 text-right">
-                      <button
-                        onClick={() => handleSendAuthLink(u)}
-                        disabled={isSendingAuth[u.id]}
-                        title="Dispatch Realtime Authentication & Password Link via Resend"
-                        className={cn(
-                          'p-1.5 rounded-lg text-gray-400 hover:text-[#047857] hover:bg-emerald-50 cursor-pointer transition',
-                          isSendingAuth[u.id] && 'opacity-60 cursor-not-allowed'
-                        )}
-                      >
-                        {isSendingAuth[u.id] ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#047857]" />
-                        ) : (
-                          <KeyRound className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </td>
+            {isLoading ? (
+              <div className="p-12 text-center flex flex-col items-center justify-center space-y-3">
+                <Loader2 className="w-8 h-8 animate-spin text-[#047857]" />
+                <p className="text-xs font-semibold text-gray-700">Connecting to Supabase...</p>
+                <p className="text-[11px] text-gray-400">Loading verified staff, administrators and roles for {org.legal_name}</p>
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="p-12 text-center flex flex-col items-center justify-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center text-gray-400">
+                  <Users className="w-6 h-6" />
+                </div>
+                <p className="text-sm font-bold text-gray-800">No staff or administrators found</p>
+                <p className="text-xs text-gray-500 max-w-sm">No verified users currently belong to this organization. Dispatch onboarding invites to grant access.</p>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setShowInviteModal(true)}
+                  className="bg-[#047857] hover:bg-[#036246] text-white font-bold text-xs"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Invite First User / Admin
+                </Button>
+              </div>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead className="bg-gray-50/70 border-b border-gray-100 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
+                  <tr>
+                    <th className="py-3 px-5">Staff Member</th>
+                    <th className="py-3 px-4">Contact</th>
+                    <th className="py-3 px-4">Role</th>
+                    <th className="py-3 px-4">Department</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Last Active</th>
+                    <th className="py-3 px-5 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
+                  {filteredUsers.map((u) => (
+                    <tr key={u.id} className="hover:bg-gray-50/60 transition">
+                      <td className="py-3.5 px-5">
+                        <div className="font-bold text-gray-900">{u.name}</div>
+                        <span className="text-[11px] text-gray-400 font-mono">
+                          {u.employee_code ? `${u.employee_code} • ` : ''}
+                          {u.id.length > 16 ? `${u.id.slice(0, 8)}...${u.id.slice(-4)}` : u.id}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-xs font-mono text-gray-600">
+                        <div>{u.email}</div>
+                        <span className="text-[10px] text-gray-400 font-sans">{u.phone || 'Not provided'}</span>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={cn(
+                            'text-[10px] font-bold px-2 py-0.5 rounded-full border',
+                            u.role === 'Organization Owner' || u.role === 'Company Admin'
+                              ? 'bg-purple-50 text-purple-700 border-purple-200'
+                              : u.role === 'HR Head'
+                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                              : u.role.includes('Admin')
+                              ? 'bg-blue-50 text-blue-700 border-blue-200'
+                              : 'bg-gray-100 text-gray-700 border-gray-200'
+                          )}
+                        >
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-gray-600">{u.department}</td>
+                      <td className="py-3.5 px-4">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-[#047857]">
+                          {u.status}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-gray-500">{u.lastActive}</td>
+                      <td className="py-3.5 px-5 text-right">
+                        <button
+                          onClick={() => handleSendAuthLink(u)}
+                          disabled={isSendingAuth[u.id]}
+                          title="Dispatch Realtime Authentication & Password Link via Resend"
+                          className={cn(
+                            'p-1.5 rounded-lg text-gray-400 hover:text-[#047857] hover:bg-emerald-50 cursor-pointer transition',
+                            isSendingAuth[u.id] && 'opacity-60 cursor-not-allowed'
+                          )}
+                        >
+                          {isSendingAuth[u.id] ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#047857]" />
+                          ) : (
+                            <KeyRound className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
 

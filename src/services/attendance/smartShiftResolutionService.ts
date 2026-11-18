@@ -173,6 +173,7 @@ class SmartShiftResolutionService {
     // ========================================================================
     // TIER 1: Approved Employee-Specific Shift Assignment Effective on Date
     // ========================================================================
+    let assignedShiftObj: any = null;
     try {
       const { data: assignments, error } = await supabase
         .from('employee_shift_assignments')
@@ -186,10 +187,11 @@ class SmartShiftResolutionService {
         const assigned = assignments[0];
         const toDate = assigned.effective_to || assigned.valid_to;
         if (!toDate || toDate >= attendanceDate) {
-          const shift = assigned.shifts || activeShifts.find(s => s.id === assigned.shift_id);
-          if (shift) {
+          assignedShiftObj = assigned.shifts || activeShifts.find(s => s.id === assigned.shift_id);
+          // If strict fixed mode or assigned shift is an overnight shift, lock immediately
+          if (assignedShiftObj && (mode === 'FIXED_SHIFT' || assignedShiftObj.is_overnight || !firstPunchTime)) {
             return this.buildResult(
-              shift,
+              assignedShiftObj,
               'APPROVED_EMPLOYEE_ASSIGNMENT',
               100,
               false,
@@ -201,6 +203,32 @@ class SmartShiftResolutionService {
         }
       }
     } catch (_) {}
+
+    // If first punch is available and mode is HYBRID_MODE or ADAPTIVE_SHIFT, evaluate adaptive candidate scoring
+    if (firstPunchTime && (mode === 'HYBRID_MODE' || mode === 'ADAPTIVE_SHIFT')) {
+      const deterministic = this.resolveShiftDeterministic({
+        assignedShift: assignedShiftObj,
+        activeShifts,
+        firstPunchTime,
+        lastPunchTime,
+        mode,
+      });
+      if (deterministic) {
+        return deterministic;
+      }
+    }
+
+    if (assignedShiftObj) {
+      return this.buildResult(
+        assignedShiftObj,
+        'APPROVED_EMPLOYEE_ASSIGNMENT',
+        100,
+        false,
+        false,
+        [],
+        'Standard employee assigned shift'
+      );
+    }
 
     // ========================================================================
     // TIER 2: Approved Shift Roster or Rotation Effective on Date
@@ -374,6 +402,148 @@ class SmartShiftResolutionService {
       true,
       [],
       'Insufficient attendance punch evidence; routed to HR review queue'
+    );
+  }
+
+  /**
+   * Deterministic Synchronous Shift Resolution Engine
+   * Evaluates assigned vs adaptive candidates without database delay.
+   */
+  resolveShiftDeterministic(params: {
+    assignedShift?: any;
+    activeShifts?: any[];
+    firstPunchTime?: string | null;
+    lastPunchTime?: string | null;
+    mode?: ShiftAssignmentMode;
+    isOverride?: boolean;
+    overrideReason?: string;
+  }): ShiftResolutionResult {
+    const {
+      assignedShift,
+      activeShifts = DEFAULT_SHIFTS,
+      firstPunchTime,
+      lastPunchTime,
+      mode = 'HYBRID_MODE',
+      isOverride = false,
+      overrideReason,
+    } = params;
+
+    // 1. Manager Override has absolute authoritative priority
+    if (isOverride && assignedShift) {
+      return this.buildResult(
+        assignedShift,
+        'EMERGENCY_REASSIGNMENT',
+        100,
+        false,
+        false,
+        [],
+        overrideReason || 'Authoritative manager shift override'
+      );
+    }
+
+    // 2. Strict Night Shift (NS-01) is locked
+    if (assignedShift && assignedShift.is_overnight) {
+      return this.buildResult(
+        assignedShift,
+        'APPROVED_EMPLOYEE_ASSIGNMENT',
+        100,
+        false,
+        false,
+        [],
+        'Authoritative overnight shift assignment'
+      );
+    }
+
+    // 3. Strict Fixed Mode
+    if (mode === 'FIXED_SHIFT' || !firstPunchTime) {
+      const target = assignedShift || activeShifts[0] || DEFAULT_SHIFTS[0];
+      return this.buildResult(
+        target,
+        assignedShift ? 'APPROVED_EMPLOYEE_ASSIGNMENT' : 'DEFAULT_REVIEW_QUEUE',
+        assignedShift ? 100 : 50,
+        false,
+        false,
+        [],
+        assignedShift ? 'Fixed assigned shift' : 'Default organization shift'
+      );
+    }
+
+    // 4. Smart Adaptive Inference (HYBRID_MODE or ADAPTIVE_SHIFT)
+    const punchMinutes = this.extractMinutesFromPunch(firstPunchTime);
+    const checkoutMinutes = lastPunchTime ? this.extractMinutesFromPunch(lastPunchTime) : null;
+
+    if (punchMinutes !== null) {
+      // Score all candidate active shifts
+      const candidateScores = activeShifts.map((s) => this.scoreCandidateShift(s, punchMinutes, checkoutMinutes));
+      candidateScores.sort((a, b) => b.totalScore - a.totalScore);
+
+      const bestCandidate = candidateScores[0];
+      const secondCandidate = candidateScores[1];
+
+      // Score assigned shift if present
+      let assignedScore: CandidateShiftScore | null = null;
+      if (assignedShift) {
+        assignedScore = this.scoreCandidateShift(assignedShift, punchMinutes, checkoutMinutes);
+      }
+
+      // In HYBRID_MODE:
+      // If assigned shift is still strong (totalScore >= 75), respect the assigned shift
+      if (mode === 'HYBRID_MODE' && assignedShift && assignedScore && assignedScore.totalScore >= 75) {
+        return this.buildResult(
+          assignedShift,
+          'APPROVED_EMPLOYEE_ASSIGNMENT',
+          assignedScore.totalScore,
+          false,
+          false,
+          candidateScores,
+          `Verified punch aligned with assigned shift ${assignedShift.code || assignedShift.shift_code || ''}`
+        );
+      }
+
+      // If best candidate is strong (>= 70) and clearly outperforms assigned shift (or no assigned shift):
+      if (bestCandidate && bestCandidate.totalScore >= 70) {
+        // If assigned shift exists, ensure best candidate is at least 15 points better:
+        if (!assignedShift || !assignedScore || bestCandidate.totalScore >= (assignedScore.totalScore + 15)) {
+          const matchedShift = activeShifts.find((s) => s.id === bestCandidate.shiftId) || assignedShift || activeShifts[0];
+          const isAdapted = assignedShift && assignedShift.id !== matchedShift.id;
+          return this.buildResult(
+            matchedShift,
+            'ADAPTIVE_PUNCH_INFERENCE',
+            bestCandidate.totalScore,
+            false,
+            false,
+            candidateScores,
+            isAdapted
+              ? `Auto-adapted from ${assignedShift.code || assignedShift.shift_code} (${(assignedShift.start_time || '').substring(0, 5)}) to ${bestCandidate.shiftCode} (${bestCandidate.scheduledStart} - ${bestCandidate.scheduledEnd}) based on ${this.formatMinutesToTime(punchMinutes)} check-in.`
+              : `Adaptive shift matched ${bestCandidate.shiftCode} based on ${this.formatMinutesToTime(punchMinutes)} check-in (${bestCandidate.totalScore}% match).`
+          );
+        }
+      }
+
+      // If ambiguous between top two candidates (score difference <= 5 and both > 60)
+      if (secondCandidate && Math.abs(bestCandidate.totalScore - secondCandidate.totalScore) <= 5 && bestCandidate.totalScore >= 60) {
+        const tentativeShift = activeShifts.find((s) => s.id === bestCandidate.shiftId) || activeShifts[0];
+        return this.buildResult(
+          tentativeShift,
+          'DEFAULT_REVIEW_QUEUE',
+          bestCandidate.totalScore,
+          true,
+          true,
+          candidateScores,
+          `Ambiguous check-in at ${this.formatMinutesToTime(punchMinutes)}. Equally close to ${bestCandidate.shiftCode} and ${secondCandidate.shiftCode}. Pending HR review.`
+        );
+      }
+    }
+
+    const fallbackShift = assignedShift || activeShifts[0] || DEFAULT_SHIFTS[0];
+    return this.buildResult(
+      fallbackShift,
+      assignedShift ? 'APPROVED_EMPLOYEE_ASSIGNMENT' : 'DEFAULT_REVIEW_QUEUE',
+      50,
+      false,
+      false,
+      [],
+      'Retained assigned schedule'
     );
   }
 

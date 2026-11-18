@@ -7,6 +7,8 @@ import { OTPolicyRecord, OTCalculationMethod, StatutoryStandardPreset } from '..
 import { AttendanceMasterService } from '../../../services/vendor/attendanceMasterService';
 import { useAuth } from '../../../hooks/useAuth';
 import { useTenant } from '../../../hooks/useTenant';
+import { MultiCadenceOTLedgerView } from '../components/MultiCadenceOTLedgerView';
+import { cn } from '../../../lib/utils';
 import {
   Clock,
   Sliders,
@@ -31,6 +33,9 @@ export const OTPolicyConfigurationView: React.FC = () => {
   const { organization, activeCompany } = useTenant();
   const activeOrgId = organization?.id || user?.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
   const activeCompId = activeCompany?.id || '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+
+  // Subview Mode (Policy vs Multi-Cadence Ledger)
+  const [activeViewMode, setActiveViewMode] = useState<'policy' | 'cadence_ledger'>('cadence_ledger');
 
   // Active Policy Configuration State
   const [policyName, setPolicyName] = useState('Standard Company Overtime Policy');
@@ -282,7 +287,41 @@ export const OTPolicyConfigurationView: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Sub-Tab Navigation Bar */}
+      <div className="flex items-center gap-2 p-1.5 bg-gray-100 rounded-2xl w-fit">
+        <button
+          type="button"
+          onClick={() => setActiveViewMode('cadence_ledger')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer",
+            activeViewMode === 'cadence_ledger'
+              ? "bg-white text-gray-900 shadow-xs"
+              : "text-gray-600 hover:text-gray-900"
+          )}
+        >
+          <Clock className="w-4 h-4 text-amber-700" />
+          Multi-Cadence OT Ledger (Day · Week · Month)
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveViewMode('policy')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer",
+            activeViewMode === 'policy'
+              ? "bg-white text-gray-900 shadow-xs"
+              : "text-gray-600 hover:text-gray-900"
+          )}
+        >
+          <Sliders className="w-4 h-4 text-emerald-700" />
+          Policy & Statutory Rules
+        </button>
+      </div>
+
+      {activeViewMode === 'cadence_ledger' ? (
+        <MultiCadenceOTLedgerView />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Configuration Form (7 cols) */}
         <div className="lg:col-span-7 space-y-5">
           {/* Policy Identity & Effective Dating */}
@@ -994,6 +1033,7 @@ export const OTPolicyConfigurationView: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

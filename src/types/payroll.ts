@@ -309,6 +309,8 @@ export interface EmployeePayrollInput {
   updated_at?: string;
 }
 
+export type PayrollRunStreamType = 'UNIFIED' | 'SALARY_ONLY' | 'OT_SETTLEMENT_ONLY';
+
 export interface PayrollRun {
   id: string;
   tenant_id: string;
@@ -327,6 +329,9 @@ export interface PayrollRun {
   total_payroll_cost: number;
   status: PayrollRunStatus;
   is_locked: boolean;
+  stream_type?: PayrollRunStreamType;
+  ot_settlement_period?: string;
+  is_ot_settlement?: boolean;
   approved_by?: string;
   approved_at?: string;
   finalized_by?: string;

@@ -92,8 +92,28 @@ export class WhatsAppPermissionService {
       return { allowed: false, reason: 'Cross-organization access is strictly prohibited.' };
     }
 
-    // 4. Permission check
-    const permissions = session.permissions || [];
+    // 4. Permission check (with fallback to default employee self-service capabilities)
+    const baseEmployeePermissions: WhatsAppPermission[] = [
+      'attendance.view_self',
+      'attendance.check_in',
+      'attendance.check_out',
+      'leave.view_self',
+      'leave.apply',
+      'leave.cancel',
+      'regularization.apply',
+      'regularization.view_self',
+      'payslip.view_self',
+      'profile.view_self',
+      'documents.view_self',
+      'helpdesk.create',
+      'helpdesk.create_ticket',
+      'company_updates.view',
+    ];
+
+    const permissions = (session.permissions && session.permissions.length > 0)
+      ? session.permissions
+      : baseEmployeePermissions;
+    session.permissions = permissions;
     const hasPermission = permissions.includes(requiredPermission);
 
     if (!hasPermission) {

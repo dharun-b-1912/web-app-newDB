@@ -147,7 +147,9 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
     e.preventDefault();
     if (!validationResult.isValid || !selectedLeaveType) return;
 
+    const targetOrgId = chosenEmp?.organization_id || currentUser?.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
     leaveApi.submitLeaveRequest({
+      organization_id: targetOrgId,
       employee_id: targetEmpId,
       employee_name: targetEmpName,
       department_name: targetDeptName,

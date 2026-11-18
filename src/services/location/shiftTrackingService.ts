@@ -36,6 +36,10 @@ export interface EmployeeLiveLocation {
   cumulative_distance_meters: number;
   last_pinged_at?: string;
   shift_id?: string;
+  punch_source?: string;
+  location_name?: string;
+  is_in_office?: boolean;
+  check_in_time?: string;
   created_at: string;
   updated_at: string;
 }
@@ -88,7 +92,7 @@ class ShiftTrackingService {
           .not('employee_name', 'ilike', '%DEMO%'),
         supabase
           .from('employees')
-          .select('id, employee_code, display_name, first_name, last_name, avatar_url, department_id, organization_id, gender')
+          .select('id, user_id, employee_code, display_name, first_name, last_name, avatar_url, department_id, organization_id, gender')
           .eq('organization_id', orgId)
           .eq('employment_status', 'ACTIVE')
           .neq('employee_code', 'JCS-099')
@@ -107,9 +111,8 @@ class ShiftTrackingService {
           .from('attendance_punches')
           .select('id, employee_id, punch_time, punch_type, latitude, longitude, accuracy_meters, punch_source, created_at, location_authorized')
           .eq('organization_id', orgId)
-          .not('latitude', 'is', null)
           .order('created_at', { ascending: false })
-          .limit(200),
+          .limit(250),
         supabase
           .from('leave_requests')
           .select('id, employee_id, start_date, end_date, status, reason')
@@ -128,7 +131,12 @@ class ShiftTrackingService {
       const liveMap = new Map<string, any>();
       (liveRes.data || []).forEach((row: any) => {
         if (row.employee_id) liveMap.set(String(row.employee_id).toLowerCase(), row);
-        if (row.employee_code) liveMap.set(String(row.employee_code).toLowerCase(), row);
+        if (row.employee_code) {
+          const c = String(row.employee_code).toLowerCase();
+          liveMap.set(c, row);
+          const norm = c.replace(/-(0+)/, '-');
+          liveMap.set(norm, row);
+        }
       });
 
       // Index punches by employee_id — first punch encountered is the most recent
@@ -180,8 +188,13 @@ class ShiftTrackingService {
       const mergedList: EmployeeLiveLocation[] = allEmployees.map((emp: any) => {
         const empIdKey = String(emp.id).toLowerCase();
         const empCodeKey = String(emp.employee_code).toLowerCase();
+        const empCodeNormKey = empCodeKey.replace(/-(0+)/, '-');
+        const empUserIdKey = emp.user_id ? String(emp.user_id).toLowerCase() : '';
 
-        const livePing = liveMap.get(empIdKey) || liveMap.get(empCodeKey);
+        const livePing = liveMap.get(empIdKey) || 
+                         liveMap.get(empCodeKey) || 
+                         liveMap.get(empCodeNormKey) || 
+                         (empUserIdKey ? liveMap.get(empUserIdKey) : undefined);
         const latestPunch = punchMap.get(empIdKey);
         const leaveRecord = leaveMap.get(empIdKey);
         const dailyRecord = dailyMap.get(empIdKey);
@@ -220,6 +233,12 @@ class ShiftTrackingService {
           (isPunchToday && latestPunch && String(latestPunch.punch_type || '').toUpperCase().includes('OUT'))
         );
 
+        // Check if employee has checked in today (biometric device, face attend terminal, or mobile app)
+        const hasDailyCheckInToday = Boolean(
+          (dailyRecord && (dailyRecord.first_check_in || dailyRecord.status === 'PRESENT')) ||
+          (isPunchToday && latestPunch && !String(latestPunch.punch_type || '').toUpperCase().includes('OUT'))
+        );
+
         // Historical fallback coordinates (strictly for profile inspection when offline, never plotted on fleet radar)
         const lastKnownLat = latestPunch?.latitude != null
           ? Number(latestPunch.latitude)
@@ -252,8 +271,8 @@ class ShiftTrackingService {
             has_live_ping: false,
             is_on_leave: true,
             leave_reason: leaveRecord?.reason || 'On Leave Today',
-            last_known_latitude: lastKnownLat,
-            last_known_longitude: lastKnownLng,
+            last_known_latitude: 0,
+            last_known_longitude: 0,
             status: 'on_leave',
             cumulative_distance_meters: 0,
             last_pinged_at: undefined,
@@ -263,41 +282,8 @@ class ShiftTrackingService {
         }
 
         // =====================================================================
-        // CASE 2: EMPLOYEE HAS NOT PUNCHED OR PINGED GPS TODAY (OFFLINE / AWAITING SHIFT)
-        // Privacy rule: Do NOT plot stale historical coordinates from past weeks on fleet radar!
-        // =====================================================================
-        if (!isPunchToday && !isPingToday) {
-          return {
-            id: `emp-offline-${emp.id}`,
-            organization_id: orgId,
-            employee_id: emp.id,
-            employee_name: empName,
-            employee_code: emp.employee_code,
-            avatar_url: avatarUrl,
-            gender: emp.gender,
-            department_name: deptName,
-            latitude: 0,
-            longitude: 0,
-            accuracy: 0,
-            speed: 0,
-            battery_level: undefined,
-            is_charging: false,
-            is_moving: false,
-            has_live_ping: false,
-            is_on_leave: false,
-            last_known_latitude: lastKnownLat,
-            last_known_longitude: lastKnownLng,
-            status: 'offline',
-            cumulative_distance_meters: 0,
-            last_pinged_at: punchTime > 0 ? new Date(punchTime).toISOString() : (pingTime > 0 ? new Date(pingTime).toISOString() : undefined),
-            created_at: now.toISOString(),
-            updated_at: now.toISOString(),
-          };
-        }
-
-        // =====================================================================
-        // CASE 3: EMPLOYEE HAS CLOCKED OUT TODAY
-        // Shift has ended: tracking terminates
+        // CASE 2: EMPLOYEE HAS CLOCKED OUT TODAY
+        // Shift has ended: tracking terminates strictly for employee privacy
         // =====================================================================
         if (isClockedOutToday) {
           return {
@@ -318,8 +304,8 @@ class ShiftTrackingService {
             is_moving: false,
             has_live_ping: false,
             is_on_leave: false,
-            last_known_latitude: lastKnownLat,
-            last_known_longitude: lastKnownLng,
+            last_known_latitude: 0,
+            last_known_longitude: 0,
             status: 'clocked_out',
             cumulative_distance_meters: Number(livePing?.cumulative_distance_meters) || 0,
             last_pinged_at: dailyRecord?.last_check_out || (punchTime > 0 ? new Date(punchTime).toISOString() : now.toISOString()),
@@ -329,7 +315,85 @@ class ShiftTrackingService {
         }
 
         // =====================================================================
-        // CASE 4: ACTIVE SHIFT WITH TODAY'S AUTHORITATIVE GPS FIX
+        // CASE 3: EMPLOYEE CHECKED IN VIA BIOMETRIC OR IN-OFFICE DEVICE
+        // (Active shift in office without mobile telemetry ping)
+        // =====================================================================
+        const isBiometricInOffice = hasDailyCheckInToday && (!isPingToday || !livePing?.latitude);
+        if (isBiometricInOffice) {
+          const assignedOffice = workLocations[0] || { name: 'Joy Corporate Solutions HQ', latitude: defaultHQ.lat, longitude: defaultHQ.lng };
+          const officeLat = Number(assignedOffice.latitude) || defaultHQ.lat;
+          const officeLng = Number(assignedOffice.longitude) || defaultHQ.lng;
+          const punchSource = latestPunch?.punch_source || (dailyRecord?.first_check_in ? 'BIOMETRIC' : 'OFFICE_PUNCH');
+
+          return {
+            id: latestPunch?.id || `biometric-shift-${emp.id}`,
+            organization_id: orgId,
+            employee_id: emp.id,
+            employee_name: empName,
+            employee_code: emp.employee_code,
+            avatar_url: avatarUrl,
+            gender: emp.gender,
+            department_name: deptName,
+            latitude: officeLat,
+            longitude: officeLng,
+            accuracy: 10,
+            speed: 0,
+            battery_level: undefined,
+            is_charging: false,
+            is_moving: false,
+            has_live_ping: true,
+            is_stale: false,
+            is_on_leave: false,
+            is_in_office: true,
+            punch_source: punchSource,
+            location_name: assignedOffice.name || 'Corporate Campus HQ',
+            check_in_time: dailyRecord?.first_check_in || (punchTime > 0 ? new Date(punchTime).toISOString() : undefined),
+            last_known_latitude: officeLat,
+            last_known_longitude: officeLng,
+            status: 'on_duty',
+            cumulative_distance_meters: 0,
+            last_pinged_at: dailyRecord?.first_check_in || (punchTime > 0 ? new Date(punchTime).toISOString() : now.toISOString()),
+            created_at: now.toISOString(),
+            updated_at: now.toISOString(),
+          };
+        }
+
+        // =====================================================================
+        // CASE 4: EMPLOYEE HAS NOT CHECKED IN TODAY (OFFLINE / AWAITING SHIFT PUNCH)
+        // Privacy rule: Telemetry is strictly active during shift. If employee has not punched in today,
+        // suppress map coordinates and display as awaiting punch.
+        // =====================================================================
+        if (!hasDailyCheckInToday && !isPunchToday) {
+          return {
+            id: `emp-offline-${emp.id}`,
+            organization_id: orgId,
+            employee_id: emp.id,
+            employee_name: empName,
+            employee_code: emp.employee_code,
+            avatar_url: avatarUrl,
+            gender: emp.gender,
+            department_name: deptName,
+            latitude: 0,
+            longitude: 0,
+            accuracy: 0,
+            speed: 0,
+            battery_level: livePing?.battery_level != null ? Number(livePing.battery_level) : undefined,
+            is_charging: Boolean(livePing?.is_charging),
+            is_moving: false,
+            has_live_ping: false,
+            is_on_leave: false,
+            last_known_latitude: lastKnownLat,
+            last_known_longitude: lastKnownLng,
+            status: 'offline',
+            cumulative_distance_meters: 0,
+            last_pinged_at: punchTime > 0 ? new Date(punchTime).toISOString() : (pingTime > 0 ? new Date(pingTime).toISOString() : undefined),
+            created_at: now.toISOString(),
+            updated_at: now.toISOString(),
+          };
+        }
+
+        // =====================================================================
+        // CASE 5: ACTIVE SHIFT WITH TODAY'S AUTHORITATIVE GPS FIX
         // Compare today's latest punch vs today's live telemetry ping
         // A signal is genuinely LIVE only if received within the last 20 minutes!
         // =====================================================================
@@ -467,11 +531,38 @@ class ShiftTrackingService {
         };
       });
 
-      // Sort: Live pinged employees first, then by employee code
+      // Intelligent Multi-Tier Fleet Priority Ranking:
+      // Tier 1: Actively moving field staff (speed > 0.8 km/h or is_moving = true)
+      // Tier 2: Field staff in transit with recorded displacement > 100m
+      // Tier 3: Other field staff with live satellite ping
+      // Tier 4: In-office staff (checked in via biometric / HQ geofence)
+      // Tier 5: Idle / Standby staff with morning check-in
+      // Tier 6: Offline / Awaiting shift punch
+      // Tier 7: Clocked-out staff
+      // Tier 8: Staff on approved leave
+      const getPriorityScore = (emp: EmployeeLiveLocation): number => {
+        if (emp.is_on_leave) return 0;
+        if (emp.status === 'clocked_out') return 100;
+        if (!emp.has_live_ping && emp.status === 'offline') return 200;
+        if (!emp.has_live_ping && emp.status === 'idle') return 300;
+        if (emp.is_in_office) return 500;
+        if (emp.is_moving || (emp.speed || 0) > 0.8) {
+          return 800 + Math.min(Math.round((emp.speed || 0) * 10), 100);
+        }
+        if ((emp.cumulative_distance_meters || 0) > 100) {
+          return 700 + Math.min(Math.round(emp.cumulative_distance_meters / 100), 80);
+        }
+        return 600; // Live field staff with ping
+      };
+
       mergedList.sort((a, b) => {
-        const hasLiveA = a.has_live_ping ? 1 : 0;
-        const hasLiveB = b.has_live_ping ? 1 : 0;
-        if (hasLiveA !== hasLiveB) return hasLiveB - hasLiveA;
+        const scoreA = getPriorityScore(a);
+        const scoreB = getPriorityScore(b);
+        if (scoreA !== scoreB) return scoreB - scoreA;
+        // Within same tier, prioritize higher travel distance
+        const distA = a.cumulative_distance_meters || 0;
+        const distB = b.cumulative_distance_meters || 0;
+        if (distA !== distB) return distB - distA;
         return (a.employee_code || '').localeCompare(b.employee_code || '');
       });
 

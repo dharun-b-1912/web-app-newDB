@@ -54,10 +54,14 @@ export const WorkspaceApplyLeaveModal: React.FC<Props> = ({
     setIsSubmitting(true);
     try {
       const typeName = selectedTypeId === 'lt-cl' ? 'Casual Leave' : selectedTypeId === 'lt-sl' ? 'Sick Leave' : 'Privilege Leave';
+      const orgId = employee?.organization_id || user.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
+      const compId = employee?.company_id || (user as any).company_id || '2030277f-a6a1-427f-beaf-4fc677a3bae2';
       const created = leaveApi.submitLeaveRequest({
+        organization_id: orgId,
+        company_id: compId,
         employee_id: employee?.id || user.employee_id || user.id,
-        employee_name: employee ? `${employee.first_name} ${employee.last_name}` : user.name,
-        department_name: employee?.department_name || 'Engineering',
+        employee_name: employee ? (employee.display_name || `${employee.first_name} ${employee.last_name}`.trim()) : user.name,
+        department_name: employee?.department_name || 'Field Operations',
         leave_type_id: selectedTypeId,
         leave_type_name: typeName,
         from_date: fromDate,

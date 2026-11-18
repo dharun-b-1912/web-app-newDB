@@ -626,7 +626,7 @@ export const adminApi = {
     if (!isDevBenchmarkOrg) {
       return {
         plan_name: `Enterprise Evaluation License (30-Day Trial)`,
-        billing_cycle: '30-Day Evaluation',
+        billing_cycle: 'Monthly',
         employee_limit: 500,
         active_employees: employees.length,
         renewal_date: '2026-12-14',

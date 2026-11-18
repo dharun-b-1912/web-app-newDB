@@ -90,6 +90,12 @@ app.use((req, res, next) => {
   // Restricted Permissions Policy (Camera permitted for facial attendance & photo verification)
   res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(self)');
 
+  // Dynamic API Routes: Prevent stale caching on Cloudflare CDN and client browsers
+  if (req.url && req.url.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('CDN-Cache-Control', 'no-store');
+  }
+
   // Enterprise Cookie Security: Ensure all cookies use Secure, HttpOnly, and SameSite=Lax
   const originalSetHeader = res.setHeader;
   res.setHeader = function (name, value) {
@@ -1823,6 +1829,154 @@ app.post('/api/webhooks/whatsapp', async (req, res) => {
   }
 });
 
+// ============================================================================
+// Authoritative Outbound WhatsApp Welcome & Mobile Onboarding Pack
+// Dispatches Meta image template joy_hr_welcome_v2 + iOS/Android companion guide
+// ============================================================================
+app.post('/api/whatsapp/send-welcome', async (req, res) => {
+  try {
+    const { employeeId, phone, employeeName, employeeCode, companyName, workEmail } = req.body || {};
+    
+    let targetPhone = phone;
+    let targetName = employeeName;
+    let targetCode = employeeCode;
+    let targetCompany = companyName || 'Joy Corporate Solutions';
+    let targetEmail = workEmail;
+
+    // Enrich from Supabase if employeeId provided
+    if (employeeId && (!targetPhone || !targetName || !targetCode)) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(employeeId.trim());
+      let query = supabase.from('employees').select('*');
+      if (isUuid) {
+        query = query.eq('id', employeeId.trim());
+      } else {
+        query = query.or(`employee_code.eq.${employeeId.trim()},employee_code.ilike.%${employeeId.trim()}%`);
+      }
+      const { data: emp } = await query.limit(1).maybeSingle();
+      if (emp) {
+        targetPhone = targetPhone || emp.phone || emp.personal_phone;
+        targetName = targetName || emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
+        targetCode = targetCode || emp.employee_code || emp.id;
+        targetEmail = targetEmail || emp.work_email || emp.personal_email;
+      }
+    }
+
+    if (!targetPhone) {
+      return res.status(400).json({ success: false, error: 'Target mobile phone number is required.' });
+    }
+
+    const cleanPhone = String(targetPhone).replace(/\D/g, '');
+    const normalizedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+    const metaToken = process.env.META_WA_ACCESS_TOKEN || process.env.VITE_META_WA_ACCESS_TOKEN;
+    const phoneNumberId = process.env.META_WA_PHONE_NUMBER_ID || process.env.VITE_META_WA_PHONE_NUMBER_ID || '1352826481241407';
+
+    targetName = targetName || 'Team Member';
+    targetCode = targetCode || 'EMP';
+    targetEmail = targetEmail || `${targetCode.toLowerCase().replace(/[^a-z0-9]/g, '')}@joyglobalcorp.com`;
+    if (targetCompany.includes('Joy Corporate')) {
+      targetCompany = 'Joy Corporate Solutions';
+    }
+
+    // 1. Dispatch approved Meta Image Header template joy_hr_welcome_v2
+    let templateResData = null;
+    try {
+      const tplRes = await fetch(`https://graph.facebook.com/v20.0/${phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${metaToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: normalizedPhone,
+          type: 'template',
+          template: {
+            name: 'joy_hr_welcome_v2',
+            language: { code: 'en' },
+            components: [
+              {
+                type: 'header',
+                parameters: [
+                  {
+                    type: 'image',
+                    image: { link: 'https://app.joypeoplehr.com/welcome-to-joy-people-hr.png' }
+                  }
+                ]
+              },
+              {
+                type: 'body',
+                parameters: [
+                  { type: 'text', text: targetCompany },
+                  { type: 'text', text: targetName },
+                  { type: 'text', text: targetCode },
+                  { type: 'text', text: targetEmail }
+                ]
+              }
+            ]
+          }
+        })
+      });
+      templateResData = await tplRes.json();
+    } catch (tplErr) {
+      console.warn('[WhatsApp Send-Welcome] Template dispatch error:', tplErr.message);
+    }
+
+    // 2. Dispatch Companion Device Access Guide (Android Play Store + iOS Mobile Web App)
+    let companionResData = null;
+    try {
+      const guideText =
+        `📱 *JOY PeopleHR — Mobile & Web App Access*\n\n` +
+        `👋 Welcome, *${targetName}*! Access your HR Self-Service portal on your mobile device:\n\n` +
+        `🤖 *For Android Users (Google Play Store):*\n` +
+        `Download the official app to mark attendance, apply for leave, and view payslips:\n` +
+        `👉 https://play.google.com/store/apps/details?id=com.joypeoplehr.app\n\n` +
+        `🍏 *For iOS / Apple Device Users (iPhone & iPad):*\n` +
+        `Open the Mobile Web App directly in Safari:\n` +
+        `👉 https://mobile.joypeoplehr.com\n` +
+        `💡 *Install on iPhone:* Open in Safari ➔ tap the *Share* button (square with arrow ↑) ➔ select *"Add to Home Screen"*. It will install and run just like a native full-screen app!\n\n` +
+        `🔐 *Login Credentials:*\n` +
+        `• Employee ID: *${targetCode}*\n` +
+        `• Official Email: *${targetEmail}*\n` +
+        `• Default Password: *joypeoplehr*\n\n` +
+        `💬 *Quick HR Help:* You can reply to this chat anytime with *Payslip*, *Leave*, or *Attendance*!`;
+
+      const textRes = await fetch(`https://graph.facebook.com/v20.0/${phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${metaToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: normalizedPhone,
+          type: 'text',
+          text: {
+            preview_url: true,
+            body: guideText
+          }
+        })
+      });
+      companionResData = await textRes.json();
+    } catch (compErr) {
+      console.warn('[WhatsApp Send-Welcome] Companion dispatch error:', compErr.message);
+    }
+
+    const messageId = templateResData?.messages?.[0]?.id || companionResData?.messages?.[0]?.id;
+    return res.json({
+      success: true,
+      message: `WhatsApp Welcome Pack dispatched successfully to ${normalizedPhone}`,
+      messageId,
+      templateResult: templateResData,
+      companionResult: companionResData
+    });
+  } catch (err) {
+    console.error('[WhatsApp Send-Welcome Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ============================================================
 // Razorpay Enterprise Billing, Order Creation, Refunds & Webhooks
 // ============================================================
@@ -2168,8 +2322,24 @@ app.get(['/', '/launch', '/launch.html', '/index.html'], (req, res, next) => {
   next();
 });
 
-// Serve static assets from the Vite build output directory
-app.use(express.static(path.join(__dirname, 'dist')));
+// Serve static assets from the Vite build output directory with aggressive Cloudflare CDN & browser caching
+app.use(express.static(path.join(__dirname, 'dist'), {
+  maxAge: '1y',
+  immutable: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      // Never cache index.html or launch.html so app updates & bugfixes deploy instantaneously
+      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+      res.setHeader('CDN-Cache-Control', 'no-cache');
+    } else if (filePath.includes('/assets/') || filePath.includes('\\assets\\') || /\.[a-f0-9]{8,}\.(js|css|woff2?|png|jpg|svg)$/i.test(filePath)) {
+      // Hashed Vite chunks and fonts are immutable - cache for 1 year on CDN and client
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('CDN-Cache-Control', 'max-age=31536000');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    }
+  }
+}));
 
 // Return 404 for missing static chunks so browsers trigger dynamic import reload rather than syntax error on HTML
 app.use('/assets', (req, res) => {
@@ -2185,6 +2355,8 @@ app.use((req, res) => {
   if (host === 'joypeoplehr.com' || host === 'www.joypeoplehr.com') {
     return sendLandingPage(res);
   }
+  res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+  res.setHeader('CDN-Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 

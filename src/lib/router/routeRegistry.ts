@@ -337,6 +337,7 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
   { id: 'biometric', label: 'Biometric Devices', canonicalPath: '/biometric', section: 'CLOCKING & DEVICES', aliases: ['/biometric/devices', '/biometric-devices'], exact: true },
   { id: 'attendance-rules', label: 'Biometric Rules & Automation', canonicalPath: '/biometric/rules', section: 'CLOCKING & DEVICES', aliases: ['/attendance-rules', '/biometric-rules', '/rules-engine'] },
   { id: 'gps', label: 'GPS & Mobile Channel', canonicalPath: '/biometric/gps', section: 'CLOCKING & DEVICES', aliases: ['/gps', '/gps-attendance'] },
+  { id: 'gps-travel-fare', label: 'Field Travel & KM Fare Config', canonicalPath: '/gps-travel-fare', section: 'CLOCKING & DEVICES', aliases: ['/gps-travel-fare', '/travel-fare', '/km-fare', '/fare-config'] },
   { id: 'face-attendance', label: 'Face Recognition', canonicalPath: '/biometric/face', section: 'CLOCKING & DEVICES', aliases: ['/face-attendance', '/face-recognition'] },
   { id: 'geofences', label: 'Geofence Boundaries', canonicalPath: '/biometric/geofences', section: 'CLOCKING & DEVICES', aliases: ['/geofences'] },
 

@@ -30,6 +30,8 @@ import type {
   FaceAttendSubscription,
   FaceAttendTemplateRecord,
 } from '../../types/faceAttend';
+import type { Employee } from '../../types';
+import { api } from '../../services/api';
 import { FaceAttendOverviewTab } from './FaceAttendOverviewTab';
 import { FaceAttendEnrolmentTab } from './FaceAttendEnrolmentTab';
 import { FaceAttendAttemptsTab, FaceAttendExceptionsTab } from './FaceAttendOperationsTabs';
@@ -83,6 +85,7 @@ export const FaceAttendMasterModule: React.FC<FaceAttendMasterModuleProps> = ({
   const [exceptions, setExceptions] = useState<FaceAttendExceptionReview[]>([]);
   const [locations, setLocations] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<FaceAttendAuditLog[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
   useEffect(() => {
     setActiveTab(resolveTab(initialTab));
@@ -103,7 +106,7 @@ export const FaceAttendMasterModule: React.FC<FaceAttendMasterModuleProps> = ({
         return;
       }
 
-      const [cfg, sub, snaps, tpls, atts, exs, locs, logs] = await Promise.all([
+      const [cfg, sub, snaps, tpls, atts, exs, locs, logs, emps] = await Promise.all([
         faceAttendService.getSettings(orgId),
         faceAttendBillingService.getSubscription(orgId),
         faceAttendBillingService.listSnapshots(orgId),
@@ -112,6 +115,7 @@ export const FaceAttendMasterModule: React.FC<FaceAttendMasterModuleProps> = ({
         faceAttendService.listExceptionReviews(orgId),
         faceAttendService.listWorkLocations(orgId),
         faceAttendService.listAuditLogs(orgId),
+        api.getEmployees().catch(() => api.getEmployeesSync()),
       ]);
 
       setSettings(cfg);
@@ -122,6 +126,7 @@ export const FaceAttendMasterModule: React.FC<FaceAttendMasterModuleProps> = ({
       setExceptions(exs);
       setLocations(locs);
       setAuditLogs(logs);
+      setEmployees(emps || []);
     } finally {
       setLoading(false);
     }
@@ -306,6 +311,8 @@ export const FaceAttendMasterModule: React.FC<FaceAttendMasterModuleProps> = ({
       {activeTab === 'enrolment' && (
         <FaceAttendEnrolmentTab
           templates={templates}
+          allEmployees={employees}
+          onReloadEmployees={loadAll}
           subscription={subscription}
           isAdmin={isAdmin}
           onApprove={async (id) => {

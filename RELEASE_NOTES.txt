@@ -1,17 +1,68 @@
 ============================================================
-JOY PeopleHR — Production Release (v1.1.9+30)
+JOY PeopleHR — Production Release Notes (v1.1.18 Build 39)
 ============================================================
-Version     : 1.1.9
-Build Code  : 30
-Release Date: 2026-10-31
+Product      : JOY PeopleHR (Modern HR & Workforce Operating System)
+Version      : 1.1.18
+Build Code   : 39
+Release Date : 2026-11-17
+Platform     : Web (app.joypeoplehr.com) & Android (AAB / APK)
+Target SDK   : Android 14 / 15 (Target SDK 36, Min SDK 21)
+Signed By    : JOY Corporate Solutions Release Keystore
 
-GOOGLE PLAY RELEASE NOTES:
-• Improved night shift attendance for seamless check-ins and check-outs across midnight.
-• View your assigned shift schedule and timings directly on the home screen.
-• Faster and more accurate attendance sync across mobile and biometric devices.
-• Overall performance improvements and bug fixes for a smoother experience.
+------------------------------------------------------------
+1. HIGHLIGHTS & WHAT'S NEW
+------------------------------------------------------------
+• Shift Route & Live Fleet Radar Auto-Defaulting Fix:
+  - Eliminated automatic defaulting to in-office stationary personnel (Pandeeshwari S).
+  - Implemented Intelligent Multi-Tier Fleet Priority Ranking:
+    * Tier 1: Actively moving field staff (speed > 0.8 km/h, moving = true) -> Rank #1 (e.g. Praveen B, Saravanakumar B).
+    * Tier 2: Field staff in transit with recorded displacement > 100m.
+    * Tier 3: Other field staff with live satellite ping.
+    * Tier 4: In-office staff (checked in via biometric / HQ geofence).
+    * Tier 5: Idle / standby staff with morning check-in.
+    * Tier 6: Offline / awaiting shift punch.
+    * Tier 7: Clocked-out staff (GPS coordinates zeroed for privacy).
+    * Tier 8: Staff on approved leave (dedicated privacy card).
+  - Live Radar map canvas automatically auto-centers and focuses on the leading moving field executive with full route displacement polyline and travel allowance pay.
 
-BUILD ARTIFACT:
-• File: app-release.aab (JOY_PeopleHR_v1.1.9_build30.aab)
-• Path: flutter_app/build/app/outputs/bundle/release/app-release.aab
+• Authoritative Shift-Bound Real-Time GPS Tracking:
+  - Tracking strictly operates between Shift Start (Check-In) and Shift End (Check-Out).
+  - When employee checks in (biometric machine in office, FaceAttend terminal, or mobile app), tracking begins immediately.
+  - If employee has NOT checked in for the day, telemetry coordinates are suppressed and employee is displayed as "Awaiting Punch" / "Offline".
+  - Upon Check-Out (biometric punch-out or mobile clock-out), tracking terminates immediately, zeroing coordinates to guarantee statutory employee privacy.
+  - Mobile background service (`shift_tracking_service.dart`) strictly gates location stream on `isCheckedIn && isShiftActive`.
+
+• Sidebar Navigation & Restful REST Slug Desync Resolution:
+  - Resolved route collisions between `/biometric/gps` and `/gps-travel-fare`.
+  - Clicking "Field Travel & KM Fare Config" in the sidebar directly opens `FieldTravelKmFareTab` without inheriting stale `?subTab=tracking`.
+  - Added canonical routes and aliases in `urlRouter.ts` and `routeRegistry.ts` for clean back/forward browser navigation.
+
+• Re-organized Clocking & Devices Navigation Order:
+  - JOY FaceAttend (Add-On)
+  - Biometric Devices
+  - Biometric Rules & Automation
+  - GPS & Mobile Clocking
+  - Geofence Boundaries
+  - Shift Route & Live Fleet Radar (Live)
+  - Field Travel & KM Fare Config
+
+• Field Travel & KM Fare Reimbursement Engine:
+  - Configurable vehicle mileage rates:
+    * 2-Wheeler : ₹4.50 / km
+    * 4-Wheeler : ₹10.00 / km
+    * Standard Base : ₹6.00 / km
+  - Real-time travel reimbursement pay computation with 1-click payroll sync.
+
+• On-Leave Privacy Shield:
+  - Approved leave records (e.g., Shalini J) render a dedicated Privacy Protected Leave Card rather than exposing geographic coordinates or an empty map canvas.
+
+------------------------------------------------------------
+2. RELEASE ARTIFACTS
+------------------------------------------------------------
+• Google Play Store Bundle : JOY_PeopleHR_v1.1.18_b39.aab
+• Direct Device APK        : JOY_PeopleHR_v1.1.18_b39.apk
+• Production Web Endpoint  : https://app.joypeoplehr.com (Deployment Completed)
+• Verification Status      : 170/170 Flutter Unit/Widget Tests Passed (100%)
+                             5/5 Playwright E2E Tests Passed (100%)
+                             Vite Production Web Build Succeeded in 25.68s
 ============================================================

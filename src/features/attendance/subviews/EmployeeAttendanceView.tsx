@@ -32,6 +32,7 @@ import {
   FileSpreadsheet,
   Loader2,
   PartyPopper,
+  Sparkles,
 } from 'lucide-react';
 import { leaveApi } from '../../../services/leaveApi';
 import { AttendanceDaily, PunchSource } from '../../../types/attendance';
@@ -40,6 +41,7 @@ import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
 import { formatMinutesToHoursStr, formatCleanTime, timeStringToMinutes, processAttendanceStatus, DEFAULT_ATTENDANCE_POLICY, formatDeviationDuration } from '../../../lib/attendance/attendanceEngine';
 import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
+import { smartShiftResolutionService, DEFAULT_SHIFTS } from '../../../services/attendance/smartShiftResolutionService';
 import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
 import { GlobalAttendanceFilterState } from '../AttendanceModuleMaster';
 import { cn } from '../../../lib/utils';
@@ -547,6 +549,44 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         }
       }
 
+      // =========================================================================
+      // SMART ADAPTIVE SHIFT RESOLUTION FOR CHECKED-IN WORKFORCE
+      // Dynamically matches closest standard shift window (e.g. 08:30, 09:00, 09:30)
+      // to eliminate false late penalties for flexible corporate roles.
+      // =========================================================================
+      let isAdaptiveInferred = false;
+      let adaptiveReason = '';
+      if (firstIn && !roster?.is_override && !(shift as any)?.is_overnight && !shift?.cross_midnight) {
+        const activeShiftsList = shifts && shifts.length > 0 ? shifts : DEFAULT_SHIFTS;
+        const adaptiveRes = smartShiftResolutionService.resolveShiftDeterministic({
+          assignedShift: shift,
+          activeShifts: activeShiftsList,
+          firstPunchTime: firstIn,
+          lastPunchTime: lastOut,
+          mode: 'HYBRID_MODE',
+        });
+
+        if (adaptiveRes && adaptiveRes.source === 'ADAPTIVE_PUNCH_INFERENCE' && adaptiveRes.shiftId !== shift?.id) {
+          const matchedFromDb = attendanceRosterService.getShiftById(adaptiveRes.shiftId) || activeShiftsList.find(s => s.id === adaptiveRes.shiftId);
+          isAdaptiveInferred = true;
+          adaptiveReason = adaptiveRes.resolutionReason;
+          shift = {
+            ...(matchedFromDb || shift),
+            id: adaptiveRes.shiftId,
+            shift_code: adaptiveRes.shiftCode,
+            shift_name: adaptiveRes.shiftName,
+            start_time: adaptiveRes.startTime,
+            end_time: adaptiveRes.endTime,
+            grace_entry_minutes: adaptiveRes.graceEntryMinutes,
+            grace_exit_minutes: adaptiveRes.graceExitMinutes,
+            is_overnight: adaptiveRes.isOvernight,
+            is_adaptive: true,
+            adaptive_reason: adaptiveRes.resolutionReason,
+            confidence_score: adaptiveRes.confidenceScore,
+          } as any;
+        }
+      }
+
       const inMins = timeStringToMinutes(firstIn);
       const outMins = timeStringToMinutes(lastOut);
       const expIn = timeStringToMinutes(shift.start_time) || 540;
@@ -644,12 +684,14 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         isWorking,
         inSrc,
         checkOutSrc,
+        isAdaptiveInferred,
+        adaptiveReason,
       };
     });
 
     // STEP 2: Filter resolved rows
     return allResolvedRows.filter(row => {
-      const { emp, record, roster, shift, isMissingPunch, isWorking, inSrc, checkOutSrc } = row;
+      const { emp, record, roster, shift, isMissingPunch, isWorking, inSrc, checkOutSrc, isAdaptiveInferred, adaptiveReason } = row;
       const empDept = emp.department_name || emp.department || 'People & HR';
       const empLoc = emp.branch_name || emp.location || 'Coimbatore HQ';
       const empVendor = getVendorName(emp);
@@ -1408,7 +1450,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredData.map(({ emp, record, roster, shift, isWorking: rowIsWorking, isMissingPunch: rowIsMissingPunch }) => {
+                filteredData.map(({ emp, record, roster, shift, isWorking: rowIsWorking, isMissingPunch: rowIsMissingPunch, isAdaptiveInferred, adaptiveReason }) => {
                   const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name || 'Employee';
                   const empCode = emp.employee_code || `WF-${emp.id}`;
                   const dept = formatTitleCase(emp.department_name || emp.department || 'General');
@@ -1505,7 +1547,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                       </td>
 
                       {/* Shift & Schedule */}
-                      <td className="py-2.5 px-3 align-middle border-b border-gray-100">
+                      <td className="py-2.5 px-3 align-middle border-b border-gray-100 overflow-hidden">
                         <div className="flex items-center gap-1.5 whitespace-nowrap">
                           <span className="font-mono font-bold text-gray-900 text-xs bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200 shrink-0">
                             {shift.shift_code}
@@ -1514,18 +1556,28 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                             {shift.start_time} - {shift.end_time}
                           </span>
                           {isNight && (
-                            <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1 py-0.2 rounded font-bold shrink-0">
+                            <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1 py-0.5 rounded font-bold shrink-0">
                               NGT
                             </span>
                           )}
                           {(record as any)?.overnight_work_date && (record as any).overnight_work_date !== selectedDate && (
-                            <span className="text-[9px] bg-amber-50 text-amber-700 px-1 py-0.2 rounded font-semibold border border-amber-200 shrink-0">
+                            <span className="text-[9px] bg-amber-50 text-amber-700 px-1 py-0.5 rounded font-semibold border border-amber-200 shrink-0">
                               Session: {(record as any).overnight_work_date}
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap truncate max-w-full" title={cleanShiftName}>
-                          {cleanShiftName}
+                        <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                          <span className="text-[10px] text-gray-400 truncate block max-w-[130px]" title={cleanShiftName}>
+                            {cleanShiftName}
+                          </span>
+                          {isAdaptiveInferred && (
+                            <span
+                              className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.2 rounded font-semibold border border-emerald-200 shrink-0 cursor-help"
+                              title={adaptiveReason || 'Smart Adaptive Shift match based on check-in arrival'}
+                            >
+                              Adaptive
+                            </span>
+                          )}
                         </div>
                       </td>
 

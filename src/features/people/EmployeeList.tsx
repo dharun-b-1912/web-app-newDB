@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -94,15 +95,54 @@ const RowActionMenu: React.FC<ActionMenuProps> = ({
   isToggling,
 }) => {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+
+  const calculatePosition = () => {
+    if (!btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const menuWidth = 224; // w-56
+    const estimatedHeight = 340;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUpwards = spaceBelow < estimatedHeight && rect.top > estimatedHeight;
+
+    let top = openUpwards ? rect.top - estimatedHeight - 4 : rect.bottom + 4;
+    if (top < 8) top = 8;
+    if (top + estimatedHeight > window.innerHeight - 8) {
+      top = Math.max(8, window.innerHeight - estimatedHeight - 8);
+    }
+
+    let left = rect.right - menuWidth;
+    if (left < 8) left = 8;
+    if (left + menuWidth > window.innerWidth - 8) {
+      left = window.innerWidth - menuWidth - 8;
+    }
+
+    setCoords({ top, left });
+  };
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    calculatePosition();
+
+    const handleScrollOrResize = () => setOpen(false);
+    const handleClickOutside = (e: MouseEvent) => {
+      if (btnRef.current && btnRef.current.contains(e.target as Node)) return;
+      if (menuRef.current && menuRef.current.contains(e.target as Node)) return;
+      setOpen(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
   }, [open]);
 
   const item = (icon: React.ReactNode, label: string, onClick: () => void, cls = '') => (
@@ -124,10 +164,14 @@ const RowActionMenu: React.FC<ActionMenuProps> = ({
   );
 
   return (
-    <div ref={ref} className="relative" onClick={(e) => e.stopPropagation()}>
+    <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
       <button
+        ref={btnRef}
         type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen((p) => !p); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((p) => !p);
+        }}
         className={cn(
           'h-7 w-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-900 hover:bg-gray-100 hover:border-gray-300 transition-all cursor-pointer',
           open && 'bg-gray-100 border-gray-300 text-gray-900'
@@ -137,8 +181,18 @@ const RowActionMenu: React.FC<ActionMenuProps> = ({
         <MoreHorizontal className="w-3.5 h-3.5" />
       </button>
 
-      {open && (
-        <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+      {open && coords && createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: 'fixed',
+            top: `${coords.top}px`,
+            left: `${coords.left}px`,
+            zIndex: 99999,
+          }}
+          className="w-56 max-h-[85vh] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl py-1 animate-in fade-in zoom-in-95 duration-100 text-left"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="px-3 py-1.5 border-b border-gray-100 mb-0.5 bg-gray-50/70">
             <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider truncate">
               {emp.first_name} {emp.last_name} ({emp.employee_code || 'No Code'})
@@ -303,7 +357,8 @@ const RowActionMenu: React.FC<ActionMenuProps> = ({
             onArchive,
             'text-slate-700 hover:bg-slate-50'
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -234,6 +234,7 @@ export interface LeaveRequestDay {
 
 export interface LeaveRequest {
   id: string;
+  organization_id?: string;
   request_code: string;
   employee_id: string;
   employee_code?: string;

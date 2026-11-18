@@ -13,7 +13,7 @@ import { parseRouteFromUrl, syncUrlWithRoute, ROUTE_ALIASES } from './lib/router
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { realtimeSyncEngine } from './services/realtimeSyncEngine';
 import { navPerfTracker } from './services/observability/navigationPerfTracker';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, KeyRound } from 'lucide-react';
 import { JoySplashScreen } from './components/common/JoySplashScreen';
 import { JoyLogo } from './components/common/JoyLogo';
 import { CookieConsentBanner } from './components/common/CookieConsentBanner';
@@ -1089,6 +1089,8 @@ const AppContent: React.FC = () => {
       case 'attendance/tracking':
       case 'tracking':
       case 'shift-tracking':
+      case 'gps-travel-fare':
+      case 'travel-fare':
       case 'gps':
       case 'biometric/gps':
       case 'gps-attendance':

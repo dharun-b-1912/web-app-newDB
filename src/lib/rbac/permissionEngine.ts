@@ -411,12 +411,14 @@ const TEAM_LEAD_MODULE_IDS: ModuleId[] = [
   'ess-communication', 'ess-profile',
 ] as ModuleId[];
 
-// Employee module IDs — self-service (ESS) only.
+// Employee module IDs — self-service (ESS) + employee personal leave & attendance actions.
 const EMPLOYEE_MODULE_IDS: ModuleId[] = [
   'my-workspace',
   'ess-dashboard', 'ess-attendance', 'ess-leave', 'ess-payroll',
   'ess-requests', 'ess-performance', 'ess-learning', 'ess-documents',
   'ess-communication', 'ess-profile',
+  'leave', 'leave-requests', 'leave-balance', 'leave-calendar', 'leave-holidays',
+  'attendance-employees', 'regularization', 'helpdesk',
   'garment-my-earnings',
 ] as ModuleId[];
 
@@ -942,13 +944,20 @@ export function hasPermission(
   // ── Employee: ESS self-service only ──────────────────────────────────────
   if (roleName === 'Employee') {
     if (!canViewModule(user, module)) return false;
-    const ESS_MODULES = ['my-workspace', 'ess-dashboard', 'ess-attendance', 'ess-leave',
+    const ESS_MODULES = [
+      'my-workspace', 'ess-dashboard', 'ess-attendance', 'ess-leave',
       'ess-payroll', 'ess-requests', 'ess-performance', 'ess-learning',
-      'ess-documents', 'ess-communication', 'ess-profile'];
+      'ess-documents', 'ess-communication', 'ess-profile',
+      'leave', 'leave-requests', 'leave-balance', 'leave-calendar', 'leave-holidays',
+      'attendance-employees', 'regularization', 'helpdesk', 'requests'
+    ];
     if (action === 'view') return ESS_MODULES.includes(module);
     if (action === 'create') {
-      return ['ess-requests', 'ess-leave', 'ess-attendance', 'ess-communication',
-        'helpdesk', 'requests'].includes(module);
+      return [
+        'ess-requests', 'ess-leave', 'ess-attendance', 'ess-communication',
+        'leave', 'leave-requests', 'attendance-employees', 'regularization',
+        'helpdesk', 'requests'
+      ].includes(module);
     }
     return false;
   }

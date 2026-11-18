@@ -137,8 +137,9 @@ describe('Platform Super Admin Authentication & Architecture Isolation', () => {
         is_platform_admin: true,
         organization_id: 'platform-root',
         status: 'Active' as const,
-        roles: [{ id: 'role-super-admin', name: 'Super Admin', permissions: [{ permission_id: '*', scope_level: 'Organization' as const }], organization_id: 'root' }],
-      };
+        created_at: new Date().toISOString(),
+        roles: [{ id: 'role-super-admin', name: 'Super Admin', description: 'Super Admin', permissions: [{ permission_id: '*', scope_level: 'Organization' as const }], organization_id: 'root' }],
+      } as any;
 
       authService.saveActiveSession(mockPlatUser, 'platform');
       const retrieved = authService.getCurrentSessionUser('platform');

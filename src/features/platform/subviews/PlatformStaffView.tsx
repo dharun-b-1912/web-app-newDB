@@ -229,8 +229,8 @@ export const PlatformStaffView: React.FC = () => {
   // --- Handlers: Create Staff Wizard ---
   const handleNextStep = () => {
     if (wizardStep === 1) {
-      if (!createFormData.first_name.trim() || !createFormData.last_name.trim() || !createFormData.email.trim()) {
-        showToast('Please provide First Name, Last Name, and Work Email.', 'error');
+      if (!createFormData.first_name.trim() || !createFormData.email.trim()) {
+        showToast('Please provide First Name and Work Email.', 'error');
         return;
       }
       if (!createFormData.email.includes('@')) {
@@ -1127,7 +1127,7 @@ export const PlatformStaffView: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">Last Name *</label>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Last Name</label>
                       <input
                         type="text"
                         placeholder="e.g. Sethi"

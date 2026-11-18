@@ -38,6 +38,8 @@ export const EmployeeCreateModal: React.FC<EmployeeCreateModalProps> = ({
   } = useForm<EmployeeCreateInput>({
     resolver: zodResolver(EmployeeCreateSchema),
     defaultValues: {
+      first_name: '',
+      last_name: '',
       company_id: activeCompany?.id || `comp-${activeOrgId.replace('org-', '')}`,
       employment_type: 'Full Time',
       status: 'Active',

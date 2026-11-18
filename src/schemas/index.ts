@@ -72,7 +72,7 @@ export const EmployeeCreateSchema = z.object({
   designation_id: z.string().min(1, 'Designation required'),
   employee_code: z.string().min(2, 'Employee code required'),
   first_name: z.string().min(1, 'First name required'),
-  last_name: z.string().min(1, 'Last name required'),
+  last_name: z.string().optional(),
   work_email: z.string().email('Valid work email required'),
   employment_type: z.enum(['Full Time', 'Part Time', 'Contract', 'Intern', 'Consultant']),
   status: z.enum(['Active', 'Probation', 'Notice Period', 'On Leave', 'Inactive']),

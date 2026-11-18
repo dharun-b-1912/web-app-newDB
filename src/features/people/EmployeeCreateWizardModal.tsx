@@ -535,8 +535,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           const draftEmp = await api.createEmployee({
             first_name: formData.first_name.trim(),
             middle_name: formData.middle_name.trim(),
-            last_name: formData.last_name.trim(),
-            display_name: formData.preferred_name || `${formData.first_name} ${formData.last_name}`.trim(),
+            last_name: (formData.last_name || '').trim(),
+            display_name: formData.preferred_name || `${formData.first_name || ''} ${formData.last_name || ''}`.trim(),
             work_email: formData.work_email.trim(),
             phone: formData.phone.trim(),
             organization_id: activeOrgId,
@@ -576,10 +576,6 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     if (currentStep === 1) {
       if (!formData.first_name.trim()) {
         showToast('Please enter the employee First Name.', 'error');
-        return false;
-      }
-      if (!formData.last_name.trim()) {
-        showToast('Please enter the employee Last Name.', 'error');
         return false;
       }
       if (formData.email_type !== 'NONE') {
@@ -692,8 +688,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         const draftEmp = await api.createEmployee({
           first_name: formData.first_name.trim(),
           middle_name: formData.middle_name.trim(),
-          last_name: formData.last_name.trim(),
-          display_name: formData.preferred_name || `${formData.first_name} ${formData.last_name}`.trim(),
+          last_name: (formData.last_name || '').trim(),
+          display_name: formData.preferred_name || `${formData.first_name || ''} ${formData.last_name || ''}`.trim(),
           work_email: resolvedWorkEmail,
           personal_email: resolvedPersonalEmail,
           phone: formData.phone.trim(),

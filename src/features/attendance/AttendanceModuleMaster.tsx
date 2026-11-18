@@ -192,9 +192,17 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       subPath === 'tracking' ||
       subPath === 'attendance/tracking' ||
       subPath === '/attendance/tracking' ||
-      subPath === 'shift-tracking'
+      subPath === 'shift-tracking' ||
+      subPath === 'gps-tracking-radar'
     ) {
       return 'live-tracking';
+    }
+    if (
+      subPath === 'gps-travel-fare' ||
+      subPath === 'travel-fare' ||
+      subPath === 'travel-reimbursement'
+    ) {
+      return 'gps-travel-fare';
     }
     if (
       subPath === 'attendance-rules' ||
@@ -221,6 +229,27 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       subPath === 'punch-mapping'
     ) {
       return 'biometric';
+    }
+    if (
+      subPath === 'gps' ||
+      subPath === 'biometric/gps' ||
+      subPath === '/biometric/gps' ||
+      subPath === 'gps-attendance'
+    ) {
+      if (typeof window !== 'undefined') {
+        const sp = new URLSearchParams(window.location.search);
+        const sub = sp.get('subTab') || sp.get('tab');
+        if (sub === 'tracking' || sub === 'live-tracking' || sub === 'shift-tracking') {
+          return 'live-tracking';
+        }
+        if (sub === 'travel-fare' || sub === 'travel' || sub === 'fare' || sub === 'km-fare') {
+          return 'gps-travel-fare';
+        }
+        if (sub === 'geofences') {
+          return 'geofences';
+        }
+      }
+      return 'gps';
     }
     if (
       subPath === 'face-attendance' ||
@@ -363,6 +392,8 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         setLocalTab('shifts');
       } else if (urlPath.includes('/biometric/rules') || urlPath.includes('/attendance-rules')) {
         setLocalTab('attendance-rules');
+      } else if (urlPath.includes('/gps-travel-fare') || urlPath.includes('/travel-fare') || urlPath.includes('/km-fare')) {
+        setLocalTab('gps-travel-fare');
       } else if (urlPath.includes('/biometric/gps') || urlPath.includes('/gps')) {
         setLocalTab('gps');
       } else if (urlPath.includes('/biometric/face') || urlPath.includes('/face')) {
@@ -616,6 +647,8 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       case 'live-tracking':
       case 'tracking':
       case 'shift-tracking':
+      case 'gps-travel-fare':
+      case 'travel-fare':
         return (
           <GpsMobileChannelView
             currentTab={activeTab}

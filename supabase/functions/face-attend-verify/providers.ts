@@ -735,12 +735,14 @@ export function compareFaceEmbeddings192(vecA: number[], vecB: number[]): number
   if (normA < 1e-12 || normB < 1e-12) return 0.0;
   const cosine = Math.max(-1.0, Math.min(1.0, dot / (Math.sqrt(normA) * Math.sqrt(normB))));
   let pct: number;
-  if (cosine >= 0.8) {
-    pct = 88.0 + ((cosine - 0.8) / 0.2) * 11.9;
-  } else if (cosine >= 0.65) {
-    pct = 65.0 + ((cosine - 0.65) / 0.15) * 23.0;
+  if (cosine >= 0.70) {
+    pct = 90.0 + ((cosine - 0.70) / 0.30) * 9.9;
+  } else if (cosine >= 0.45) {
+    pct = 72.0 + ((cosine - 0.45) / 0.25) * 18.0;
+  } else if (cosine >= 0.35) {
+    pct = 55.0 + ((cosine - 0.35) / 0.10) * 17.0;
   } else {
-    pct = Math.max(0.0, ((cosine + 1.0) / 1.65) * 65.0);
+    pct = Math.max(0.0, ((cosine + 0.10) / 0.45) * 55.0);
   }
   return Math.round(Math.max(0.0, Math.min(99.9, pct)) * 10) / 10;
 }

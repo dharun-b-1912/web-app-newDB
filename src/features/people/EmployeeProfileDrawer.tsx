@@ -30,6 +30,8 @@ import {
   History,
   Clock,
   Camera,
+  CameraOff,
+  CheckCircle2,
   Loader2,
   Send,
   LogOut,
@@ -97,6 +99,9 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
   const [activeInvitation, setActiveInvitation] = useState<any>(null);
   const [isDispatchingInvite, setIsDispatchingInvite] = useState(false);
   const [availableLocations, setAvailableLocations] = useState<any[]>([]);
+  const [faceAttendanceEnabled, setFaceAttendanceEnabled] = useState<boolean>(true);
+  const [faceExemptionReason, setFaceExemptionReason] = useState<string>('');
+  const [isUpdatingFaceExemption, setIsUpdatingFaceExemption] = useState(false);
 
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -152,6 +157,8 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
       setIsEditing(false);
       setShowSensitiveData(false);
       setConcurrencyConflict(false);
+      setFaceAttendanceEnabled(employee.face_attendance_enabled ?? true);
+      setFaceExemptionReason(employee.face_attendance_exemption_reason || '');
 
       const status = employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id, {
         phone: employee.phone || employee.primary_mobile || employee.profile?.phone || '',
@@ -313,6 +320,48 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
       showToast('Failed to restore employee', 'error');
     } finally {
       setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleToggleFaceAttendance = async (newEnabled: boolean, customReason?: string) => {
+    setIsUpdatingFaceExemption(true);
+    const reasonToSave = newEnabled ? null : (customReason || faceExemptionReason || 'Phone camera broken / damaged');
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .update({
+          face_attendance_enabled: newEnabled,
+          face_attendance_exemption_reason: reasonToSave,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', employee.id);
+
+      if (error) throw error;
+
+      setFaceAttendanceEnabled(newEnabled);
+      if (newEnabled) {
+        setFaceExemptionReason('');
+      } else if (reasonToSave) {
+        setFaceExemptionReason(reasonToSave);
+      }
+
+      const updatedEmp: Employee = {
+        ...employee,
+        face_attendance_enabled: newEnabled,
+        face_attendance_exemption_reason: reasonToSave,
+      };
+      onUpdated(updatedEmp);
+
+      showToast(
+        newEnabled
+          ? `✓ Camera Face Attendance re-enforced for ${employee.first_name}`
+          : `✓ Exempted ${employee.first_name} from Camera Face Attendance (${reasonToSave})`,
+        'success'
+      );
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update face attendance setting', 'error');
+    } finally {
+      setIsUpdatingFaceExemption(false);
     }
   };
 
@@ -1186,6 +1235,111 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                 );
               })()}
 
+              {/* SECTION: MOBILE FACE ATTENDANCE & CAMERA VERIFICATION */}
+              <Card className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {faceAttendanceEnabled ? (
+                      <Camera className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <CameraOff className="w-4 h-4 text-amber-600" />
+                    )}
+                    <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
+                      Face Attendance & Mobile Camera Verification
+                    </h3>
+                  </div>
+                  <Badge
+                    variant={faceAttendanceEnabled ? 'emerald' : 'amber'}
+                    className="text-[10px] font-bold"
+                  >
+                    ● {faceAttendanceEnabled ? 'Camera Enforced' : 'Exempted from Camera'}
+                  </Badge>
+                </div>
+
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-gray-900">
+                        {faceAttendanceEnabled
+                          ? 'Camera scan & liveness verification required on mobile check-in/out'
+                          : 'Exempted from camera verification. Standard location punch active.'}
+                      </p>
+                      <p className="text-[11px] text-gray-500 leading-relaxed">
+                        {faceAttendanceEnabled
+                          ? 'Employee must complete face matching and liveness verification in the mobile app. Disable if device camera is broken, unavailable, or employee is authorized for standard punch.'
+                          : `Exemption Reason: ${faceExemptionReason || 'Phone camera damaged / broken'}. The FaceAttend menu will be hidden on mobile, and the employee can clock in directly via approved location verification.`}
+                      </p>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant={faceAttendanceEnabled ? 'outline' : 'primary'}
+                      disabled={isUpdatingFaceExemption}
+                      onClick={() => {
+                        if (faceAttendanceEnabled) {
+                          handleToggleFaceAttendance(false, faceExemptionReason || 'Phone camera broken / damaged');
+                        } else {
+                          handleToggleFaceAttendance(true);
+                        }
+                      }}
+                      className={cn(
+                        "text-xs font-bold whitespace-nowrap",
+                        faceAttendanceEnabled
+                          ? "border-amber-300 text-amber-800 hover:bg-amber-50"
+                          : "bg-[#073B2A] hover:bg-[#064E3B] text-white"
+                      )}
+                    >
+                      {isUpdatingFaceExemption ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Updating...
+                        </>
+                      ) : faceAttendanceEnabled ? (
+                        <>
+                          <CameraOff className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
+                          Exempt from Face Camera
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
+                          Re-enforce Camera Face
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  {!faceAttendanceEnabled && (
+                    <div className="pt-2 border-t border-slate-200/80 space-y-2">
+                      <label className="text-[11px] font-semibold text-gray-700 block">
+                        Exemption Reason / Note:
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          'Phone camera broken / damaged',
+                          'Camera hardware defect',
+                          'Exempted role / Factory personnel',
+                          'Medical / Accessibility exemption',
+                          'Authorized HR exemption',
+                        ].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => handleToggleFaceAttendance(false, preset)}
+                            className={cn(
+                              "px-2 py-1 text-[10px] rounded-md border font-medium transition cursor-pointer",
+                              faceExemptionReason === preset
+                                ? "bg-amber-100 text-amber-900 border-amber-300 font-bold"
+                                : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                            )}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Card>
+
               {/* Quick Security Administrative Actions */}
               <Card className="p-4 space-y-3">
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
@@ -1413,7 +1567,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                         const { whatsAppNotificationService } = await import('../../services/whatsapp/whatsappNotificationService');
                         const res = await whatsAppNotificationService.sendWelcomeByEmployeeId(employee.id);
                         if (res.success) {
-                          showToast(`✓ WhatsApp Welcome Pack (joy_hr_welcome_v2) sent to ${employee.first_name}`, 'success');
+                          showToast(`✓ WhatsApp Welcome Pack sent to ${employee.first_name || employee.display_name} with Android & iOS links`, 'success');
                         } else {
                           showToast(res.error || 'WhatsApp dispatch failed', 'error');
                         }

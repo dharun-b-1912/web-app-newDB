@@ -181,6 +181,25 @@ describe('GATE 28: VENDOR PORTAL & MULTI-TENANT ISOLATION REALITY', () => {
   // 3. Hierarchical Attendance Miss Exception & Escalation Engine
   // --------------------------------------------------------------------------
   it('Test 5: Hierarchical Miss Report & Escalation - Aggregates by Org -> Manager -> TL -> Worker', () => {
+    attendanceMissEscalationEngine.registerException({
+      organizationId: ORG_A,
+      vendorId: VENDOR_ALPHA,
+      clientSiteContractId: SITE_CHE,
+      siteName: 'Chennai Plant Site',
+      employeeId: 'emp-101',
+      employeeCode: 'VEN01-EMP01',
+      employeeName: 'Murugan P',
+      managerId: 'mgr-01',
+      managerName: 'Karthik Raja',
+      tlSupervisorId: 'tl-01',
+      tlSupervisorName: 'Saravanan T',
+      date: '2026-09-20',
+      exceptionType: 'MISSING_OUT_PUNCH',
+      inTime: '09:02',
+      standardHours: 8,
+      actualHours: 4,
+    });
+
     const report = attendanceMissEscalationEngine.generateHierarchicalReport({
       organizationId: ORG_A,
       vendorId: VENDOR_ALPHA,

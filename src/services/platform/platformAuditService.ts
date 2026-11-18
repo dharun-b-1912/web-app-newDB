@@ -317,6 +317,17 @@ export const platformAuditService = {
     }
   },
 
+  async recordEvent(params: any): Promise<void> {
+    await this.logEvent({
+      ...params,
+      action: params.action,
+      resource_id: params.resource_id,
+      resource_type: params.resource_type,
+      reason: params.description || params.reason,
+      metadata: params.context || params.metadata,
+    });
+  },
+
   // -------------------------------------------------------------
   // Real CSV and JSON Forensic Exporter
   // -------------------------------------------------------------

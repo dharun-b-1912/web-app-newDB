@@ -33,7 +33,9 @@ import {
   Users,
   UserCheck,
   Shield,
+  Car,
 } from 'lucide-react';
+import { FieldTravelKmFareTab } from './FieldTravelKmFareTab';
 import { cn } from '../../../lib/utils';
 import { useToast } from '../../../components/ui/Toast';
 import { useTenant } from '../../../hooks/useTenant';
@@ -64,34 +66,103 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
   onOpenEmployeeProfile,
 }) => {
   const { showToast } = useToast();
-  const [activeSubTab, setActiveSubTab] = useState<'attendance' | 'geofences' | 'mapping' | 'mobile' | 'logs' | 'exceptions' | 'tracking'>(() => {
-    if (typeof window !== 'undefined') {
-      const sp = new URLSearchParams(window.location.search);
-      const sub = sp.get('subTab') || sp.get('tab');
-      if (sub === 'tracking' || sub === 'live-tracking' || sub === 'shift-tracking') return 'tracking';
-      if (sub === 'geofences') return 'geofences';
-      if (sub === 'staff-mapping' || sub === 'mapping') return 'mapping';
-      if (sub === 'mobile-clocking' || sub === 'mobile') return 'mobile';
-      if (sub === 'location-logs' || sub === 'logs') return 'logs';
-      if (sub === 'location-exceptions' || sub === 'exceptions') return 'exceptions';
-    }
+  const [activeSubTab, setActiveSubTab] = useState<'attendance' | 'geofences' | 'mapping' | 'mobile' | 'logs' | 'exceptions' | 'tracking' | 'travel-fare'>(() => {
+    // 1. Explicit currentTab route prop takes top priority
+    if (currentTab === 'travel-fare' || currentTab === 'gps-travel-fare') return 'travel-fare';
     if (currentTab === 'tracking' || currentTab === 'live-tracking' || currentTab === 'shift-tracking') return 'tracking';
     if (currentTab === 'geofences') return 'geofences';
     if (currentTab === 'staff-mapping') return 'mapping';
     if (currentTab === 'mobile-clocking') return 'mobile';
     if (currentTab === 'location-logs') return 'logs';
     if (currentTab === 'location-exceptions') return 'exceptions';
+
+    // 2. URL search parameter fallback for generic /biometric/gps routes
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const sub = sp.get('subTab') || sp.get('tab');
+      if (sub === 'tracking' || sub === 'live-tracking' || sub === 'shift-tracking') return 'tracking';
+      if (sub === 'travel-fare' || sub === 'travel' || sub === 'fare' || sub === 'km-fare' || sub === 'gps-travel-fare') return 'travel-fare';
+      if (sub === 'geofences') return 'geofences';
+      if (sub === 'staff-mapping' || sub === 'mapping') return 'mapping';
+      if (sub === 'mobile-clocking' || sub === 'mobile') return 'mobile';
+      if (sub === 'location-logs' || sub === 'logs') return 'logs';
+      if (sub === 'location-exceptions' || sub === 'exceptions') return 'exceptions';
+    }
+
     return 'attendance';
   });
 
   useEffect(() => {
-    if (currentTab === 'tracking' || currentTab === 'live-tracking' || currentTab === 'shift-tracking') setActiveSubTab('tracking');
-    else if (currentTab === 'geofences') setActiveSubTab('geofences');
-    else if (currentTab === 'staff-mapping') setActiveSubTab('mapping');
-    else if (currentTab === 'mobile-clocking') setActiveSubTab('mobile');
-    else if (currentTab === 'location-logs') setActiveSubTab('logs');
-    else if (currentTab === 'location-exceptions') setActiveSubTab('exceptions');
-    else if (currentTab === 'gps' || currentTab === 'gps-attendance') setActiveSubTab('attendance');
+    // 1. Direct priority: If route prop explicitly specifies a sub-tab, honor it immediately
+    if (currentTab === 'travel-fare' || currentTab === 'gps-travel-fare') {
+      setActiveSubTab('travel-fare');
+      if (typeof window !== 'undefined' && window.location.search.includes('subTab=tracking')) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('subTab');
+        window.history.replaceState({}, '', url.pathname + (url.searchParams.toString() ? `?${url.searchParams.toString()}` : ''));
+      }
+      return;
+    }
+    if (currentTab === 'tracking' || currentTab === 'live-tracking' || currentTab === 'shift-tracking') {
+      setActiveSubTab('tracking');
+      return;
+    }
+    if (currentTab === 'geofences') {
+      setActiveSubTab('geofences');
+      return;
+    }
+    if (currentTab === 'staff-mapping') {
+      setActiveSubTab('mapping');
+      return;
+    }
+    if (currentTab === 'mobile-clocking') {
+      setActiveSubTab('mobile');
+      return;
+    }
+    if (currentTab === 'location-logs') {
+      setActiveSubTab('logs');
+      return;
+    }
+    if (currentTab === 'location-exceptions') {
+      setActiveSubTab('exceptions');
+      return;
+    }
+
+    // 2. Query param fallback for generic /biometric/gps
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const sub = sp.get('subTab') || sp.get('tab');
+      if (sub === 'tracking' || sub === 'live-tracking' || sub === 'shift-tracking') {
+        setActiveSubTab('tracking');
+        return;
+      }
+      if (sub === 'travel-fare' || sub === 'travel' || sub === 'fare' || sub === 'km-fare' || sub === 'gps-travel-fare') {
+        setActiveSubTab('travel-fare');
+        return;
+      }
+      if (sub === 'geofences') {
+        setActiveSubTab('geofences');
+        return;
+      }
+      if (sub === 'staff-mapping' || sub === 'mapping') {
+        setActiveSubTab('mapping');
+        return;
+      }
+      if (sub === 'mobile-clocking' || sub === 'mobile') {
+        setActiveSubTab('mobile');
+        return;
+      }
+      if (sub === 'location-logs' || sub === 'logs') {
+        setActiveSubTab('logs');
+        return;
+      }
+      if (sub === 'location-exceptions' || sub === 'exceptions') {
+        setActiveSubTab('exceptions');
+        return;
+      }
+    }
+
+    if (currentTab === 'gps' || currentTab === 'gps-attendance') setActiveSubTab('attendance');
   }, [currentTab]);
 
   const { organization, activeCompany } = useTenant();
@@ -273,7 +344,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     }
   }, [activeSubTab, liveGps, fetchLiveHardwareGps]);
 
-  const handleTabSwitch = (tab: 'attendance' | 'geofences' | 'mapping' | 'mobile' | 'logs' | 'exceptions' | 'tracking') => {
+  const handleTabSwitch = (tab: 'attendance' | 'geofences' | 'mapping' | 'mobile' | 'logs' | 'exceptions' | 'tracking' | 'travel-fare') => {
     setActiveSubTab(tab);
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
@@ -713,6 +784,16 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
           >
             <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
             Shift Route & Live Radar
+          </button>
+          <button
+            onClick={() => handleTabSwitch('travel-fare')}
+            className={cn(
+              'px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5 cursor-pointer',
+              activeSubTab === 'travel-fare' ? 'bg-indigo-700 text-white shadow-xs font-bold' : 'text-indigo-700 hover:bg-indigo-50'
+            )}
+          >
+            <Car className="w-3.5 h-3.5" />
+            Field Travel & KM Fare
           </button>
         </div>
       </div>
@@ -1387,6 +1468,11 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
       {/* 8. SHIFT ROUTE & LIVE FLEET TRACKING RADAR */}
       {activeSubTab === 'tracking' && (
         <LiveShiftTrackingView onOpenEmployeeProfile={onOpenEmployeeProfile} />
+      )}
+
+      {/* 9. FIELD TRAVEL & KM FARE CONFIGURATION */}
+      {activeSubTab === 'travel-fare' && (
+        <FieldTravelKmFareTab />
       )}
 
       {/* REASON PROMPT MODAL FOR DIFFERENT LOCATION / GPS UNAVAILABLE */}

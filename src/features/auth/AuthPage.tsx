@@ -128,9 +128,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
         <div
           className={cn(
             'lg:col-span-5 text-white p-8 sm:p-10 flex flex-col justify-between relative overflow-hidden transition-colors duration-300',
-            authContext === 'admin'
+            (authContext as string) === 'admin'
               ? 'bg-gradient-to-br from-[#064E3B] via-[#07563D] to-[#042F24]'
-              : authContext === 'platform'
+              : (authContext as string) === 'platform'
               ? 'bg-[#0F172A]'
               : 'bg-[#073B2A]'
           )}
@@ -147,16 +147,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
 
             <div className="space-y-2">
               <h1 className="text-xl font-bold tracking-tight text-white">
-                {authContext === 'admin'
+                {(authContext as string) === 'admin'
                   ? 'Employer & Company Administration'
-                  : authContext === 'platform'
+                  : (authContext as string) === 'platform'
                   ? 'Platform Control Plane'
                   : 'One secure workspace for your people operations.'}
               </h1>
               <p className="text-xs text-white/70 leading-relaxed">
-                {authContext === 'admin'
+                {(authContext as string) === 'admin'
                   ? 'Enterprise cockpit for Employers, Founders & HR Desk: Workforce Onboarding, Legal Entities, Custom RBAC & Payroll.'
-                  : authContext === 'platform'
+                  : (authContext as string) === 'platform'
                   ? 'Manage multi-tenant infrastructure, customer lifecycle, and compliance policies.'
                   : 'Empowering teams with seamless attendance, payroll, talent, and workforce intelligence.'}
               </p>

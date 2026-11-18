@@ -293,12 +293,41 @@ export class WhatsAppNotificationService {
         workEmail: email,
         organizationId: params.organizationId || '0c621892-e938-4707-9957-13534ea32c19',
         employeeId: params.employeeId,
-        mediaId: welcomeImageMediaId,
+        imageUrl: bannerImageUrl,
       });
 
       const tplRes = await whatsAppClient.sendTemplate(welcomeV2Payload);
       if (tplRes.success) {
         console.info('[WhatsAppWelcome] Approved joy_hr_welcome_v2 template sent successfully to', params.phone, tplRes.messageId);
+
+        // Send companion iOS & Android Access Guide with direct Mobile Web App & Play Store links
+        try {
+          const deviceAccessGuide =
+            `📱 *JOY PeopleHR — Mobile & Web App Access*\n\n` +
+            `👋 Welcome, *${empName}*! Access your HR Self-Service portal on your mobile device:\n\n` +
+            `🤖 *For Android Users (Google Play Store):*\n` +
+            `Download the official app to mark attendance, apply for leave, and view payslips:\n` +
+            `👉 https://play.google.com/store/apps/details?id=com.joypeoplehr.app\n\n` +
+            `🍏 *For iOS / Apple Device Users (iPhone & iPad):*\n` +
+            `Open the Mobile Web App directly in Safari:\n` +
+            `👉 https://mobile.joypeoplehr.com\n` +
+            `💡 *Install on iPhone:* Open in Safari ➔ tap the *Share* button (square with arrow ↑) ➔ select *"Add to Home Screen"*. It will install and run just like a native full-screen app!\n\n` +
+            `🔐 *Login Credentials:*\n` +
+            `• Employee ID: *${empCode}*\n` +
+            `• Official Email: *${email}*\n` +
+            `• Default Password: *joypeoplehr*\n\n` +
+            `💬 *Quick HR Help:* You can reply to this chat anytime with *Payslip*, *Leave*, or *Attendance*!`;
+
+          await whatsAppClient.sendText({
+            to: params.phone,
+            text: deviceAccessGuide,
+            organizationId: params.organizationId || '0c621892-e938-4707-9957-13534ea32c19',
+            employeeId: params.employeeId,
+          });
+        } catch (companionErr) {
+          console.warn('[WhatsAppWelcome] Companion iOS message notice:', companionErr);
+        }
+
         return tplRes;
       }
       console.warn('[WhatsAppWelcome] Primary joy_hr_welcome_v2 send failed, trying candidate invite fallback:', tplRes.error);
@@ -332,6 +361,16 @@ export class WhatsAppNotificationService {
       const tplRes = await whatsAppClient.sendTemplate(approvedPayload);
       if (tplRes.success) {
         console.info('[WhatsAppWelcome] Fallback onboarding template sent successfully to', params.phone);
+        try {
+          await whatsAppClient.sendText({
+            to: params.phone,
+            text: deviceAccessGuide,
+            organizationId: params.organizationId || '0c621892-e938-4707-9957-13534ea32c19',
+            employeeId: params.employeeId,
+          });
+        } catch (companionErr) {
+          console.warn('[WhatsAppWelcome] Companion message on fallback notice:', companionErr);
+        }
         return tplRes;
       }
     } catch (fallbackErr: any) {
@@ -348,8 +387,12 @@ export class WhatsAppNotificationService {
       `🆔 *Employee ID:* ${empCode}\n` +
       `🔑 *Default Password:* joypeoplehr\n` +
       `💼 *Designation:* ${role}\n\n` +
-      `📲 *Download Mobile App (Android):*\n` +
-      `https://play.google.com/store/apps/details?id=com.joypeoplehr.app\n\n` +
+      `📱 *Choose Your Mobile Access:*\n\n` +
+      `🤖 *For Android Users (Google Play Store):*\n` +
+      `👉 https://play.google.com/store/apps/details?id=com.joypeoplehr.app\n\n` +
+      `🍏 *For iOS / Apple Users (iPhone & iPad):*\n` +
+      `👉 https://app.joypeoplehr.com\n` +
+      `_(In Safari, tap Share ➔ "Add to Home Screen" to install as native app)_\n\n` +
       `🌐 *Web Portal:* ${portal}\n\n` +
       `🌟 *Your HR Assistant is Ready!*\n` +
       `You can use this chat to access your HR services quickly:\n` +
@@ -372,7 +415,7 @@ export class WhatsAppNotificationService {
         header: {
           type: 'image',
           image: {
-            id: welcomeImageMediaId,
+            link: bannerImageUrl,
           },
         },
         body: {
@@ -402,7 +445,6 @@ export class WhatsAppNotificationService {
       const imgRes = await whatsAppClient.sendImage({
         to: params.phone,
         imageUrl: bannerImageUrl,
-        mediaId: welcomeImageMediaId,
         caption: interactiveBody,
         organizationId: params.organizationId || '0c621892-e938-4707-9957-13534ea32c19',
         employeeId: params.employeeId,
@@ -607,6 +649,24 @@ export class WhatsAppNotificationService {
    */
   async sendWelcomeByEmployeeId(employeeId: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
+      // Prioritize authoritative backend proxy endpoint on app.joypeoplehr.com
+      try {
+        const apiBase = typeof window !== 'undefined' ? window.location.origin : 'https://app.joypeoplehr.com';
+        const resp = await fetch(`${apiBase}/api/whatsapp/send-welcome`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employeeId }),
+        });
+        if (resp.ok) {
+          const resJson = await resp.json();
+          if (resJson.success) {
+            return { success: true, messageId: resJson.messageId };
+          }
+        }
+      } catch (backendErr) {
+        console.warn('[WhatsAppWelcome] Backend endpoint notice, running direct fallback:', backendErr);
+      }
+
       const trimmed = employeeId.trim();
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
       let query = supabase.from('employees').select('*');

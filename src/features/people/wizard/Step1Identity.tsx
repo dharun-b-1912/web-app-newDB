@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PhotoUploadCard } from './PhotoUploadCard';
-import { RefreshCw, CheckCircle2, AlertCircle, Mail, ShieldCheck } from 'lucide-react';
+import { RefreshCw, CheckCircle2, AlertCircle, Mail, ShieldCheck, Clock } from 'lucide-react';
 import { Employee } from '../../../types';
 
 export interface Step1FormData {
@@ -57,6 +57,36 @@ export function generateNextEmployeeCode(existing: Employee[] = [], prefix = 'JC
   return candidate;
 }
 
+/**
+ * Generates a provisional temporary employee code (e.g. TEMP-001) for contract
+ * or newly joined workers who haven't received their official company ID yet.
+ */
+export function generateTempEmployeeCode(existing: Employee[] = [], prefix = 'TEMP'): string {
+  const usedCodes = new Set(
+    existing
+      .map((e) => (e.employee_code || '').trim().toUpperCase())
+      .filter(Boolean)
+  );
+  let maxSeq = 0;
+  for (const emp of existing) {
+    const rawCode = (emp.employee_code || '').trim().toUpperCase();
+    if (rawCode.startsWith(`${prefix}-`)) {
+      const numPart = rawCode.replace(`${prefix}-`, '');
+      const num = parseInt(numPart, 10);
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num;
+      }
+    }
+  }
+  let nextSeq = maxSeq > 0 ? maxSeq + 1 : 1;
+  let candidate = `${prefix}-${String(nextSeq).padStart(3, '0')}`;
+  while (usedCodes.has(candidate.toUpperCase())) {
+    nextSeq++;
+    candidate = `${prefix}-${String(nextSeq).padStart(3, '0')}`;
+  }
+  return candidate;
+}
+
 export const Step1Identity: React.FC<Props> = ({
   formData,
   onChange,
@@ -89,6 +119,11 @@ export const Step1Identity: React.FC<Props> = ({
 
   const generateNewCode = () => {
     const newCode = generateNextEmployeeCode(existingEmployees || []);
+    onChange({ employee_code: newCode });
+  };
+
+  const generateTempCode = () => {
+    const newCode = generateTempEmployeeCode(existingEmployees || []);
     onChange({ employee_code: newCode });
   };
 
@@ -180,7 +215,7 @@ export const Step1Identity: React.FC<Props> = ({
     }
   }, [formData.employee_code, otherEmployees]);
 
-  const initials = `${formData.first_name?.[0] || 'D'}${formData.last_name?.[0] || 'B'}`.toUpperCase();
+  const initials = `${formData.first_name?.[0] || 'D'}${formData.last_name?.[0] || ''}`.toUpperCase();
 
   return (
     <div className="space-y-6">
@@ -237,11 +272,10 @@ export const Step1Identity: React.FC<Props> = ({
 
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">
-                Last Name <span className="text-rose-500">*</span>
+                Last Name
               </label>
               <input
                 type="text"
-                required
                 placeholder="e.g. Viswanathan"
                 value={formData.last_name}
                 onChange={(e) => onChange({ last_name: e.target.value })}
@@ -257,14 +291,27 @@ export const Step1Identity: React.FC<Props> = ({
                 <label className="text-xs font-bold text-gray-700">
                   Employee ID / Login Code <span className="text-rose-500">*</span>
                 </label>
-                <button
-                  type="button"
-                  onClick={generateNewCode}
-                  className="text-[11px] text-[#07563D] font-bold hover:underline flex items-center gap-1"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  Auto-generate
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={generateNewCode}
+                    className="text-[11px] text-[#07563D] font-bold hover:underline flex items-center gap-0.5"
+                    title="Generate standard corporate employee code"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Auto-generate
+                  </button>
+                  <span className="text-gray-300">|</span>
+                  <button
+                    type="button"
+                    onClick={generateTempCode}
+                    className="text-[11px] text-amber-700 font-bold hover:underline flex items-center gap-0.5"
+                    title="Generate provisional temporary ID (e.g. TEMP-001) while waiting for official company code"
+                  >
+                    <Clock className="w-3 h-3 text-amber-600" />
+                    Temp ID
+                  </button>
+                </div>
               </div>
               <input
                 type="text"

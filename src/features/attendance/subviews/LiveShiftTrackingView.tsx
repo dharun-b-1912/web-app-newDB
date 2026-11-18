@@ -29,6 +29,8 @@ import {
   RotateCcw,
   Users,
   Calendar,
+  Building2,
+  Shield,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { Card } from '../../../components/ui/Card';
@@ -311,7 +313,12 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
 
   // Selected employee data
   const activeEmployee = useMemo(() => {
-    return liveEmployees.find((e) => e.employee_id === selectedEmployeeId) || liveEmployees[0] || null;
+    if (!liveEmployees || liveEmployees.length === 0) return null;
+    if (selectedEmployeeId) {
+      const match = liveEmployees.find((e) => e.employee_id === selectedEmployeeId);
+      if (match) return match;
+    }
+    return liveEmployees[0] || null;
   }, [liveEmployees, selectedEmployeeId]);
 
   const trailTotalDistance = useMemo(() => {
@@ -391,15 +398,28 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       setLiveEmployees(data);
       if (data.length > 0) {
         setSelectedEmployeeId((prev) => {
-          const firstLive = data.find((d) => d.has_live_ping);
+          // Priority 1: Actively moving field staff
+          // Priority 2: Field staff in transit with travel distance > 0
+          // Priority 3: Field staff with live satellite ping
+          // Priority 4: Any employee with live ping
+          // Priority 5: First non-leave on-duty employee
+          const bestActive =
+            data.find((d) => d.is_moving && !d.is_on_leave && !d.is_in_office) ||
+            data.find((d) => d.has_live_ping && !d.is_in_office && (d.cumulative_distance_meters || 0) > 0 && !d.is_on_leave) ||
+            data.find((d) => d.has_live_ping && !d.is_in_office && !d.is_on_leave) ||
+            data.find((d) => d.has_live_ping && !d.is_on_leave) ||
+            data.find((d) => !d.is_on_leave && d.status !== 'clocked_out') ||
+            data[0];
+
           if (!prev) {
-            return firstLive ? firstLive.employee_id : data[0].employee_id;
+            return bestActive ? bestActive.employee_id : data[0].employee_id;
           }
           const currentEmp = data.find((d) => d.employee_id === prev);
-          if (firstLive && currentEmp && !currentEmp.has_live_ping) {
+          // If current selection is invalid, on leave, or clocked out while active field staff exist, promote to bestActive
+          if (bestActive && (!currentEmp || currentEmp.is_on_leave || currentEmp.status === 'clocked_out' || (!currentEmp.has_live_ping && bestActive.has_live_ping))) {
             setTrails([]);
             setComputedRoadDistance(null);
-            return firstLive.employee_id;
+            return bestActive.employee_id;
           }
           return prev;
         });
@@ -437,6 +457,11 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       loadLiveLocations(true);
     });
 
+    // Fallback polling every 30 seconds to ensure radar stays synchronized even if websocket drops
+    const livePollTimer = setInterval(() => {
+      loadLiveLocations(true);
+    }, 30000);
+
     // Subscribe to real-time breadcrumb trail additions
     const unsubTrails = shiftTrackingService.subscribeTrailUpdates('', (newTrail) => {
       const currentSelected = selectedEmployeeIdRef.current;
@@ -450,6 +475,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
 
     return () => {
       unsubLive();
+      clearInterval(livePollTimer);
       unsubTrails();
     };
   }, [loadLiveLocations]);
@@ -1334,6 +1360,8 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                               'absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white',
                               isMoving
                                 ? 'bg-blue-500 animate-pulse'
+                                : emp.is_in_office
+                                ? 'bg-teal-500'
                                 : hasLive
                                 ? 'bg-emerald-500'
                                 : isOnLeave
@@ -1366,6 +1394,11 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                               <span className="text-gray-500 font-medium flex items-center gap-1">
                                 <Clock className="w-3 h-3 text-gray-400" />
                                 Shift ended / Clocked out
+                              </span>
+                            ) : emp.is_in_office ? (
+                              <span className="text-teal-700 font-semibold flex items-center gap-1">
+                                <Building2 className="w-3 h-3 text-teal-600" />
+                                In Office • Biometric ({emp.last_pinged_at ? new Date(emp.last_pinged_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Checked In'})
                               </span>
                             ) : hasLive ? (
                               <>
@@ -1411,6 +1444,11 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                             <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
                             {emp.speed ? `${Math.round(emp.speed)} km/h` : 'Moving'}
+                          </span>
+                        ) : emp.is_in_office ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200 shadow-2xs">
+                            <Building2 className="w-3 h-3 text-teal-600" />
+                            In Office
                           </span>
                         ) : hasLive ? (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -1514,7 +1552,20 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                           <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                           <span className="font-bold text-emerald-950 shrink-0">Google Maps Location:</span>
                         </div>
-                        {isGeocoding ? (
+                        {(activeEmployee.is_on_leave || activeEmployee.status === 'on_leave') ? (
+                          <span className="text-purple-800 font-semibold italic">
+                            Tracking suspended for approved leave privacy
+                          </span>
+                        ) : (activeEmployee as any).is_in_office ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-black text-teal-900 bg-teal-200/80 px-1.5 py-0.5 rounded text-[10px] border border-teal-300">
+                              Joy Corporate HQ
+                            </span>
+                            <span className="text-gray-700 truncate font-medium">
+                              Campus Geofence Authorized • Biometric Verified Check-In
+                            </span>
+                          </div>
+                        ) : isGeocoding ? (
                           <span className="text-gray-400 italic">Resolving address from Google Maps API...</span>
                         ) : locationDetails?.title ? (
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1536,14 +1587,16 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openInGoogleMaps(activeEmployee.latitude, activeEmployee.longitude)}
-                    leftIcon={<ExternalLink className="w-3.5 h-3.5" />}
-                  >
-                    Google Maps
-                  </Button>
+                  {!(activeEmployee.is_on_leave || activeEmployee.status === 'on_leave') && activeEmployee.latitude !== 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openInGoogleMaps(activeEmployee.latitude, activeEmployee.longitude)}
+                      leftIcon={<ExternalLink className="w-3.5 h-3.5" />}
+                    >
+                      Google Maps
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -1572,6 +1625,19 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                   </div>
                   <Badge variant="outline" className="bg-gray-200 text-gray-700 border-gray-300 font-bold shrink-0">
                     Clocked Out
+                  </Badge>
+                </div>
+              ) : (activeEmployee as any).is_in_office ? (
+                <div className="p-3 bg-teal-50/90 border border-teal-200 rounded-xl flex flex-wrap items-center justify-between text-xs text-teal-950 gap-2">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-teal-700 shrink-0" />
+                    <span>
+                      <strong>In Office Shift Active: </strong>
+                      {activeEmployee.employee_name} checked in via Biometric Device {activeEmployee.last_pinged_at ? `at ${new Date(activeEmployee.last_pinged_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'earlier today'}. Stationary at authorized company campus.
+                    </span>
+                  </div>
+                  <Badge variant="outline" className="bg-teal-100 text-teal-900 border-teal-300 font-bold shrink-0">
+                    In Office • Biometric
                   </Badge>
                 </div>
               ) : !activeEmployee.has_live_ping ? (
@@ -1624,8 +1690,49 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                 </div>
               ) : null}
 
-              {/* Google Map Container: Render Map if employee has valid coordinates */}
-              {activeEmployee.latitude !== 0 ? (
+              {/* Center Stage: On-Leave Privacy Card OR Live Google Map OR Awaiting Signal Box */}
+              {(activeEmployee.is_on_leave || activeEmployee.status === 'on_leave') ? (
+                <div className="min-h-96 rounded-2xl border border-purple-200/90 bg-gradient-to-br from-purple-50/90 via-white to-indigo-50/60 p-8 shadow-xs flex flex-col items-center justify-center text-center space-y-5 my-2">
+                  <div className="w-16 h-16 rounded-3xl bg-purple-100 border border-purple-200 flex items-center justify-center text-purple-700 shadow-2xs text-3xl">
+                    🌴
+                  </div>
+                  <div className="max-w-lg space-y-2">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-300">
+                      <span>Shift Inactive • Approved Leave Record Active</span>
+                    </div>
+                    <h3 className="text-xl font-black text-gray-900">
+                      Real-Time GPS Tracking Suspended for {activeEmployee.employee_name}
+                    </h3>
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      <strong>{activeEmployee.employee_name}</strong> (#{activeEmployee.employee_code}) has an active authorized leave record (<em>{activeEmployee.leave_reason || 'Personal Leave'}</em>). In strict compliance with Joy PeopleHR Employee Privacy Policy and statutory labor standards, all satellite positioning, displacement telemetry, and background tracking are suspended.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-xl text-left pt-1">
+                    <div className="p-3.5 bg-white rounded-xl border border-purple-100 shadow-2xs">
+                      <span className="text-[10px] text-gray-400 uppercase font-semibold block">Leave Status</span>
+                      <span className="text-xs font-bold text-purple-900 flex items-center gap-1 mt-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" /> Authorized Leave
+                      </span>
+                    </div>
+                    <div className="p-3.5 bg-white rounded-xl border border-purple-100 shadow-2xs">
+                      <span className="text-[10px] text-gray-400 uppercase font-semibold block">Leave Reason</span>
+                      <span className="text-xs font-bold text-gray-800 truncate block mt-1" title={activeEmployee.leave_reason}>
+                        {activeEmployee.leave_reason || 'Personal Leave'}
+                      </span>
+                    </div>
+                    <div className="p-3.5 bg-white rounded-xl border border-purple-100 shadow-2xs">
+                      <span className="text-[10px] text-gray-400 uppercase font-semibold block">Privacy Protocol</span>
+                      <span className="text-xs font-bold text-emerald-800 flex items-center gap-1 mt-1">
+                        <Shield className="w-3.5 h-3.5 text-emerald-600" /> Privacy Enforced
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-gray-500 flex items-center gap-1.5 pt-1">
+                    <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <span>Real-time GPS tracking automatically reactivates upon their next authorized shift clock-in punch.</span>
+                  </div>
+                </div>
+              ) : activeEmployee.latitude !== 0 ? (
                 <div className="relative h-96 rounded-2xl overflow-hidden border border-gray-200 bg-slate-900 shadow-inner group">
                   {/* Interactive Google Maps JavaScript API Canvas */}
                   <div

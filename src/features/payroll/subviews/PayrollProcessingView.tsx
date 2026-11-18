@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { payrollApi } from '../../../services/payrollApi';
-import { PayrollRun, EmployeePayrollInput, CalculationBreakdown } from '../../../types/payroll';
+import { PayrollRun, EmployeePayrollInput, CalculationBreakdown, PayrollRunStreamType } from '../../../types/payroll';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
@@ -77,6 +77,7 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
   const [wizardStart, setWizardStart] = useState('2026-08-01');
   const [wizardEnd, setWizardEnd] = useState('2026-08-31');
   const [wizardPayoutDate, setWizardPayoutDate] = useState('2026-08-31');
+  const [wizardStreamType, setWizardStreamType] = useState<PayrollRunStreamType>('UNIFIED');
 
   const downloadFile = (content: string, fileName: string, type: string) => {
     const blob = new Blob([content], { type });
@@ -178,7 +179,9 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
         wizardPeriod,
         wizardStart,
         wizardEnd,
-        wizardPayoutDate
+        wizardPayoutDate,
+        undefined,
+        wizardStreamType
       );
       setRuns(payrollApi.getPayrollRuns());
       setSelectedRun(calculated);
@@ -471,7 +474,18 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                   runs.map(run => (
                     <tr key={run.id} className="hover:bg-gray-50/70">
                       <td className="p-3 font-bold text-gray-900">
-                        <div>{run.pay_period}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span>{run.pay_period}</span>
+                          {run.stream_type === 'SALARY_ONLY' && (
+                            <span className="text-[9px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded font-bold border border-blue-200">Base Salary</span>
+                          )}
+                          {run.stream_type === 'OT_SETTLEMENT_ONLY' && (
+                            <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded font-bold border border-amber-200">OT Settlement</span>
+                          )}
+                          {(!run.stream_type || run.stream_type === 'UNIFIED') && (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold border border-emerald-200">Unified</span>
+                          )}
+                        </div>
                         <div className="text-[10px] text-gray-400 font-mono">{run.run_number}</div>
                       </td>
                       <td className="p-3 text-gray-600 font-mono whitespace-nowrap">{run.period_start} to {run.period_end}</td>
@@ -1030,6 +1044,71 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                       onChange={e => setWizardEnd(e.target.value)}
                       className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold"
                     />
+                  </div>
+                </div>
+
+                {/* DUAL-STREAM DISBURSAL ARCHITECTURE SELECTION */}
+                <div className="pt-2 border-t border-gray-100">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-gray-800 font-bold text-[11px] uppercase tracking-wider">Payroll Disbursal Stream</label>
+                    <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                      Electra EV & Plant Compliant
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div
+                      onClick={() => setWizardStreamType('UNIFIED')}
+                      className={cn(
+                        "p-2.5 rounded-xl border cursor-pointer transition-all",
+                        wizardStreamType === 'UNIFIED'
+                          ? "bg-emerald-50 border-emerald-600 ring-1 ring-emerald-500 shadow-xs"
+                          : "bg-white border-gray-200 hover:border-gray-300"
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold text-gray-900 text-xs">
+                        <span className="w-2 h-2 rounded-full bg-emerald-600 shrink-0"></span>
+                        Unified Complete
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-1 leading-tight">
+                        Monthly base salary + biometric OT in a single unified payslip.
+                      </p>
+                    </div>
+
+                    <div
+                      onClick={() => setWizardStreamType('SALARY_ONLY')}
+                      className={cn(
+                        "p-2.5 rounded-xl border cursor-pointer transition-all",
+                        wizardStreamType === 'SALARY_ONLY'
+                          ? "bg-blue-50 border-blue-600 ring-1 ring-blue-500 shadow-xs"
+                          : "bg-white border-gray-200 hover:border-gray-300"
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold text-gray-900 text-xs">
+                        <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0"></span>
+                        Base Salary Only
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-1 leading-tight">
+                        Assigned shift & attendance days only. Overtime excluded from slip.
+                      </p>
+                    </div>
+
+                    <div
+                      onClick={() => setWizardStreamType('OT_SETTLEMENT_ONLY')}
+                      className={cn(
+                        "p-2.5 rounded-xl border cursor-pointer transition-all",
+                        wizardStreamType === 'OT_SETTLEMENT_ONLY'
+                          ? "bg-amber-50 border-amber-600 ring-1 ring-amber-500 shadow-xs"
+                          : "bg-white border-gray-200 hover:border-gray-300"
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold text-gray-900 text-xs">
+                        <span className="w-2 h-2 rounded-full bg-amber-600 shrink-0"></span>
+                        OT Settlement Only
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-1 leading-tight">
+                        Dedicated biometric punch OT settlement ledger disbursal.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>

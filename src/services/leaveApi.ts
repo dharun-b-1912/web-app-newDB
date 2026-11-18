@@ -1594,8 +1594,8 @@ export const leaveApi = {
     }
 
     if (isSupabaseEnabled) {
-      const orgId = (req as any).organization_id || getActiveOrgId() || 'e539780b-df07-4b45-beaa-ccf1d2224be8';
-      const effectiveOrgId = isValidUUID(orgId) ? orgId : 'e539780b-df07-4b45-beaa-ccf1d2224be8';
+      const orgId = (req as any).organization_id || getActiveOrgId() || '0c621892-e938-4707-9957-13534ea32c19';
+      const effectiveOrgId = isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19';
       const leaveId = ensureUUID(newReq.id);
       newReq.id = leaveId;
 

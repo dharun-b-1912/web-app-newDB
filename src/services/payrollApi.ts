@@ -14,6 +14,7 @@ import {
   EmployeeSalaryAssignment,
   SalaryRevision,
   PayrollRun,
+  PayrollRunStreamType,
   PayrollRunStatus,
   EmployeePayrollInput,
   LoanRecord,
@@ -1676,7 +1677,8 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
     periodStart: string, // "2026-08-01"
     periodEnd: string,   // "2026-08-31"
     payoutDate: string,  // "2026-08-31"
-    tenantId = getActiveOrgId()
+    tenantId = getActiveOrgId(),
+    streamType: PayrollRunStreamType = 'UNIFIED'
   ): Promise<PayrollRun> {
     const salaries = await this.getEmployeeSalaries(tenantId);
     const statutory = this.getStatutoryConfig(tenantId);
@@ -1890,7 +1892,7 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
       }
 
       let lopDays = recordedAbsent + unpaidLeaveDays;
-      let overtimeHours = Math.round(recordedOtHours * 10) / 10;
+      let overtimeHours = streamType === 'SALARY_ONLY' ? 0 : Math.round(recordedOtHours * 10) / 10;
 
       let effectiveEligibleDays = totalDaysInMonth;
       if (isNewJoiner) {
@@ -1929,14 +1931,16 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
       const advanceRecovery = empAdvance ? (empAdvance.amount || empAdvance.balance_amount || 0) : 0;
 
       if (isDailyPlant) {
-        const basicEarned = payableDays * 420;
-        const hraEarned = payableDays * 180;
-        const otEarned = overtimeHours * 75;
+        const isOtOnly = streamType === 'OT_SETTLEMENT_ONLY';
+        const isSalaryOnly = streamType === 'SALARY_ONLY';
+        const basicEarned = isOtOnly ? 0 : payableDays * 420;
+        const hraEarned = isOtOnly ? 0 : payableDays * 180;
+        const otEarned = isSalaryOnly ? 0 : overtimeHours * 75;
         const grossEarned = basicEarned + hraEarned + otEarned;
 
-        const isPfEligible = (sal.pf_applicable !== undefined ? sal.pf_applicable : statutory.pf_enabled) && !!sal.pf_uan;
+        const isPfEligible = !isOtOnly && ((sal.pf_applicable !== undefined ? sal.pf_applicable : statutory.pf_enabled) && !!sal.pf_uan);
         const isEsiEligible = (sal.esi_applicable !== undefined ? sal.esi_applicable : statutory.esi_enabled) && (grossEarned <= (statutory.esi_wage_ceiling || 21000));
-        const isPtEligible = sal.pt_applicable !== undefined ? sal.pt_applicable : statutory.pt_enabled;
+        const isPtEligible = !isOtOnly && (sal.pt_applicable !== undefined ? sal.pt_applicable : statutory.pt_enabled);
 
         const epfEmployee = isPfEligible ? Math.round(basicEarned * (statutory.pf_employee_percent || 12) / 100) : 0;
         const epfEmployer = isPfEligible ? Math.round(basicEarned * (statutory.pf_employer_percent || 12) / 100) : 0;
@@ -1945,7 +1949,7 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
         const ptEval = isPtEligible ? StatutoryRuleEngine.evaluateProfessionalTax(grossEarned, 'Tamil Nadu', statutory) : { ptAmount: 0, slabDescription: '' };
         const ptAmount = ptEval.ptAmount;
 
-        const totalDed = epfEmployee + esicEmployee + ptAmount + canteenDeduction + advanceRecovery;
+        const totalDed = epfEmployee + esicEmployee + ptAmount + (isOtOnly ? 0 : (canteenDeduction + advanceRecovery));
         const netEarned = Math.max(0, grossEarned - totalDed);
 
         const empRec: EmployeePayrollInput = {
@@ -2013,16 +2017,16 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
           salary_advance_deduction: advanceRecovery,
           status: 'Calculated',
           earnings: [
-            { code: 'BASIC', name: 'Basic Wages', amount: basicEarned },
-            { code: 'HRA', name: 'House Rent Allowance', amount: hraEarned },
+            ...(basicEarned > 0 ? [{ code: 'BASIC', name: 'Basic Wages', amount: basicEarned }] : []),
+            ...(hraEarned > 0 ? [{ code: 'HRA', name: 'House Rent Allowance', amount: hraEarned }] : []),
             ...(otEarned > 0 ? [{ code: 'OT_WAGES', name: 'Overtime Wages (₹75/hr)', amount: otEarned }] : []),
           ],
           deductions: [
             ...(epfEmployee > 0 ? [{ code: 'PF_EE', name: 'Employee EPF', amount: epfEmployee }] : []),
             ...(esicEmployee > 0 ? [{ code: 'ESI_EE', name: 'Employee ESIC', amount: esicEmployee }] : []),
             ...(ptAmount > 0 ? [{ code: 'PT', name: 'Professional Tax', amount: ptAmount }] : []),
-            ...(canteenDeduction > 0 ? [{ code: 'CANTEEN_DED', name: 'Canteen Charges', amount: canteenDeduction }] : []),
-            ...(advanceRecovery > 0 ? [{ code: 'ADVANCE_DED', name: 'Advance Recovery', amount: advanceRecovery }] : []),
+            ...(canteenDeduction > 0 && !isOtOnly ? [{ code: 'CANTEEN_DED', name: 'Canteen Charges', amount: canteenDeduction }] : []),
+            ...(advanceRecovery > 0 && !isOtOnly ? [{ code: 'ADVANCE_DED', name: 'Advance Recovery', amount: advanceRecovery }] : []),
           ],
         };
 
@@ -2048,6 +2052,95 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
       const isPtEligible = sal.pt_applicable !== undefined ? Boolean(sal.pt_applicable) : statutory.pt_enabled;
       const isLwfEligible = sal.lwf_applicable !== undefined ? Boolean(sal.lwf_applicable) : false;
       const isTdsEligible = (sal as any).tds_applicable !== undefined ? Boolean((sal as any).tds_applicable) : (statutory.tds_auto_deduct ?? false);
+
+      if (streamType === 'OT_SETTLEMENT_ONLY') {
+        // Dedicated Biometric Overtime Disbursal Stream (e.g. Electra EV Model)
+        // Rate: Statutory 1.5x based on standard monthly shift hours
+        const hourlyRate = (grossFixed / (totalDaysInMonth * 8)) * 1.5;
+        const otEarned = Math.round(overtimeHours * hourlyRate);
+        const esicEmployee = isEsiEligible ? Math.ceil(otEarned * (statutory.esi_employee_percent || 0.75) / 100) : 0;
+        const esicEmployer = isEsiEligible ? Math.ceil(otEarned * (statutory.esi_employer_percent || 3.25) / 100) : 0;
+        const netEarned = Math.max(0, otEarned - esicEmployee);
+
+        const empRec: EmployeePayrollInput = {
+          id: `pitem-ot-${empId.toLowerCase()}`,
+          tenant_id: tenantId,
+          payroll_run_id: runId,
+          employee_id: empId,
+          employee_code: empCode,
+          employee_name: empName,
+          department: sal.department_name,
+          designation: sal.designation,
+          total_working_days: totalDaysInMonth,
+          payable_days: payableDays,
+          present_days: presentDays,
+          paid_leave_days: 0,
+          unpaid_leave_days: 0,
+          lop_days: 0,
+          overtime_hours: overtimeHours,
+          ctc_annual: (otEarned + esicEmployer) * 12,
+          gross_fixed: grossFixed,
+          basic: 0,
+          hra: 0,
+          special_allowance: 0,
+          conveyance: 0,
+          medical: 0,
+          other_allowances: 0,
+          overtime_pay: otEarned,
+          incentives: 0,
+          bonus: 0,
+          reimbursements: 0,
+          arrears: 0,
+          total_earnings: otEarned,
+          lop_deduction: 0,
+          epf_employee: 0,
+          esic_employee: esicEmployee,
+          professional_tax: 0,
+          tds_tax: 0,
+          loan_emi: 0,
+          advance_recovery: 0,
+          canteen_deduction: 0,
+          other_deductions: 0,
+          total_deductions: esicEmployee,
+          epf_employer: 0,
+          esic_employer: esicEmployer,
+          net_pay: netEarned,
+          net_pay_in_words: numberToWordsIndian(netEarned),
+          bank_name: sal.bank_name || 'HDFC Bank Ltd',
+          account_number: sal.account_number,
+          ifsc_code: sal.ifsc_code,
+          pan_number: sal.pan_number,
+          has_exceptions: false,
+          payment_mode: sal.payment_mode || 'BankTransfer',
+          total_calendar_days: totalDaysInMonth,
+          fixed_working_days: totalDaysInMonth,
+          loss_of_pay_days: 0,
+          ot_hours: overtimeHours,
+          gross_earnings: otEarned,
+          basic_earned: 0,
+          hra_earned: 0,
+          overtime_earned: otEarned,
+          pf_employee_deduction: 0,
+          esi_employee_deduction: esicEmployee,
+          pt_deduction: 0,
+          tds_deduction: 0,
+          salary_advance_deduction: 0,
+          status: 'Calculated',
+          earnings: [
+            { code: 'OT_SETTLEMENT', name: `Biometric OT Disbursal (${overtimeHours} hrs @ ₹${Math.round(hourlyRate)}/hr)`, amount: otEarned },
+          ],
+          deductions: [
+            ...(esicEmployee > 0 ? [{ code: 'ESI_EE', name: 'Employee ESIC (OT Contribution)', amount: esicEmployee }] : []),
+          ],
+        };
+
+        employeeRecords.push(empRec);
+        sumGross += otEarned;
+        sumDeductions += esicEmployee;
+        sumNet += netEarned;
+        sumEmployerStatutory += esicEmployer;
+        continue;
+      }
 
       // Construct Layer 2 Immutable Snapshot
       const snapshot: PayrollInputSnapshot = {
@@ -2208,14 +2301,25 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
       sumEmployerStatutory += empRec.epf_employer + empRec.esic_employer;
     }
 
+    const streamSuffix = streamType === 'SALARY_ONLY' ? '-SAL' : streamType === 'OT_SETTLEMENT_ONLY' ? '-OT' : '';
+    const runNumber = `RUN-${new Date(periodStart).getFullYear()}-${String(new Date(periodStart).getMonth() + 1).padStart(2, '0')}${streamSuffix}`;
+    const displayPayPeriod = streamType === 'SALARY_ONLY'
+      ? `${periodName} (Base Salary)`
+      : streamType === 'OT_SETTLEMENT_ONLY'
+      ? `${periodName} (OT Settlement)`
+      : periodName;
+
     const newRun: PayrollRun = {
       id: runId,
       tenant_id: tenantId,
-      run_number: `RUN-${new Date(periodStart).getFullYear()}-${String(new Date(periodStart).getMonth() + 1).padStart(2, '0')}`,
-      pay_period: periodName,
+      run_number: runNumber,
+      pay_period: displayPayPeriod,
       period_start: periodStart,
       period_end: periodEnd,
       payout_date: payoutDate,
+      stream_type: streamType,
+      is_ot_settlement: streamType === 'OT_SETTLEMENT_ONLY',
+      ot_settlement_period: streamType === 'OT_SETTLEMENT_ONLY' ? `${periodStart} to ${periodEnd}` : undefined,
       total_employees: employeeRecords.length,
       total_gross: sumGross,
       total_deductions: sumDeductions,

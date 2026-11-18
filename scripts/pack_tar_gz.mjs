@@ -108,8 +108,12 @@ const ignoredPatterns = [
 
 function shouldIgnore(relPath) {
   const normalized = relPath.replace(/\\/g, '/');
-  // Never ignore any source code inside src/ or built client assets inside dist/
-  if (normalized.startsWith('src/') || normalized.startsWith('dist/')) {
+  // Never package APKs, installers, rars, or heavy binaries inside dist/downloads or root
+  if (normalized.endsWith('.apk') || normalized.endsWith('.aab') || normalized.endsWith('.exe') || normalized.endsWith('.rar')) {
+    return true;
+  }
+  // Never ignore any actual source code inside src/ or built client assets inside dist/
+  if ((normalized.startsWith('src/') || normalized.startsWith('dist/')) && !normalized.includes('downloads/')) {
     return false;
   }
   return ignoredPatterns.some((pattern) => {

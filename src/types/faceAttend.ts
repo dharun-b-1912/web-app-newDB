@@ -112,6 +112,8 @@ export interface FaceAttendTemplateRecord {
   revocation_reason?: string | null;
   consent_status?: 'GRANTED' | 'WITHDRAWN' | 'NONE';
   consent_version?: string | null;
+  face_attendance_enabled?: boolean;
+  face_attendance_exemption_reason?: string | null;
   created_at: string;
   updated_at: string;
 }

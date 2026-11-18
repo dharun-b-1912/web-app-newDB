@@ -11,6 +11,7 @@ import { Role, ScopeLevel } from '../../types';
 import { platformAuthInvitationService } from '../platform/platformAuthInvitationService';
 import { PortalAccessResolver } from './portalAccessResolver';
 import { AuthContext, PortalType } from '../../types/authContext';
+import { isValidUUID } from '../api';
 
 export type ResolvedPortalRole =
   | 'Super Admin'

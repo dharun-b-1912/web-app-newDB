@@ -18,7 +18,7 @@ import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { attendanceTimeService } from './attendance/attendanceTimeService';
 import { attendanceIngestionService } from './attendance/attendanceIngestionService';
 import { getActiveOrgId } from './attendance/biometricCommandService';
-import { api } from './api';
+import { api, isValidUUID } from './api';
 import { leaveApi } from './leaveApi';
 
 const STORAGE_KEY_DAILY = 'workforceos_attendance_daily_v2';

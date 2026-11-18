@@ -161,7 +161,7 @@ export const faceAttendService = {
     const [{ data: templates, error }, { data: consents }] = await Promise.all([
       supabase
         .from('faceattend_templates')
-        .select('*, employees(display_name, employee_code, avatar_url)')
+        .select('*, employees(display_name, employee_code, avatar_url, face_attendance_enabled, face_attendance_exemption_reason)')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false })
         .limit(1000),
@@ -197,6 +197,8 @@ export const faceAttendService = {
         employee_code: row.employees?.employee_code || '',
         department: row.employees?.department || row.employees?.department_id || '',
         employee_avatar_url: row.employees?.avatar_url || null,
+        face_attendance_enabled: row.employees?.face_attendance_enabled ?? true,
+        face_attendance_exemption_reason: row.employees?.face_attendance_exemption_reason || null,
         primary_image_path: row.primary_image_path || null,
         liveness_audit_paths: Array.isArray(row.liveness_audit_paths) ? row.liveness_audit_paths : [],
         enrolment_status: row.enrolment_status,
@@ -214,6 +216,26 @@ export const faceAttendService = {
         updated_at: row.updated_at,
       };
     });
+  },
+
+  async toggleEmployeeFaceExemption(
+    employeeId: string,
+    enabled: boolean,
+    reason?: string | null
+  ): Promise<{ ok: boolean; error?: string }> {
+    const { error } = await supabase
+      .from('employees')
+      .update({
+        face_attendance_enabled: enabled,
+        face_attendance_exemption_reason: enabled ? null : (reason || 'Exempted by HR Admin'),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', employeeId);
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
   },
 
   async getTemplateSignedPhotoUrls(

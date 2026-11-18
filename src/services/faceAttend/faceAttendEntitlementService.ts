@@ -118,6 +118,10 @@ export const faceAttendEntitlementService = {
     }
   },
 
+  async setEnabled(organizationId: string, isEnabled: boolean, updatedBy?: string): Promise<{ ok: boolean; error?: string }> {
+    return this.setTenantEntitlement({ organizationId, isEnabled, updatedBy });
+  },
+
   invalidateCache(organizationId?: string) {
     if (organizationId) cache.delete(organizationId);
     else cache.clear();

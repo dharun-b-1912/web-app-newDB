@@ -57,6 +57,20 @@ export interface OrgIntegrationItem {
   metric_summary: string;
 }
 
+export interface TenantMemberRecord {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  status: 'Active' | 'Invited' | 'Suspended';
+  department: string;
+  lastActive: string;
+  employee_code?: string;
+  avatar_url?: string;
+  source: 'user_profile' | 'employee';
+}
+
 export interface OrganizationRecord {
   id: string; // e.g. 'org-joy-corp'
   tenant_id: string;
@@ -298,11 +312,26 @@ export const platformTenantService = {
       try {
         const { data: emps, error: empErr } = await supabase
           .from('employees')
-          .select('id, employment_status, organization_id, company_id');
+          .select('id, employee_code, first_name, last_name, display_name, work_email, personal_email, phone, employment_status, organization_id, company_id, department_id');
         if (empErr) {
           console.warn('[PlatformTenantService] Failed to load employees for counts:', empErr);
         } else if (emps) {
           employeeRows = emps;
+        }
+      } catch {
+        // Table might not have entries yet
+      }
+
+      // Dynamically fetch live user profiles to determine true administrators and cross-tenant identities
+      let userProfileRows: any[] = [];
+      try {
+        const { data: profs, error: profErr } = await supabase
+          .from('user_profiles')
+          .select('id, auth_user_id, email, full_name, phone, role, status, organization_id');
+        if (profErr) {
+          console.warn('[PlatformTenantService] Failed to load user profiles for admin resolution:', profErr);
+        } else if (profs) {
+          userProfileRows = profs;
         }
       } catch {
         // Table might not have entries yet
@@ -331,15 +360,43 @@ export const platformTenantService = {
             const domain = row.domain || `${tenantSlug}.joypeoplehr.com`;
             const planTier: PlanTier = (row.plan as any) || 'Enterprise';
 
-            // Dynamically calculate from real employee rows (using employment_status)
+            // Dynamically calculate from real employee rows and user profile rows
             const orgEmps = employeeRows.filter((e) => e.organization_id === row.id || e.company_id === row.id || e.tenant_id === row.id);
-            const activeEmps = orgEmps.length > 0
-              ? orgEmps.filter((e) => {
-                  const s = String(e.employment_status || '').toUpperCase();
-                  return s === 'ACTIVE' || s === 'CONFIRMED' || s === 'PROBATION' || s === '';
-                }).length
-              : 0;
-            const totalEmps = orgEmps.length;
+            const orgProfiles = userProfileRows.filter((p) => p.organization_id === row.id);
+
+            // Deduplicate unique active members across employees and user profiles
+            const memberKeys = new Set<string>();
+            orgProfiles.forEach((p) => {
+              const k = (p.email || p.id || '').toLowerCase().trim();
+              if (k) memberKeys.add(k);
+            });
+            orgEmps.forEach((e) => {
+              const k = (e.work_email || e.personal_email || e.id || '').toLowerCase().trim();
+              if (k) memberKeys.add(k);
+            });
+
+            const activeEmps = Math.max(memberKeys.size, orgEmps.length > 0 ? orgEmps.length : orgProfiles.length);
+            const totalEmps = activeEmps;
+
+            // Resolve real Primary Administrator from DB row or verified user profile
+            const adminProfile = orgProfiles.find((p) => {
+              const r = String(p.role || '').toUpperCase();
+              return r === 'COMPANY_ADMIN' || r === 'ORGANIZATION_OWNER' || r === 'OWNER';
+            }) || orgProfiles.find((p) => {
+              const r = String(p.role || '').toUpperCase();
+              return r === 'HR_HEAD' || r === 'HR_ADMIN';
+            }) || orgProfiles[0];
+
+            const resolvedAdminName = (row.primary_admin_name && row.primary_admin_name !== 'Admin')
+              ? row.primary_admin_name
+              : (adminProfile?.full_name || row.primary_admin_name || 'Organization Administrator');
+
+            const resolvedAdminEmail = (row.primary_admin_email && !row.primary_admin_email.startsWith('admin@'))
+              ? row.primary_admin_email
+              : (adminProfile?.email || row.primary_admin_email || `admin@${domain}`);
+
+            const resolvedAdminPhone = row.primary_admin_phone || adminProfile?.phone || '';
+            const resolvedAdminId = adminProfile?.id || row.primary_admin_id || 'user-admin';
 
             const seatLimit = Number(row.seat_limit) || Number(row.seats) || (planTier === 'Enterprise' ? 500 : planTier === 'Business' ? 250 : planTier === 'Professional' ? 100 : 25);
             const seatUtilization = seatLimit > 0 ? Math.min(100, Math.round((activeEmps / seatLimit) * 100)) : 0;
@@ -385,10 +442,10 @@ export const platformTenantService = {
               gstin: row.gstin,
               pan: row.pan,
               cin: row.cin,
-              primary_admin_id: row.primary_admin_id || 'user-admin',
-              primary_admin_name: row.primary_admin_name || 'Admin',
-              primary_admin_email: row.primary_admin_email || 'admin@' + domain,
-              primary_admin_phone: row.primary_admin_phone || '',
+              primary_admin_id: resolvedAdminId,
+              primary_admin_name: resolvedAdminName,
+              primary_admin_email: resolvedAdminEmail,
+              primary_admin_phone: resolvedAdminPhone,
               account_owner_name: row.account_owner_name || '',
               account_owner_team: row.account_owner_team || '',
               status: normStatus,
@@ -1022,5 +1079,109 @@ export const platformTenantService = {
 
   async updateTenantStatus(id: string, status: any): Promise<OrganizationRecord> {
     return this.updateOrganization(id, { status });
+  },
+
+  /**
+   * Fetch all real organization members (user profiles & employees) directly from Supabase.
+   */
+  async fetchOrganizationMembers(orgId: string): Promise<TenantMemberRecord[]> {
+    if (!isSupabaseEnabled || !orgId) return [];
+
+    try {
+      // 1. Fetch user_profiles for this org
+      const { data: profiles, error: pErr } = await supabase
+        .from('user_profiles')
+        .select('id, auth_user_id, email, full_name, phone, avatar_url, role, status, created_at, organization_id')
+        .eq('organization_id', orgId);
+
+      if (pErr) console.warn('[PlatformTenantService] Failed to load user_profiles for members:', pErr);
+
+      // 2. Fetch employees for this org
+      const { data: emps, error: eErr } = await supabase
+        .from('employees')
+        .select('id, employee_code, first_name, last_name, display_name, work_email, personal_email, phone, employment_status, department_id, created_at, organization_id')
+        .eq('organization_id', orgId);
+
+      if (eErr) console.warn('[PlatformTenantService] Failed to load employees for members:', eErr);
+
+      // 3. Fetch departments for this org
+      const { data: depts } = await supabase
+        .from('departments')
+        .select('id, name')
+        .eq('organization_id', orgId);
+
+      const deptMap = new Map<string, string>();
+      depts?.forEach((d: any) => deptMap.set(d.id, d.name));
+
+      const membersMap = new Map<string, TenantMemberRecord>();
+
+      // Merge user_profiles first (authoritative auth identity and role)
+      profiles?.forEach((p: any) => {
+        const email = (p.email || '').toLowerCase().trim();
+        const roleMap: Record<string, string> = {
+          COMPANY_ADMIN: 'Company Admin',
+          HR_HEAD: 'HR Head',
+          HR_ADMIN: 'HR Head',
+          HR_EXECUTIVE: 'HR Executive',
+          PAYROLL_ADMIN: 'Payroll Admin',
+          MANAGER: 'Manager',
+          AUDITOR: 'Compliance Auditor',
+          EMPLOYEE: 'Employee',
+        };
+        const displayRole = roleMap[String(p.role || '').toUpperCase()] || p.role || 'Employee';
+        const key = email || p.id;
+
+        membersMap.set(key, {
+          id: p.id,
+          name: p.full_name || email.split('@')[0] || 'User',
+          email: p.email,
+          phone: p.phone || 'Not provided',
+          role: displayRole,
+          status: String(p.status || '').toUpperCase() === 'ACTIVE' ? 'Active' : 'Suspended',
+          department: 'Administration',
+          lastActive: 'Active',
+          avatar_url: p.avatar_url,
+          source: 'user_profile',
+        });
+      });
+
+      // Merge employees (enrich with employee_code, department, phone, and add staff without user_profiles)
+      emps?.forEach((e: any) => {
+        const email = (e.work_email || e.personal_email || '').toLowerCase().trim();
+        const deptName = deptMap.get(e.department_id) || 'General Operations';
+        const fullName = e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || email.split('@')[0] || 'Employee';
+        const key = email || e.id;
+
+        const existing = membersMap.get(key) || (email ? membersMap.get(email) : undefined);
+        if (existing) {
+          if (e.employee_code) existing.employee_code = e.employee_code;
+          if (deptName && (existing.department === 'Administration' || existing.department === 'General Operations')) {
+            existing.department = deptName;
+          }
+          if (e.phone && (!existing.phone || existing.phone === 'Not provided')) {
+            existing.phone = e.phone;
+          }
+        } else {
+          const empStatus = String(e.employment_status || '').toUpperCase();
+          membersMap.set(key, {
+            id: e.id,
+            name: fullName,
+            email: e.work_email || e.personal_email || 'Not provided',
+            phone: e.phone || 'Not provided',
+            role: 'Employee',
+            status: empStatus === 'ACTIVE' || empStatus === 'CONFIRMED' || empStatus === 'PROBATION' ? 'Active' : 'Suspended',
+            department: deptName,
+            lastActive: 'Active',
+            employee_code: e.employee_code,
+            source: 'employee',
+          });
+        }
+      });
+
+      return Array.from(membersMap.values());
+    } catch (err) {
+      console.error('[PlatformTenantService] fetchOrganizationMembers error:', err);
+      return [];
+    }
   },
 };
