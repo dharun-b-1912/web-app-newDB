@@ -35,6 +35,16 @@ const { handleGarmentRequest } = require('./server/garmentRoutes.cjs');
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+export const supabaseAdminClient = createClient(
+  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzaWFqZW1ycWFrZm5nYXNlaGhpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODQxNDEwOSwiZXhwIjoyMTAzOTkwMTA5fQ.D6xZ3REU8mTG9DmSufj8DnAH6qSyMvbukqyf5z9lvxc',
+  {
+    auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { createSocket: () => null }
+  }
+);
+export const supabase = supabaseAdminClient;
+
 const app = express();
 app.set('trust proxy', true);
 
@@ -1114,14 +1124,6 @@ app.post('/api/location/resolve-google-maps', async (req, res) => {
 // Production Work Location & Geofence Backend Endpoints
 // Service-role persistence bypassing frontend RLS / auth-token mismatches
 // ============================================================
-const supabaseAdminClient = createClient(
-  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzaWFqZW1ycWFrZm5nYXNlaGhpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODQxNDEwOSwiZXhwIjoyMTAzOTkwMTA5fQ.D6xZ3REU8mTG9DmSufj8DnAH6qSyMvbukqyf5z9lvxc',
-  {
-    auth: { persistSession: false, autoRefreshToken: false },
-    realtime: { createSocket: () => null }
-  }
-);
 
 // Universal Server-Side Forensic Admin Action Logger (Item #20: Log admin actions)
 async function logAdminAction({ organizationId, actorId, actorRole, action, entityType, entityId, metadata, req }) {
