@@ -1,33 +1,19 @@
-const fs = require('fs');
-const dotenv = require('dotenv');
-const envConfig = dotenv.parse(fs.readFileSync('.env'));
+require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const sb = createClient(envConfig.VITE_SUPABASE_URL, envConfig.VITE_SUPABASE_ANON_KEY);
 
-async function run() {
-  // Test if work_email can be null
-  const testId = '00000000-0000-0000-0000-000000000099';
-  const { data, error } = await sb.from('employees').insert({
-    id: testId,
-    organization_id: '0c621892-e938-4707-9957-13534ea32c19',
-    company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
-    department_id: '70d63528-7aa9-4630-adcc-b7a6194250cd',
-    designation_id: 'fd2762cd-b1bb-402e-a7ee-81a80aa0eab7',
-    employee_code: 'TEST-NO-EMAIL-99',
-    first_name: 'Test',
-    last_name: 'NoEmail',
-    work_email: null,
-    phone: '9876543210',
-    employment_type: 'FULL_TIME',
-    employment_status: 'ACTIVE',
-    gender: 'MALE',
-    doj: '2026-01-01',
-  }).select();
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-  console.log('Insert with null email result:', { data, error });
+async function checkStatutoryCols() {
+  const { data, error } = await supabase.from('employee_statutory_details').select('*').limit(1);
   if (data && data.length > 0) {
-    await sb.from('employees').delete().eq('id', testId);
-    console.log('Cleaned up test record');
+    console.log('Columns in employee_statutory_details:', Object.keys(data[0]));
+    console.log('Sample row:', data[0]);
+  } else {
+    console.log('Error/Empty:', error);
   }
 }
-run();
+
+checkStatutoryCols();

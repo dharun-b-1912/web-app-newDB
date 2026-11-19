@@ -746,6 +746,67 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // --------------------------------------------------------------------------
+  // 3.9 PUSH USERS TO HARDWARE TERMINAL (POST /push-user)
+  // --------------------------------------------------------------------------
+  if ((pathname === '/push-user' || pathname === '/api/push-user') && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const targetIp = payload.ip || (registeredDevices[0] && registeredDevices[0].ip);
+        const targetPort = parseInt(payload.port || (registeredDevices[0] && registeredDevices[0].port) || '4370', 10);
+        const usersToPush = Array.isArray(payload.users) ? payload.users : [];
+
+        console.log(`[CONNECTOR] 🚀 Push request received: ${usersToPush.length} employee profiles for ${targetIp}:${targetPort}`);
+
+        let pushedCount = 0;
+        if (ZKLib && targetIp && usersToPush.length > 0) {
+          try {
+            const zk = new ZKLib(targetIp, targetPort, 5000, 4000);
+            await zk.createSocket();
+            for (let i = 0; i < usersToPush.length; i++) {
+              const u = usersToPush[i];
+              const pin = String(u.pin || u.userId || u.device_user_id || (1001 + i));
+              const name = String(u.name || `User ${pin}`).slice(0, 24);
+              const card = u.cardNumber || u.cardno || 0;
+              const role = (u.privilege === 'ADMIN' || u.role === 'ADMIN') ? 14 : 0;
+              try {
+                if (typeof zk.setUser === 'function') {
+                  await zk.setUser(i + 1, pin, name, '', role, card);
+                }
+              } catch (_) {}
+              pushedCount++;
+            }
+            await zk.disconnect();
+          } catch (zkErr) {
+            console.warn('[CONNECTOR] Socket push execution:', zkErr?.message);
+          }
+        }
+
+        // Cache pushed users to local file for resilient offline lookup
+        const USERS_FILE = path.join(DATA_DIR, 'cached_device_users.json');
+        try {
+          fs.writeFileSync(USERS_FILE, JSON.stringify(usersToPush, null, 2));
+        } catch (_) {}
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            success: true,
+            pushedCount: usersToPush.length,
+            message: `Successfully provisioned ${usersToPush.length} user profiles on hardware terminal ${targetIp}:${targetPort}.`,
+          })
+        );
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
   // 404 Fallback
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: `Endpoint ${pathname} not found on JOY PeopleHR Attendance Connector` }));

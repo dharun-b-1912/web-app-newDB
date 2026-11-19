@@ -1,0 +1,19 @@
+const { createClient } = require('@supabase/supabase-js');
+
+const SUPABASE_URL = 'https://ysiajemrqakfngasehhi.supabase.co';
+const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzaWFqZW1ycWFrZm5nYXNlaGhpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODQxNDEwOSwiZXhwIjoyMTAzOTkwMTA5fQ.D6xZ3REU8mTG9DmSufj8DnAH6qSyMvbukqyf5z9lvxc';
+
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+
+async function run() {
+  const { data: bpSample } = await supabase.from('break_policies').select('*').limit(1);
+  console.log('break_policies sample:', bpSample?.[0]);
+  if (bpSample?.[0]) {
+    console.log('break_policies keys:', Object.keys(bpSample[0]));
+  }
+
+  // Also check organization_settings or if there is a settings table
+  const { data: orgSettings } = await supabase.from('organization_settings').select('*').limit(1);
+  console.log('organization_settings keys:', Object.keys(orgSettings?.[0] || {}));
+}
+run();

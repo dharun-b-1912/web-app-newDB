@@ -1042,33 +1042,6 @@ export default defineConfig(({ mode }) => {
               if (id.includes('jspdf') || id.includes('html2canvas')) return 'vendor-pdf-export';
               return 'vendor-libs';
             }
-            if (
-              id.includes('/src/features/payroll/') || id.includes('\\src\\features\\payroll\\') ||
-              id.includes('/src/features/people/') || id.includes('\\src\\features\\people\\')
-            ) {
-              return 'module-workforce-payroll';
-            }
-            if (id.includes('/src/features/attendance/') || id.includes('\\src\\features\\attendance\\')) {
-              return 'module-attendance';
-            }
-            if (id.includes('/src/features/leave/') || id.includes('\\src\\features\\leave\\')) {
-              return 'module-leave';
-            }
-            if (id.includes('/src/features/lms/') || id.includes('\\src\\features\\lms\\')) {
-              return 'module-lms';
-            }
-            if (id.includes('/src/features/performance/') || id.includes('\\src\\features\\performance\\')) {
-              return 'module-performance';
-            }
-            if (id.includes('/src/features/platform/') || id.includes('\\src\\features\\platform\\')) {
-              return 'module-platform';
-            }
-            if (id.includes('/src/features/analytics/') || id.includes('\\src\\features\\analytics\\')) {
-              return 'module-analytics';
-            }
-            if (id.includes('/src/features/admin/') || id.includes('\\src\\features\\admin\\')) {
-              return 'module-admin';
-            }
           },
         },
       },

@@ -74,7 +74,7 @@ const DEFAULT_ORGANIZATIONS: AdmsOrganizationProfile[] = [
     name: 'Electra EV',
     slug: 'electra-ev',
     plan: 'Enterprise',
-    employeeCount: 171,
+    employeeCount: 304,
     deviceCount: 1,
     admsUrl: 'https://adms.joypeoplehr.com/iclock/cdata',
     admsPort: 80,
@@ -126,6 +126,38 @@ export const AdmsCloudPushVisualizer: React.FC = () => {
   const [selectedOrgId, setSelectedOrgId] = useState<string>('c5ab6b03-adde-47cc-a033-064f4c39b21e'); // Default Electra EV
   const [animationActive, setAnimationActive] = useState(true);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Fetch live counts from Supabase on mount
+  useEffect(() => {
+    async function fetchLiveCounts() {
+      try {
+        const { count: electraCount } = await supabase
+          .from('employees')
+          .select('*', { count: 'exact', head: true })
+          .eq('organization_id', 'c5ab6b03-adde-47cc-a033-064f4c39b21e');
+
+        const { count: joyCount } = await supabase
+          .from('employees')
+          .select('*', { count: 'exact', head: true })
+          .eq('organization_id', '0c621892-e938-4707-9957-13534ea32c19');
+
+        setOrganizations((prev) =>
+          prev.map((org) => {
+            if (org.id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' && electraCount != null && electraCount > 0) {
+              return { ...org, employeeCount: electraCount };
+            }
+            if (org.id === '0c621892-e938-4707-9957-13534ea32c19' && joyCount != null && joyCount > 0) {
+              return { ...org, employeeCount: joyCount };
+            }
+            return org;
+          })
+        );
+      } catch (err) {
+        console.warn('Failed to fetch live employee counts for ADMS Visualizer:', err);
+      }
+    }
+    fetchLiveCounts();
+  }, []);
 
   // Active Station Highlighting for Simulation
   const [activeStation, setActiveStation] = useState<'IDLE' | 'SETUP' | 'GATEWAY' | 'SYNC' | 'CODE_MATCH' | 'HRM_LIST'>('IDLE');
