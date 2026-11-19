@@ -74,7 +74,7 @@ const DEFAULT_ORGANIZATIONS: AdmsOrganizationProfile[] = [
     name: 'Electra EV',
     slug: 'electra-ev',
     plan: 'Enterprise',
-    employeeCount: 304,
+    employeeCount: 217,
     deviceCount: 1,
     admsUrl: 'https://adms.joypeoplehr.com/iclock/cdata',
     admsPort: 80,
