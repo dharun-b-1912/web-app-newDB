@@ -11,6 +11,7 @@ export type BiometricVendor =
   | 'Matrix'
   | 'Suprema'
   | 'Hikvision'
+  | 'Realtime'
   | 'Generic';
 
 export type CommunicationMode =

@@ -57,9 +57,15 @@ export interface EmployeeListProps {
 }
 
 const checkIsVendor = (emp: Employee): boolean => {
+  if (emp.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e') return true;
+  if (emp.company_id === 'c0bbfb28-1500-4ebb-aba8-453b3681f342') return true;
+  if (String(emp.employee_code || '').trim().toUpperCase().startsWith('EEV')) return true;
   const source = emp.employment_source || emp.employment?.employment_source;
-  if (source === 'VENDOR' || source === 'MANPOWER_PROVIDER') return true;
+  if (source === 'VENDOR' || source === 'MANPOWER_PROVIDER' || source === 'CONTRACT') return true;
+  const type = String(emp.employment_type || emp.employment?.employment_type || '').toUpperCase();
+  if (type === 'CONTRACT') return true;
   if (source === 'DIRECT') return false;
+  if (emp.vendor_id || emp.employment?.vendor_id) return true;
   if (emp.vendor_name && emp.vendor_name.trim() !== '') return true;
   if (emp.employment?.vendor_name && emp.employment.vendor_name.trim() !== '') return true;
   if (emp.company_name && emp.company_name.toLowerCase().includes('vendor')) return true;

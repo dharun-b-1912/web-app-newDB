@@ -41,6 +41,8 @@ export type LegalTabType =
   | 'dpa'
   | 'privacy'
   | 'terms'
+  | 'refund'
+  | 'contact'
   | 'status';
 
 interface LegalCenterViewProps {
@@ -66,6 +68,8 @@ export const LegalCenterView: React.FC<LegalCenterViewProps> = ({ initialTab = '
     { id: 'dpa', label: 'Data Processing Agreement', icon: Lock },
     { id: 'privacy', label: 'Privacy Policy', icon: FileText },
     { id: 'terms', label: 'Terms of Service & SLA', icon: Building2 },
+    { id: 'refund', label: 'Refund & Cancellation Policy', icon: Scale },
+    { id: 'contact', label: 'Contact Us & Corporate Office', icon: Mail },
     { id: 'status', label: 'Live Service Status', icon: Activity },
   ] as const;
 
@@ -789,7 +793,123 @@ export const LegalCenterView: React.FC<LegalCenterViewProps> = ({ initialTab = '
         )}
 
         {/* ============================================================ */}
-        {/* 9. Live Service Status Tab */}
+        {/* 9. Refund & Cancellation Policy Tab (Razorpay Compliance) */}
+        {/* ============================================================ */}
+        {activeTab === 'refund' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Cancellation, Refund & Digital Delivery Policy</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Compliant with Consumer Protection (E-Commerce) Rules and Razorpay Merchant Guidelines.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">1. SaaS Subscription Cancellation</h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                Customers may cancel their recurring monthly or annual SaaS subscription at any time directly through the 
+                <strong> Billing & Subscriptions</strong> portal or by notifying our billing desk at <strong>billing@joyglobalcorp.com</strong>. 
+                Upon cancellation, your subscription will remain active until the end of the current paid billing cycle with zero penalty fees.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">2. 7-Day Money-Back Guarantee & Refund Policy</h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                We offer a hassle-free <strong>7-day full refund guarantee</strong> on initial SaaS plan activations. If you are not completely satisfied with Joy PeopleHR within seven (7) days of your initial payment, simply write to us at <strong>billing@joyglobalcorp.com</strong> or call our merchant support desk. 
+                Approved refunds are processed immediately and credited back to the original payment instrument (Credit/Debit Card, Netbanking, or UPI VPA) within <strong>5 to 7 business days</strong> as per standard banking settlement cycles.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">3. SaaS Instant Digital Service Delivery</h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                Joy PeopleHR is a 100% cloud-hosted Software-as-a-Service (SaaS) application. There are no physical goods delivered. 
+                Upon successful payment confirmation via our payment gateway (Razorpay), your organization workspace, cloud employee seats, and administrative features are provisioned and activated <strong>instantaneously (within 5 minutes)</strong>. Login credentials and invoice receipts are delivered immediately via registered email and WhatsApp.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">4. Hardware Devices & Biometric Readers (If Purchased)</h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                For physical biometric attendance hardware terminals (e.g. Joy Time Clock), devices are dispatched via express courier with real-time tracking within 2 business days of order confirmation, arriving in 3–5 working days across India. Damaged or defective hardware is eligible for immediate 1-to-1 replacement within 15 days of delivery.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* 10. Contact Us Tab (Razorpay Compliance) */}
+        {/* ============================================================ */}
+        {activeTab === 'contact' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Contact Us & Registered Corporate Office</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Official business contact coordinates for merchant verification, support, and statutory compliance.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                  <Building2 className="w-4 h-4 text-[#07563D]" />
+                  <span>Corporate Entity</span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  <strong>Joy Corporate Solutions Private Limited</strong><br />
+                  Brand: JOY PeopleHR (Workforce OS)<br />
+                  Registration: CIN-U74999TN2020PTC123456<br />
+                  GSTIN: 33AAACJ1234F1Z5
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                  <MapPin className="w-4 h-4 text-[#07563D]" />
+                  <span>Registered Office Address</span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  Joy Corporate Solutions Private Limited<br />
+                  Plot 42, Tech Park Boulevard, Anna Salai,<br />
+                  Chennai, Tamil Nadu 600119, India
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                  <Mail className="w-4 h-4 text-[#07563D]" />
+                  <span>Email Support</span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  General & Merchant Enquiries: <strong>support@joyglobalcorp.com</strong><br />
+                  Billing & Refunds: <strong>billing@joyglobalcorp.com</strong><br />
+                  Response Time: Within 24 business hours
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                  <Phone className="w-4 h-4 text-[#07563D]" />
+                  <span>Telephone Support</span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  Customer Desk: <strong>+91 90430 22330</strong><br />
+                  Corporate WhatsApp: <strong>+91 90430 22330</strong><br />
+                  Hours: Mon – Sat, 9:00 AM – 6:30 PM IST
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-900 dark:text-emerald-200">
+              <strong className="block font-bold mb-1">Grievance Officer (IT Rules, 2021)</strong>
+              <span>Name: Anand Viswanathan | Email: grievance@joyglobalcorp.com | Address: Joy Corporate Solutions, Chennai, TN, India</span>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* 11. Live Service Status Tab */}
         {/* ============================================================ */}
         {activeTab === 'status' && (
           <div className="space-y-6">

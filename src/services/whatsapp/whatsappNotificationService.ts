@@ -282,6 +282,23 @@ export class WhatsAppNotificationService {
 
     const companyClean = company.includes('Joy Corporate') ? 'Joy Corporate Solutions' : company;
 
+    // Companion iOS & Android Access Guide with direct Mobile Web App & Play Store links
+    const deviceAccessGuide =
+      `📱 *JOY PeopleHR — Mobile & Web App Access*\n\n` +
+      `👋 Welcome, *${empName}*! Access your HR Self-Service portal on your mobile device:\n\n` +
+      `🤖 *For Android Users (Google Play Store):*\n` +
+      `Download the official app to mark attendance, apply for leave, and view payslips:\n` +
+      `👉 https://play.google.com/store/apps/details?id=com.joypeoplehr.app\n\n` +
+      `🍏 *For iOS / Apple Device Users (iPhone & iPad):*\n` +
+      `Open the Mobile Web App directly in Safari:\n` +
+      `👉 https://mobile.joypeoplehr.com\n` +
+      `💡 *Install on iPhone:* Open in Safari ➔ tap the *Share* button (square with arrow ↑) ➔ select *"Add to Home Screen"*. It will install and run just like a native full-screen app!\n\n` +
+      `🔐 *Login Credentials:*\n` +
+      `• Employee ID: *${empCode}*\n` +
+      `• Official Email: *${email}*\n` +
+      `• Default Password: *joypeoplehr*\n\n` +
+      `💬 *Quick HR Help:* You can reply to this chat anytime with *Payslip*, *Leave*, or *Attendance*!`;
+
     // ── Attempt 1: Approved Meta Template joy_hr_welcome_v2 (ID: 1394884269294382) ───
     // Utility Template with Header Image & Parameters: {{1}}=Company, {{2}}=Name, {{3}}=Employee ID, {{4}}=Official Email
     try {
@@ -302,22 +319,6 @@ export class WhatsAppNotificationService {
 
         // Send companion iOS & Android Access Guide with direct Mobile Web App & Play Store links
         try {
-          const deviceAccessGuide =
-            `📱 *JOY PeopleHR — Mobile & Web App Access*\n\n` +
-            `👋 Welcome, *${empName}*! Access your HR Self-Service portal on your mobile device:\n\n` +
-            `🤖 *For Android Users (Google Play Store):*\n` +
-            `Download the official app to mark attendance, apply for leave, and view payslips:\n` +
-            `👉 https://play.google.com/store/apps/details?id=com.joypeoplehr.app\n\n` +
-            `🍏 *For iOS / Apple Device Users (iPhone & iPad):*\n` +
-            `Open the Mobile Web App directly in Safari:\n` +
-            `👉 https://mobile.joypeoplehr.com\n` +
-            `💡 *Install on iPhone:* Open in Safari ➔ tap the *Share* button (square with arrow ↑) ➔ select *"Add to Home Screen"*. It will install and run just like a native full-screen app!\n\n` +
-            `🔐 *Login Credentials:*\n` +
-            `• Employee ID: *${empCode}*\n` +
-            `• Official Email: *${email}*\n` +
-            `• Default Password: *joypeoplehr*\n\n` +
-            `💬 *Quick HR Help:* You can reply to this chat anytime with *Payslip*, *Leave*, or *Attendance*!`;
-
           await whatsAppClient.sendText({
             to: params.phone,
             text: deviceAccessGuide,

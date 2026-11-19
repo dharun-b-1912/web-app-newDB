@@ -62,6 +62,7 @@ import {
 import {
   biometricCommandService,
   BiometricDeviceCommand,
+  getActiveOrgId,
 } from '../../../services/attendance/biometricCommandService';
 import { api } from '../../../services/api';
 import { DeviceUsersManagerModal } from './DeviceUsersManagerModal';
@@ -134,11 +135,12 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
       const updatedDev = biometricGatewayService.findDevice(device.id) || device;
       setLiveDevice(updatedDev);
 
-      // 1. Always load users so tab header Machine Users (${users.length}) always has the real 16 users
+      // 1. Always load users so tab header Machine Users (${users.length}) always has the real users
+      const targetOrg = liveDevice.organization_id || getActiveOrgId();
       const devUsers = biometricGatewayService.getDeviceUsers(device.id, { pageSize: 500 }).users || [];
       setUsers(devUsers);
 
-      // Auto-hydrate real users from live eSSL terminal gateway if cached list is completely empty
+      // Auto-hydrate real users from live terminal gateway if cached list is completely empty
       if (devUsers.length === 0 && (updatedDev.status === 'Online' || isDeviceOnline)) {
         biometricGatewayService.triggerDeviceUserSync(device.id, 'Live Terminal Hydration')
           .then(res => {
@@ -155,12 +157,12 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
 
       // Employees are hydrated once and cached for the lifetime of the workspace
       if (employeesCacheRef.current.length === 0) {
-        const syncEmps = (api as any).getEmployeesSync ? (api as any).getEmployeesSync() : [];
+        const syncEmps = (api as any).getEmployeesSync ? (api as any).getEmployeesSync({ organizationId: targetOrg }) : [];
         if (syncEmps.length > 0) {
           employeesCacheRef.current = syncEmps;
           setEmployees(syncEmps);
         } else {
-          api.getEmployees().then((empList) => {
+          api.getEmployees({ organizationId: targetOrg }).then((empList) => {
             employeesCacheRef.current = empList || [];
             setEmployees(empList || []);
           }).catch(() => {});
@@ -171,9 +173,7 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
       const rawAllPunches = biometricGatewayService.getRawPunches(500) || [];
       const devPunches = rawAllPunches.filter(p =>
         p.device_id === device.id ||
-        p.device_id === 'bio-dev-zk-k2000' ||
         (device.serial_number && p.device_serial === device.serial_number) ||
-        p.device_serial === 'TDBD253600550' ||
         (liveDevice.ip_address && (p as any).device_ip === liveDevice.ip_address)
       );
 
@@ -329,7 +329,7 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
     try {
       const res = await biometricGatewayService.syncEmployeesToTerminal(liveDevice.id);
       showToast(`✓ ${res.message}`);
-      const freshUsers = biometricGatewayService.getDeviceUsers(liveDevice.id).users;
+      const freshUsers = biometricGatewayService.getDeviceUsers(liveDevice.id, { pageSize: 500 }).users;
       setUsers(freshUsers || []);
       loadWorkspaceData('users');
       onDeviceUpdated();
@@ -453,10 +453,6 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
   };
 
   const handlePullUsersFromTerminal = async () => {
-    if (!isDeviceOnline) {
-      showToast(`Cannot sync users: ${liveDevice.device_name} is currently offline. Please connect device before reading users.`, 'error');
-      return;
-    }
     setIsSyncingUsers(true);
     try {
       const res = await biometricGatewayService.triggerDeviceUserSync(liveDevice.id, 'HR Administrator');
@@ -464,7 +460,7 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
         showToast(res.message || 'Read from device failed: Device unreachable.', 'error');
       } else {
         showToast(`✓ Read from device: ${res.message}`);
-        const freshUsers = biometricGatewayService.getDeviceUsers(liveDevice.id).users;
+        const freshUsers = biometricGatewayService.getDeviceUsers(liveDevice.id, { pageSize: 500 }).users;
         setUsers(freshUsers || []);
         loadWorkspaceData('users');
         onDeviceUpdated();
@@ -913,7 +909,10 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-mono px-3 py-1 rounded-xl bg-white/10 border border-white/10 text-emerald-300 font-bold">
+                  Channel: {liveDevice.port === 80 || liveDevice.port === 443 || liveDevice.gateway_agent_id?.includes('adms') ? 'ADMS Cloud Push (HTTP/HTTPS)' : `LAN TCP Socket (Port ${liveDevice.port || 4370})`}
+                </span>
                 <span className="text-xs font-mono px-3 py-1 rounded-xl bg-white/10 border border-white/10 text-emerald-300 font-bold">
                   Algorithm: Face VX3.5 • Finger VX10.0
                 </span>
@@ -1234,6 +1233,33 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
             </Button>
           </div>
 
+          {/* Unmapped Hardware Users Alert Banner */}
+          {unmappedCount > 0 && (
+            <div className="p-4 bg-amber-50/90 border border-amber-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-4 h-4 text-amber-700" />
+                </div>
+                <div>
+                  <p className="font-bold text-amber-950">
+                    {unmappedCount} Machine User(s) Enrolled On Hardware Without HR Profile
+                  </p>
+                  <p className="text-amber-800 text-[11px] mt-0.5">
+                    These users were registered directly at the terminal keypad or scanner. Their punch timestamps are preserved via {liveDevice.port === 80 || liveDevice.port === 443 || liveDevice.gateway_agent_id?.includes('adms') ? 'ADMS Cloud Push' : 'LAN TCP Socket'}. Map them to link attendance to payroll.
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsUsersModalOpen(true)}
+                className="gap-1.5 rounded-xl text-xs font-bold bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-900 shrink-0"
+              >
+                <Users className="w-3.5 h-3.5" /> Review & Onboard ({unmappedCount})
+              </Button>
+            </div>
+          )}
+
           {/* User Search & Filter Bar */}
           <div className="flex items-center gap-3">
             <div className="relative flex-1">
@@ -1273,12 +1299,13 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
                   <TableHead className="text-xs font-bold">Mapping Status</TableHead>
                   <TableHead className="text-xs font-bold">Mapped Employee</TableHead>
                   <TableHead className="text-xs font-bold">Last Synced</TableHead>
+                  <TableHead className="text-xs font-bold text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredUsers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-gray-500 text-xs">
+                    <TableCell colSpan={7} className="text-center py-8 text-gray-500 text-xs">
                       No users on this device yet. Click <strong>"Push Employees to Device"</strong> to provision directory profiles.
                     </TableCell>
                   </TableRow>
@@ -1349,6 +1376,27 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
                       </TableCell>
                       <TableCell className="text-xs font-mono text-gray-500">
                         {u.last_synced_at ? new Date(u.last_synced_at).toLocaleTimeString() : 'Active Now'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {u.is_mapped ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsUsersModalOpen(true)}
+                            className="text-[11px] font-semibold text-gray-500 hover:text-[#07563D] h-7 px-2"
+                          >
+                            Edit
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => setIsUsersModalOpen(true)}
+                            className="text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white h-7 px-2.5 rounded-lg shadow-2xs"
+                          >
+                            Quick Onboard / Link
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );

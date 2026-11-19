@@ -51,7 +51,29 @@ export interface BiometricDeviceCommand {
 const STORAGE_KEY_COMMANDS = 'workforce_bio_commands_v2';
 
 export function getActiveOrgId(): string {
-  // 1. Authoritative authenticated backend session identity
+  // 1. Explicitly selected active tenant in current session/localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id');
+      if (cached && (cached.length === 36 || cached.startsWith('org-'))) return cached;
+    } catch {}
+    try {
+      const activeOrg = localStorage.getItem('workforce_active_org');
+      if (activeOrg) {
+        const parsed = JSON.parse(activeOrg);
+        if (parsed?.id) return parsed.id;
+      }
+    } catch {}
+    try {
+      const activeOrgObj = localStorage.getItem('workforce_active_organization');
+      if (activeOrgObj) {
+        const parsed = JSON.parse(activeOrgObj);
+        if (parsed?.id) return parsed.id;
+      }
+    } catch {}
+  }
+
+  // 2. Authoritative authenticated backend session identity
   try {
     const sessionUser = authService.getCurrentSessionUser();
     if (sessionUser?.organization_id && sessionUser.organization_id !== 'platform-root' && sessionUser.organization_id.length === 36) {
@@ -62,11 +84,6 @@ export function getActiveOrgId(): string {
     }
   } catch (_) {}
 
-  // 2. Safe fallback
-  if (typeof window !== 'undefined') {
-    const cached = localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id');
-    if (cached && cached.length === 36 && cached !== 'org-joy-01') return cached;
-  }
   return '0c621892-e938-4707-9957-13534ea32c19';
 }
 

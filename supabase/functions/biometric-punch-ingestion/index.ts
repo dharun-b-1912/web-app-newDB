@@ -446,6 +446,11 @@ serve(async (req: Request) => {
               ? `${empName} (${emp.employee_code || ''}) checked out at ${timeFormatted} via Biometric Terminal.`
               : `${empName} (${emp.employee_code || ''}) checked in at ${timeFormatted} via Biometric Terminal.`;
 
+            // Authoritative Notification Gateway (Migration 189):
+            // Centralized hierarchical notification creation is managed by the PostgreSQL trigger
+            // trg_fn_notify_daily_attendance on public.attendance_daily.
+            // Direct notification_events write here is omitted to prevent duplicate alerts.
+            /*
             // Insert in-app notification
             await supabase.from('notification_events').insert([{
               organization_id: organizationId,
@@ -459,6 +464,7 @@ serve(async (req: Request) => {
               sent_at: new Date().toISOString(),
               created_at: new Date().toISOString(),
             }]);
+            */
 
             // Dispatch push notification
             await fetch(`${supabaseUrl}/functions/v1/send-push`, {

@@ -104,6 +104,17 @@ async function dispatchAndLogAirtelSms(
   templateKey: 'SMS_CHECK_IN' | 'SMS_CHECK_OUT'
 ) {
   if (!emp?.phone) return null;
+
+  // Strict Tenant Policy: Disable Airtel IQ SMS dispatch specifically for Electra EV biometric attendance events
+  // Deliveries for Electra EV are routed exclusively through Mobile Push (FCM) and In-App Notification Center
+  if (
+    organizationId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ||
+    organizationId === 'org-electra-01'
+  ) {
+    console.log(`[ADMS-EDGE] 🚫 Biometric SMS suppressed for Electra EV (${emp.first_name || emp.employee_code}). Delivered via In-App + Mobile Push only.`);
+    return null;
+  }
+
   if (emp.sms_enabled === false || emp.communication_preference === 'BIOMETRIC_ONLY') {
     console.log(`[ADMS-EDGE] SMS suppressed by employee preference for ${emp.first_name || emp.employee_code}`);
     return null;
@@ -210,6 +221,11 @@ async function notifyReportingManager(
     const targetUserId = profileId || authUserId || mgr.id;
     const nowIso = new Date().toISOString();
 
+    // Authoritative Notification Gateway (Migration 189):
+    // Centralized hierarchical notification creation is managed by the PostgreSQL trigger
+    // trg_fn_notify_daily_attendance on public.attendance_daily.
+    // Direct notification_events write here is omitted to prevent duplicate alerts.
+    /*
     // 1. Insert In-App Notification into notification_events for manager
     try {
       await supabase.from('notification_events').insert([{
@@ -227,6 +243,7 @@ async function notifyReportingManager(
     } catch (e: any) {
       console.warn('[ADMS-EDGE] In-app notification error:', e?.message || e);
     }
+    */
 
     // 2. Dispatch FCM Push Notification using send-push edge function
     try {
@@ -618,6 +635,17 @@ serve(async (req: Request) => {
 
         if (!emp) {
           console.log(`[ADMS-EDGE] PIN #${pin} not matched across authorized tenants: ${authorizedOrgIds.join(', ')}`);
+          // Preserve unmapped punch telemetry in Redis outbox so physical punches are never dropped
+          try {
+            const unmappedKey = `adms_unmapped_punches:${sn || 'unknown'}:${pin}`;
+            await redisSet(unmappedKey, JSON.stringify({
+              pin,
+              time: timeStr,
+              serial_number: sn,
+              communication_method: 'ADMS_PUSH',
+              received_at: new Date().toISOString()
+            }), 604800);
+          } catch (_) {}
           parsedCount++;
           continue;
         }

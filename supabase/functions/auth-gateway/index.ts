@@ -479,16 +479,17 @@ async function resolveProfileAndRoleForEmployee(
   };
 }
 
+type SingleIdentityResolution =
+  | { ok: true; identity: ResolvedIdentity; code?: undefined; message?: undefined; organizationId?: string | null }
+  | { ok: false; code: string; message: string; organizationId?: string | null; identity?: undefined };
+
 async function resolveSingleIdentityByMethod(
   supabaseAdmin: any,
   method: LoginMethod,
   rawIdentifier: string,
   organizationId?: string | null,
   countryCode = '+91'
-): Promise<
-  | { ok: true; identity: ResolvedIdentity }
-  | { ok: false; code: string; message: string; organizationId?: string | null }
-> {
+): Promise<SingleIdentityResolution> {
   const trimmed = (rawIdentifier || '').trim();
   if (!trimmed) {
     return {
@@ -979,8 +980,8 @@ async function mintSupabaseSessionForExistingUser(
   supabaseAdmin: any,
   authUserId: string
 ): Promise<
-  | { ok: true; session: any; authUser: any }
-  | { ok: false; code: string; message: string }
+  | { ok: true; session: any; authUser: any; code?: never; message?: never }
+  | { ok: false; code: string; message: string; session?: never; authUser?: never }
 > {
   const { data: userRes, error: userErr } =
     await supabaseAdmin.auth.admin.getUserById(authUserId);
@@ -1099,7 +1100,7 @@ async function requireAdminCaller(supabaseAdmin: any, ctx: any, requestedOrgId?:
 }
 
 export default {
-  fetch: withSupabase({ auth: ['user', 'publishable:*'], cors: 'default' }, async (req, ctx) => {
+  fetch: withSupabase({ auth: 'none', cors: 'default' }, async (req, ctx) => {
     if (req.method !== 'POST') {
       return Response.json({ ok: false, message: 'Method not allowed' }, { status: 405 });
     }

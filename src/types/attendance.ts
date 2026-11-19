@@ -160,17 +160,18 @@ export interface WfhRequest {
 
 export interface BiometricDevice {
   id: string;
+  organization_id?: string;
   device_name: string;
   name?: string;
-  device_type: 'Fingerprint' | 'Facial Recognition' | 'RFID Card' | 'Palm Vein';
-  vendor: 'ZKTeco' | 'Matrix COSEC' | 'Suprema' | 'Hikvision' | 'Custom API';
+  device_type: 'Fingerprint' | 'Facial Recognition' | 'RFID Card' | 'Palm Vein' | 'Turnstile Gate' | 'Iris Scanner' | 'Multi-Modal' | 'Fingerprint & RFID' | (string & {});
+  vendor: 'ZKTeco' | 'Matrix COSEC' | 'Suprema' | 'Hikvision' | 'Custom API' | 'eSSL' | 'Mantra' | 'Realtime' | (string & {});
   model: string;
   serial_number: string;
   ip_address: string;
   port: number;
   location: string;
   branch: string;
-  status: 'Online' | 'Offline' | 'Syncing' | 'Error';
+  status: 'Online' | 'Offline' | 'Syncing' | 'Error' | 'Standby' | 'No Power' | 'No Network' | 'Port Closed' | 'Maintenance';
   last_sync: string;
   last_sync_at?: string;
   sync_frequency_mins: number;

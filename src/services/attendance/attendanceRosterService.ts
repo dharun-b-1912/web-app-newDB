@@ -828,9 +828,12 @@ class AttendanceRosterService {
     }
     const list = getStore<ShiftMaster[]>(STORAGE_KEYS.SHIFTS, [], tenantId);
     if (!list || list.length === 0) {
-      const tenantShifts = DEFAULT_SHIFTS.map(s => ({ ...s, tenant_id: tenantId }));
-      setStore(STORAGE_KEYS.SHIFTS, tenantShifts, tenantId);
-      return tenantShifts;
+      if (tenantId === '0c621892-e938-4707-9957-13534ea32c19') {
+        const tenantShifts = DEFAULT_SHIFTS.map(s => ({ ...s, tenant_id: tenantId }));
+        setStore(STORAGE_KEYS.SHIFTS, tenantShifts, tenantId);
+        return tenantShifts;
+      }
+      return [];
     }
     return list;
   }
@@ -1200,13 +1203,13 @@ class AttendanceRosterService {
       this._dbShiftsCache.set(tenantId, tenantShifts.filter(s => s.id !== shiftId));
     }
 
-    // Sync deletion to Supabase
+    // Sync deletion to Supabase strictly scoped to this tenant organization
     if (isSupabaseEnabled && (supabaseAdmin || supabase)) {
       const client = supabaseAdmin || supabase;
       if (isValidUUID(shiftId)) {
-        Promise.resolve(client.from('shifts').delete().eq('id', shiftId)).catch(() => {});
+        Promise.resolve(client.from('shifts').delete().eq('id', shiftId).eq('organization_id', tenantId)).catch(() => {});
       } else if (target.shift_code) {
-        Promise.resolve(client.from('shifts').delete().eq('code', target.shift_code)).catch(() => {});
+        Promise.resolve(client.from('shifts').delete().eq('code', target.shift_code).eq('organization_id', tenantId)).catch(() => {});
       }
     }
 

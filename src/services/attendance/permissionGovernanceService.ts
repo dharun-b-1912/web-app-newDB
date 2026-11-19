@@ -91,6 +91,19 @@ export const DEFAULT_PERMISSION_POLICY: PermissionPolicyConfig = {
   version: '2026.2',
 };
 
+export const DEFAULT_PERMISSION_POLICY_ELECTRA: PermissionPolicyConfig = {
+  organizationId: 'c5ab6b03-adde-47cc-a033-064f4c39b21e',
+  monthlyAllowanceMinutes: 120, // 2 Hours standard monthly permission quota
+  monthStartDay: 1,
+  activePolicy: 'POLICY_A_THRESHOLD_CROSSING_DAY',
+  consumeOn: 'APPROVED_DURATION',
+  autoApplyHalfDay: true,
+  graceThresholdMinutes: 5, // Strict 5-minute grace period for Electra EV manufacturing
+  includeLateArrivalsBeyondGrace: true, // Check-in after 5 min grace reduces permission minutes
+  subsequentExcessHandling: 'MARK_EVERY_EXCESS_HALF_DAY', // Once permission minutes are over, mark as Half Day
+  version: '2026.2-ELECTRA',
+};
+
 const STORAGE_KEYS = {
   PERMISSIONS_LIST: 'joy_peoplehr_attendance_permissions_v1',
   LEDGER_MAP: 'joy_peoplehr_permission_ledger_v1',
@@ -105,28 +118,40 @@ class PermissionGovernanceService {
   }
 
   /**
-   * Load policy configuration
+   * Load policy configuration isolated by organization
    */
-  loadPolicyConfig(): PermissionPolicyConfig {
+  loadPolicyConfig(orgId?: string): PermissionPolicyConfig {
+    const activeOrg = orgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : '') || '0c621892-e938-4707-9957-13534ea32c19';
+    const isElectra = activeOrg === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' || activeOrg.toLowerCase().includes('electra');
+    const baseDefault = isElectra ? DEFAULT_PERMISSION_POLICY_ELECTRA : DEFAULT_PERMISSION_POLICY;
+
     if (typeof localStorage !== 'undefined') {
       try {
-        const stored = localStorage.getItem(STORAGE_KEYS.POLICY_CONFIG);
-        if (stored) {
-          this.policyConfig = { ...DEFAULT_PERMISSION_POLICY, ...JSON.parse(stored) };
+        const storedOrg = localStorage.getItem(`${STORAGE_KEYS.POLICY_CONFIG}_${activeOrg}`);
+        if (storedOrg) {
+          this.policyConfig = { ...baseDefault, ...JSON.parse(storedOrg) };
+          return this.policyConfig;
+        }
+        const storedGlobal = localStorage.getItem(STORAGE_KEYS.POLICY_CONFIG);
+        if (storedGlobal) {
+          this.policyConfig = { ...baseDefault, ...JSON.parse(storedGlobal) };
           return this.policyConfig;
         }
       } catch (_) {}
     }
+    this.policyConfig = { ...baseDefault };
     return this.policyConfig;
   }
 
   /**
-   * Update policy configuration
+   * Update policy configuration isolated by organization
    */
-  savePolicyConfig(config: Partial<PermissionPolicyConfig>): PermissionPolicyConfig {
-    this.policyConfig = { ...this.policyConfig, ...config };
+  savePolicyConfig(config: Partial<PermissionPolicyConfig>, orgId?: string): PermissionPolicyConfig {
+    const activeOrg = orgId || config.organizationId || (typeof localStorage !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : '') || '0c621892-e938-4707-9957-13534ea32c19';
+    this.policyConfig = { ...this.policyConfig, ...config, organizationId: activeOrg };
     if (typeof localStorage !== 'undefined') {
       try {
+        localStorage.setItem(`${STORAGE_KEYS.POLICY_CONFIG}_${activeOrg}`, JSON.stringify(this.policyConfig));
         localStorage.setItem(STORAGE_KEYS.POLICY_CONFIG, JSON.stringify(this.policyConfig));
       } catch (_) {}
     }

@@ -1345,7 +1345,10 @@ export const api = {
     const targetOrg = (typeof params === 'object' ? params?.organizationId : undefined) || getActiveOrgId();
     // 1. Authoritative in-memory cache takes precedence (isolated per tenant)
     let list: Employee[] = [];
-    if (api._empCache?.data && api._empCache.data.length > 0 && (!api._empCache.tenantId || api._empCache.tenantId === targetOrg)) {
+    const mapCache = Array.from(api._empCacheMap.entries()).find(([k]) => k.startsWith(targetOrg));
+    if (mapCache && mapCache[1]?.data && mapCache[1].data.length > 0) {
+      list = [...mapCache[1].data];
+    } else if (api._empCache?.data && api._empCache.data.length > 0 && (!api._empCache.tenantId || api._empCache.tenantId === targetOrg)) {
       list = [...api._empCache.data];
     } else {
       list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
@@ -1377,27 +1380,19 @@ export const api = {
       );
     }
 
-    // Strict deduplication by ID, employee_code, work_email, and name
+    // Strict deduplication by ID and employee_code (never drop distinct workers who share common names or placeholder contacts)
     const syncSeenIds = new Set<string>();
     const syncSeenCodes = new Set<string>();
-    const syncSeenEmails = new Set<string>();
-    const syncSeenNames = new Set<string>();
     list = list.filter((e: any) => {
       if (!e || !e.id) return false;
       const idKey = String(e.id).toLowerCase();
       const codeKey = String(e.employee_code || '').trim().toUpperCase();
-      const emailKey = String(e.work_email || e.personal_email || '').trim().toLowerCase();
-      const nameKey = `${String(e.first_name || '').trim()} ${String(e.last_name || '').trim()}`.toLowerCase().replace(/\s+/g, ' ');
 
       if (syncSeenIds.has(idKey)) return false;
       if (codeKey && syncSeenCodes.has(codeKey)) return false;
-      if (emailKey && syncSeenEmails.has(emailKey)) return false;
-      if (nameKey && nameKey !== ' ' && syncSeenNames.has(nameKey)) return false;
 
       syncSeenIds.add(idKey);
       if (codeKey) syncSeenCodes.add(codeKey);
-      if (emailKey) syncSeenEmails.add(emailKey);
-      if (nameKey && nameKey !== ' ') syncSeenNames.add(nameKey);
       return true;
     });
 
@@ -1592,6 +1587,7 @@ export const api = {
                 const enrichTimer = setTimeout(() => enrichAbort.abort(), 25000);
                 const mgrIds = [...new Set(data.map((e: any) => e.reporting_manager_id).filter((id: any) => Boolean(id) && isValidUUID(id)))];
 
+                const isTargetOrgValid = targetOrg && targetOrg !== 'platform-root';
                 const [
                   bRes,
                   sRes,
@@ -1608,25 +1604,28 @@ export const api = {
                 ] = await Promise.all([
                   Promise.resolve(dbClient.from('employee_bank_details').select('*').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
                   Promise.resolve(dbClient.from('employee_statutory_details').select('*').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
-                  Promise.resolve(dbClient.from('departments').select('id, name, code, head_employee_id').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
-                  Promise.resolve(dbClient.from('designations').select('id, title, code').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve((isTargetOrgValid ? dbClient.from('departments').select('id, name, code, head_employee_id').eq('organization_id', targetOrg) : dbClient.from('departments').select('id, name, code, head_employee_id')).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve((isTargetOrgValid ? dbClient.from('designations').select('id, title, code').eq('organization_id', targetOrg) : dbClient.from('designations').select('id, title, code')).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
                   mgrIds.length > 0
                     ? Promise.resolve(dbClient.from('employees').select('id, first_name, last_name, display_name, employee_code').in('id', mgrIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any))
                     : Promise.resolve({ data: [] } as any),
                   Promise.resolve(dbClient.from('employee_shift_assignments').select('*').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
-                  Promise.resolve(dbClient.from('shifts').select('*').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve((isTargetOrgValid ? dbClient.from('shifts').select('*').eq('organization_id', targetOrg) : dbClient.from('shifts').select('*')).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
                   Promise.resolve(dbClient.from('employee_salary_assignments').select('*').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
-                  Promise.resolve(dbClient.from('salary_structures').select('*').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
-                  Promise.resolve(dbClient.from('branches').select('id, name, branch_code').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
-                  Promise.resolve(dbClient.from('work_locations').select('id, name, branch_id').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve((isTargetOrgValid ? dbClient.from('salary_structures').select('*').eq('organization_id', targetOrg) : dbClient.from('salary_structures').select('*')).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve((isTargetOrgValid ? dbClient.from('branches').select('id, name, branch_code').eq('organization_id', targetOrg) : dbClient.from('branches').select('id, name, branch_code')).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve((isTargetOrgValid ? dbClient.from('work_locations').select('id, name, branch_id').eq('organization_id', targetOrg) : dbClient.from('work_locations').select('id, name, branch_id')).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
                   Promise.resolve(dbClient.from('employee_work_location_assignments').select('employee_id, work_location_id, is_primary').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
                 ]);
                 clearTimeout(enrichTimer);
 
+                const isJoyCorp = targetOrg === '0c621892-e938-4707-9957-13534ea32c19';
                 const branchMap = new Map<string, string>();
-                DEFAULT_BRANCHES.forEach((b) => {
-                  if (b?.id && b?.name) branchMap.set(String(b.id).toLowerCase().trim(), String(b.name).trim());
-                });
+                if (isJoyCorp) {
+                  DEFAULT_BRANCHES.forEach((b) => {
+                    if (b?.id && b?.name) branchMap.set(String(b.id).toLowerCase().trim(), String(b.name).trim());
+                  });
+                }
                 (branchesRes?.data || []).forEach((b: any) => {
                   if (b?.id && b?.name) branchMap.set(String(b.id).toLowerCase().trim(), String(b.name).trim());
                 });
@@ -1666,18 +1665,22 @@ export const api = {
                 const cachedMap = new Map<string, any>((cachedEmployees || []).map((ce: any) => [ce.id, ce]));
                 const deptMap = new Map<string, string>();
                 const deptHeadMap = new Map<string, string>();
-                DEFAULT_DEPARTMENTS.forEach((d) => {
-                  if (d?.id && d?.name) deptMap.set(String(d.id).toLowerCase().trim(), String(d.name).trim());
-                });
+                if (isJoyCorp) {
+                  DEFAULT_DEPARTMENTS.forEach((d) => {
+                    if (d?.id && d?.name) deptMap.set(String(d.id).toLowerCase().trim(), String(d.name).trim());
+                  });
+                }
                 (deptRes?.data || []).forEach((d: any) => {
                   if (d?.id && d?.name) deptMap.set(String(d.id).toLowerCase().trim(), String(d.name).trim());
                   if (d?.id && d?.head_employee_id) deptHeadMap.set(String(d.id).toLowerCase().trim(), String(d.head_employee_id).trim());
                 });
 
                 const desigMap = new Map<string, string>();
-                DEFAULT_DESIGNATIONS.forEach((d) => {
-                  if (d?.id && d?.title) desigMap.set(String(d.id).toLowerCase().trim(), String(d.title).trim());
-                });
+                if (isJoyCorp) {
+                  DEFAULT_DESIGNATIONS.forEach((d) => {
+                    if (d?.id && d?.title) desigMap.set(String(d.id).toLowerCase().trim(), String(d.title).trim());
+                  });
+                }
                 (desigRes?.data || []).forEach((d: any) => {
                   if (d?.id && d?.title) desigMap.set(String(d.id).toLowerCase().trim(), String(d.title).trim());
                 });
@@ -1978,8 +1981,19 @@ export const api = {
                   if (!e.statutory && cachedEmp?.statutory) e.statutory = cachedEmp.statutory;
 
                   // Sourcing Channel: default to 'DIRECT' unless explicitly set to vendor/contract
-                  const resolvedSource = ext.employment_source || cachedEmp?.employment_source || (e.employment_type === 'CONTRACT' ? 'CONTRACT' : 'DIRECT');
+                  // For Electra EV, all plant workforce are contract resources deployed from Joy Manpower Services
+                  const isElectra = e.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
+                  const resolvedSource = isElectra ? 'VENDOR' : (ext.employment_source || cachedEmp?.employment_source || (e.employment_type === 'CONTRACT' ? 'CONTRACT' : 'DIRECT'));
                   e.employment_source = resolvedSource;
+                  if (isElectra) {
+                    e.vendor_id = 'efa06c62-4197-4c85-93eb-6d490dfd4302';
+                    e.vendor_name = 'Joy Manpower Services Private Limited';
+                    if (e.employment) {
+                      e.employment.vendor_id = 'efa06c62-4197-4c85-93eb-6d490dfd4302';
+                      e.employment.vendor_name = 'Joy Manpower Services Private Limited';
+                      e.employment.employment_source = 'VENDOR';
+                    }
+                  }
 
                   // Real Compensation & CTC from Supabase employee_salary_assignments
                   const sal = salaryMap.get(e.id);
@@ -2015,10 +2029,10 @@ export const api = {
                     }
                   }
 
-                  if (ext.vendor_id && resolvedSource === 'VENDOR') {
-                    e.vendor_id = ext.vendor_id;
-                    e.vendor_name = ext.vendor_name;
-                    e.vendor_employee_code = ext.vendor_employee_code;
+                  if (isElectra || (ext.vendor_id && resolvedSource === 'VENDOR')) {
+                    e.vendor_id = isElectra ? (ext.vendor_id || 'efa06c62-4197-4c85-93eb-6d490dfd4302') : ext.vendor_id;
+                    e.vendor_name = isElectra ? (ext.vendor_name || 'Joy Manpower Services') : ext.vendor_name;
+                    e.vendor_employee_code = ext.vendor_employee_code || e.employee_code;
                   } else {
                     e.vendor_id = null;
                     e.vendor_name = null;
@@ -2070,39 +2084,28 @@ export const api = {
 
             const dbIds = new Set(data.map((e: any) => String(e.id).toLowerCase()));
             const dbCodes = new Set(data.map((e: any) => String(e.employee_code || '').trim().toUpperCase()).filter(Boolean));
-            const dbEmails = new Set(data.map((e: any) => String(e.work_email || e.personal_email || '').trim().toLowerCase()).filter(Boolean));
-            const dbNames = new Set(data.map((e: any) => `${String(e.first_name || '').trim()} ${String(e.last_name || '').trim()}`.toLowerCase().replace(/\s+/g, ' ')).filter(Boolean));
 
-            // Strictly deduplicate data itself first by ID, employee_code, email, and normalized full name
+            // Strictly deduplicate data itself first by ID and employee_code (preserving distinct individuals)
             const seenIds = new Set<string>();
             const seenCodes = new Set<string>();
-            const seenEmails = new Set<string>();
-            const seenNames = new Set<string>();
             const deduplicated: Employee[] = [];
 
             for (const emp of data) {
               if (!emp || !isValidUUID(emp.id)) continue;
               const idKey = String(emp.id).toLowerCase();
               const codeKey = String(emp.employee_code || '').trim().toUpperCase();
-              const emailKey = String(emp.work_email || emp.personal_email || '').trim().toLowerCase();
-              const nameKey = `${String(emp.first_name || '').trim()} ${String(emp.last_name || '').trim()}`.toLowerCase().replace(/\s+/g, ' ');
 
               if (seenIds.has(idKey)) continue;
               if (codeKey && seenCodes.has(codeKey)) continue;
-              if (emailKey && seenEmails.has(emailKey)) continue;
-              if (nameKey && nameKey !== ' ' && seenNames.has(nameKey)) continue;
 
               if (codeKey.startsWith('CE0')) continue;
-              if (emailKey.includes('@plant.joycorporatesolutions.com')) continue;
 
               seenIds.add(idKey);
               if (codeKey) seenCodes.add(codeKey);
-              if (emailKey) seenEmails.add(emailKey);
-              if (nameKey && nameKey !== ' ') seenNames.add(nameKey);
               deduplicated.push(emp);
             }
 
-            // Only permit local-only employees that match the active tenant and do NOT collide with any DB record or name
+            // Only permit local-only employees that match the active tenant and do NOT collide with any DB record
             const cachedEmployees = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
             for (const ce of cachedEmployees) {
               if (!ce || !ce.id || !isValidUUID(ce.id)) continue;
@@ -2111,21 +2114,14 @@ export const api = {
               if (targetOrg && targetOrg !== 'platform-root' && !ce.organization_id && targetOrg !== '0c621892-e938-4707-9957-13534ea32c19') continue;
               const idKey = String(ce.id).toLowerCase();
               const codeKey = String(ce.employee_code || '').trim().toUpperCase();
-              const emailKey = String(ce.work_email || ce.personal_email || '').trim().toLowerCase();
-              const nameKey = `${String(ce.first_name || '').trim()} ${String(ce.last_name || '').trim()}`.toLowerCase().replace(/\s+/g, ' ');
 
               if (seenIds.has(idKey) || dbIds.has(idKey)) continue;
               if (codeKey && (seenCodes.has(codeKey) || dbCodes.has(codeKey))) continue;
-              if (emailKey && (seenEmails.has(emailKey) || dbEmails.has(emailKey))) continue;
-              if (nameKey && nameKey !== ' ' && (seenNames.has(nameKey) || dbNames.has(nameKey))) continue;
 
               if (codeKey.startsWith('CE0')) continue;
-              if (emailKey.includes('@plant.joycorporatesolutions.com')) continue;
 
               seenIds.add(idKey);
               if (codeKey) seenCodes.add(codeKey);
-              if (emailKey) seenEmails.add(emailKey);
-              if (nameKey && nameKey !== ' ') seenNames.add(nameKey);
               deduplicated.push(ce);
             }
 
@@ -2810,15 +2806,18 @@ export const api = {
           const rawShiftId = String(formData.shift_id).trim();
           let shiftUUID: string | null = isValidUUID(rawShiftId) ? rawShiftId : null;
           if (!shiftUUID) {
-            const { data: matchedShift } = await supabase
+            const empOrgId = (employeePatch as any).organization_id || (existing as any)?.organization_id || getActiveOrgId();
+            let shiftQ = supabase
               .from('shifts')
               .select('id')
-              .or(`code.ilike.${rawShiftId},name.ilike.%${rawShiftId}%`)
-              .limit(1)
-              .maybeSingle();
+              .or(`code.ilike.${rawShiftId},name.ilike.%${rawShiftId}%`);
+            if (empOrgId && isValidUUID(empOrgId)) {
+              shiftQ = shiftQ.eq('organization_id', empOrgId);
+            }
+            const { data: matchedShift } = await shiftQ.limit(1).maybeSingle();
             if (matchedShift?.id) {
               shiftUUID = matchedShift.id;
-            } else {
+            } else if (empOrgId === '0c621892-e938-4707-9957-13534ea32c19') {
               const knownShifts: Record<string, string> = {
                 'gen-09': 'f847c561-4bbb-4b9f-a2dd-003162897eef',
                 'gen-10': 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
@@ -4358,15 +4357,18 @@ export const api = {
           const targetShiftId = String(data.shift_id || data.employment?.shift_id).trim();
           let shiftUUID: string | null = isValidUUID(targetShiftId) ? targetShiftId : null;
           if (!shiftUUID) {
-            const { data: matchedShift } = await supabase
+            const empOrgId = (canonicalRecord as any)?.organization_id || existing.organization_id || getActiveOrgId();
+            let shiftQ = supabase
               .from('shifts')
               .select('id')
-              .or(`code.ilike.${targetShiftId},name.ilike.%${targetShiftId}%`)
-              .limit(1)
-              .maybeSingle();
+              .or(`code.ilike.${targetShiftId},name.ilike.%${targetShiftId}%`);
+            if (empOrgId && isValidUUID(empOrgId)) {
+              shiftQ = shiftQ.eq('organization_id', empOrgId);
+            }
+            const { data: matchedShift } = await shiftQ.limit(1).maybeSingle();
             if (matchedShift?.id) {
               shiftUUID = matchedShift.id;
-            } else {
+            } else if (empOrgId === '0c621892-e938-4707-9957-13534ea32c19') {
               const knownShifts: Record<string, string> = {
                 'gen-09': 'f847c561-4bbb-4b9f-a2dd-003162897eef',
                 'gen-10': 'f5ff5d00-8489-459b-8d8e-d930ecffef22',

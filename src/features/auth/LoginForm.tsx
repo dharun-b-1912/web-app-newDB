@@ -342,6 +342,19 @@ export const LoginForm: React.FC<LoginFormProps> = ({
       });
 
       if (!res.ok || !res.session) {
+        // Fallback for Email + Password: authenticate directly with Supabase Auth
+        if (selectedMethod === 'email_password' || identifier.includes('@')) {
+          try {
+            const directAuth = await signIn(identifier.trim(), password, authContext);
+            if (directAuth.success && directAuth.user) {
+              showToast(`Welcome back, ${directAuth.user.name || 'User'}`, 'success');
+              onSuccessRoute?.(directAuth.destinationRoute || '/dashboard');
+              return;
+            }
+          } catch {
+            // retain original gateway message if fallback fails
+          }
+        }
         setAuthError(res.message || 'Invalid login credentials.');
         setErrorCode(res.code || null);
         return;
@@ -372,6 +385,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({
       );
       onSuccessRoute?.(res.activeContext?.destinationRoute || '/ess/dashboard');
     } catch (err: any) {
+      if (selectedMethod === 'email_password' || identifier.includes('@')) {
+        try {
+          const directAuth = await signIn(identifier.trim(), password, authContext);
+          if (directAuth.success && directAuth.user) {
+            showToast(`Welcome back, ${directAuth.user.name || 'User'}`, 'success');
+            onSuccessRoute?.(directAuth.destinationRoute || '/dashboard');
+            return;
+          }
+        } catch {}
+      }
       setAuthError(err?.message || 'Unexpected authentication error.');
     } finally {
       setIsSubmitting(false);

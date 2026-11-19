@@ -313,18 +313,31 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
         try { return new Date(p.punch_time).getTime() >= cutoffMs; } catch { return false; }
       }).slice(0, 50);
       
+      // Deduplicate currentDevs strictly by serial_number or IP:port to eliminate duplicate rows
+      const seenDevKeys = new Set<string>();
+      const uniqueDevs: BiometricDevice[] = [];
+      for (const d of currentDevs) {
+        if (!d) continue;
+        const key = (d.serial_number && d.serial_number !== 'N/A' ? d.serial_number : '') || (d.ip_address ? `${d.ip_address}:${d.port}` : '') || d.id;
+        const norm = key.trim().toUpperCase();
+        if (!seenDevKeys.has(norm)) {
+          seenDevKeys.add(norm);
+          uniqueDevs.push(d);
+        }
+      }
+
       setAgents(prev => {
         if (prev.length === currentAgents.length && prev[0]?.id === currentAgents[0]?.id) return prev;
         return currentAgents;
       });
       setDevices(prev => {
         if (
-          prev.length === currentDevs.length &&
-          prev.every((d, i) => d.id === currentDevs[i]?.id && d.status === currentDevs[i]?.status && d.last_sync === currentDevs[i]?.last_sync)
+          prev.length === uniqueDevs.length &&
+          prev.every((d, i) => d.id === uniqueDevs[i]?.id && d.status === uniqueDevs[i]?.status && d.last_sync === uniqueDevs[i]?.last_sync && d.last_punch_at === uniqueDevs[i]?.last_punch_at)
         ) {
           return prev;
         }
-        return currentDevs;
+        return uniqueDevs;
       });
       setPunches(prev => {
         if (prev.length === currentPunches.length && prev[0]?.id === currentPunches[0]?.id) return prev;
@@ -428,6 +441,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
       if (!selectedWorkspaceDeviceRef.current) debouncedLoadData();
     };
     window.addEventListener('biometric:updated', handleWindowUpdate);
+    window.addEventListener('tenant:switched', handleWindowUpdate);
 
     return () => {
       destroyed = true;
@@ -439,6 +453,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
       unsubDeviceStatus();
       unsubDeviceRegistered();
       window.removeEventListener('biometric:updated', handleWindowUpdate);
+      window.removeEventListener('tenant:switched', handleWindowUpdate);
     };
   }, []);
 
@@ -721,11 +736,24 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   // Filtered devices list (Memoized so typing/scrolling/hover is instantaneous)
   const filteredDevices = React.useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return devices.filter((d) => {
+    // Strict deduplication by device ID / Serial Number / IP:port
+    const seen = new Set<string>();
+    const uniqueList: BiometricDevice[] = [];
+    for (const d of devices) {
+      const key = (d.serial_number && d.serial_number !== 'N/A' ? d.serial_number : '') || (d.ip_address ? `${d.ip_address}:${d.port}` : '') || d.id;
+      const normalizedKey = key.trim().toUpperCase();
+      if (!seen.has(normalizedKey)) {
+        seen.add(normalizedKey);
+        uniqueList.push(d);
+      }
+    }
+
+    return uniqueList.filter((d) => {
       const matchesSearch =
         !q ||
         d.device_name.toLowerCase().includes(q) ||
         d.model.toLowerCase().includes(q) ||
+        (d.serial_number && d.serial_number.toLowerCase().includes(q)) ||
         d.ip_address.includes(q) ||
         d.branch.toLowerCase().includes(q);
 
@@ -1213,7 +1241,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <h3 className="font-black text-gray-900 text-base tracking-tight">BIOMETRIC TERMINAL FLEET</h3>
               <Badge variant={onlineDevicesCount > 0 ? "emerald" : "amber"} size="sm">
-                ● {devices.length} Registered ({onlineDevicesCount} Online • {offlineDevicesCount} Standby)
+                ● {filteredDevices.length} Registered ({onlineDevicesCount} Online • {Math.max(0, filteredDevices.length - onlineDevicesCount)} Standby)
               </Badge>
             </div>
             <p className="text-xs text-gray-500 mt-1">
@@ -1256,7 +1284,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
                 filterStatus === 'ALL' ? 'bg-[#07563D] text-white' : 'text-gray-600 hover:bg-gray-100'
               )}
             >
-              All ({devices.length})
+              All ({filteredDevices.length})
             </button>
             <button
               id="filter-online-devices-btn"
@@ -1355,9 +1383,16 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
                           </div>
                           <div>
                             <p className="font-bold text-gray-900 text-sm">{d.device_name}</p>
-                            <p className="text-xs text-gray-500 font-mono">
-                              {d.vendor} {d.model} • {d.ip_address}:{d.port}
-                            </p>
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              {d.serial_number && (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60 font-mono tracking-tight">
+                                  S/N: {d.serial_number}
+                                </span>
+                              )}
+                              <span className="text-xs text-gray-500 font-mono">
+                                {d.vendor} {d.model} • {d.ip_address}:{d.port}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </TableCell>
@@ -1400,11 +1435,11 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
 
                       {/* Last Punch (Separate from Heartbeat) */}
                       <TableCell className="text-xs text-gray-700 font-mono">
-                        {d.last_punch_at
-                          ? attendanceTimeService.formatAttendanceTime(d.last_punch_at, 'Asia/Kolkata', true)
-                          : latestPunch?.punch_time
-                          ? attendanceTimeService.formatAttendanceTime(latestPunch.punch_time, 'Asia/Kolkata', true)
-                          : 'No punches today'}
+                        {d.last_punch_at ? (
+                          attendanceTimeService.formatAttendanceTime(d.last_punch_at, 'Asia/Kolkata', true)
+                        ) : (
+                          <span className="text-gray-400 italic font-sans text-[11px]">No punches today</span>
+                        )}
                       </TableCell>
 
                       {/* Last Sync (Separate from Punch) */}

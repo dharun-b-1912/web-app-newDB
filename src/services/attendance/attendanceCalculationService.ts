@@ -49,7 +49,9 @@ export interface DailyAttendanceRow {
 
   // Monthly 2-Hour Permission Governance Metadata
   permissionMinutes?: number;
+  permissionMinutesDeducted?: number;
   monthlyPermissionCumulative?: number;
+  permissionBalanceRemaining?: number;
   isPermissionHalfDay?: boolean;
   permissionReason?: string;
   
@@ -112,6 +114,7 @@ export interface PeriodAttendanceMetrics {
   // Smart Shift & Permission Metrics
   totalPermissionMinutes: number;
   monthlyPermissionAllowance: number;
+  permissionRemainingMinutes: number;
   permissionExcessMinutes: number;
   permissionHalfDaysCount: number;
   adaptiveShiftsResolvedCount: number;
@@ -181,10 +184,12 @@ class AttendanceCalculationService {
     let approvedOvertimeMinutes = 0;
 
     // Monthly Permission Governance Tracker (Dynamic Policy Engine)
-    const permPolicy = permissionGovernanceService.loadPolicyConfig();
+    const targetOrgId = employee?.organization_id || (typeof localStorage !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : '') || '0c621892-e938-4707-9957-13534ea32c19';
+    const permPolicy = permissionGovernanceService.loadPolicyConfig(targetOrgId);
     const monthlyPermissionAllowance = permPolicy.monthlyAllowanceMinutes || 120;
     const includeLateArrivalsBeyondGrace = permPolicy.includeLateArrivalsBeyondGrace ?? true;
     const subsequentExcessHandling = permPolicy.subsequentExcessHandling || 'LOG_EXCESS_ONLY';
+    const policyGraceMinutes = permPolicy.graceThresholdMinutes ?? (targetOrgId.includes('electra') ? 5 : 15);
     let cumulativePermissionMinutes = 0;
     let thresholdCrossingDate: string | null = null;
     let permissionHalfDaysCount = 0;
@@ -356,6 +361,8 @@ class AttendanceCalculationService {
       const dailyPermissionMins = Number(rawRec?.permission_minutes || rawRec?.approved_permission_minutes || 0);
       let isPermissionHalfDay = false;
       let permissionReason: string | undefined = undefined;
+      let dayCombinedMins = 0;
+      let dayPermissionBalance = monthlyPermissionAllowance;
 
       if (isPreJoining) {
         // Pre-Joining days prior to DOJ are non-punitive and not scheduled working days
@@ -393,12 +400,15 @@ class AttendanceCalculationService {
         source = (rawRec?.source as any) || (firstIn ? 'MOBILE_GPS' : 'POLICY');
 
         // Combined Company Policy: Late arrivals beyond shift grace auto-consume from monthly permission quota
-        const excessLateMins = includeLateArrivalsBeyondGrace ? Math.max(0, lateMinutes - shiftGrace) : 0;
-        const dayCombinedMins = dailyPermissionMins + excessLateMins;
+        const effectiveGrace = policyGraceMinutes || (shiftGrace > 0 ? shiftGrace : 5);
+        const excessLateMins = includeLateArrivalsBeyondGrace && lateMinutes > effectiveGrace ? lateMinutes : 0;
+        dayCombinedMins = dailyPermissionMins + excessLateMins;
+        dayPermissionBalance = monthlyPermissionAllowance;
 
         if (dayCombinedMins > 0) {
           const prevCumulative = cumulativePermissionMinutes;
           cumulativePermissionMinutes += dayCombinedMins;
+          dayPermissionBalance = Math.max(0, monthlyPermissionAllowance - cumulativePermissionMinutes);
 
           // Case 1: Threshold-crossing day (first day cumulative exceeds allowance)
           if (prevCumulative <= monthlyPermissionAllowance && cumulativePermissionMinutes > monthlyPermissionAllowance) {
@@ -413,6 +423,8 @@ class AttendanceCalculationService {
             permissionHalfDaysCount++;
             permissionReason = `Monthly permission allowance exhausted (${monthlyPermissionAllowance}m). Subsequent day with ${dayCombinedMins}m excess classified as Half-Day per company policy (Cumulative: ${cumulativePermissionMinutes}m)`;
           }
+        } else {
+          dayPermissionBalance = Math.max(0, monthlyPermissionAllowance - cumulativePermissionMinutes);
         }
 
         if (isRegApproved) {
@@ -582,7 +594,9 @@ class AttendanceCalculationService {
           requiresReview: requiresShiftReview,
         },
         permissionMinutes: dailyPermissionMins > 0 ? dailyPermissionMins : undefined,
+        permissionMinutesDeducted: dayCombinedMins > 0 ? dayCombinedMins : undefined,
         monthlyPermissionCumulative: cumulativePermissionMinutes,
+        permissionBalanceRemaining: dayPermissionBalance,
         isPermissionHalfDay,
         permissionReason,
         calculationTrace: {
@@ -647,6 +661,7 @@ class AttendanceCalculationService {
       payableDays,
       totalPermissionMinutes: cumulativePermissionMinutes,
       monthlyPermissionAllowance,
+      permissionRemainingMinutes: Math.max(0, monthlyPermissionAllowance - cumulativePermissionMinutes),
       permissionExcessMinutes: Math.max(0, cumulativePermissionMinutes - monthlyPermissionAllowance),
       permissionHalfDaysCount,
       adaptiveShiftsResolvedCount,

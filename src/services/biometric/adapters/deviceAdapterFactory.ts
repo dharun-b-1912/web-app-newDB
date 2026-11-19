@@ -51,6 +51,9 @@ export class DeviceAdapterFactory {
         case 'Matrix':
           adapter = new MatrixAdapter();
           break;
+        case 'Realtime':
+          adapter = new GenericTcpAdapter();
+          break;
         case 'Generic':
         default:
           adapter = new GenericTcpAdapter();

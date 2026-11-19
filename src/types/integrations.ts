@@ -135,7 +135,7 @@ export interface BiometricDevice {
   tenant_name: string;
   device_name: string;
   provider: 'Mantra' | 'eSSL' | 'Suprema' | 'ZKTeco' | 'Hikvision' | 'Realtime Biometrics';
-  device_type: 'Fingerprint' | 'Face Recognition' | 'Iris Scanner' | 'RFID Card' | 'Multi-Modal';
+  device_type: 'Fingerprint' | 'Face Recognition' | 'Iris Scanner' | 'RFID Card' | 'Multi-Modal' | 'Fingerprint & RFID' | (string & {});
   ip_address: string;
   gateway_id: string;
   gateway_name: string;

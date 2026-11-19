@@ -54,8 +54,9 @@ function getEnv(key: string): string {
   } catch {
     // Fallback for Node test runtime
   }
-  if (typeof process !== 'undefined' && process.env) {
-    return process.env[key] || '';
+  const procEnv = (globalThis as any).process?.env;
+  if (procEnv) {
+    return procEnv[key] || '';
   }
   return '';
 }

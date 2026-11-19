@@ -4,6 +4,7 @@ import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
 import { supabase } from '../../../lib/supabase';
+import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 import {
   Clock,
   MapPin,
@@ -198,38 +199,48 @@ export const ManualAttendanceView: React.FC<ManualAttendanceViewProps> = ({
     const loadMetadata = async () => {
       try {
         setLoadingInitial(true);
+        const activeOrgId = getActiveOrgId();
+        const isOrgValid = activeOrgId && activeOrgId !== 'platform-root';
 
         // 1. Fetch Employees
-        const { data: empData } = await supabase
+        let empQ = supabase
           .from('employees')
           .select('id, employee_code, first_name, last_name, display_name, department_id, organization_id')
-          .is('deleted_at', null)
-          .order('employee_code', { ascending: true });
+          .is('deleted_at', null);
+        if (isOrgValid) empQ = empQ.eq('organization_id', activeOrgId);
+        const { data: empData } = await empQ.order('employee_code', { ascending: true });
 
         // 2. Fetch Departments
-        const { data: deptData } = await supabase.from('departments').select('id, name');
+        let deptQ = supabase.from('departments').select('id, name');
+        if (isOrgValid) deptQ = deptQ.eq('organization_id', activeOrgId);
+        const { data: deptData } = await deptQ;
         const deptMap = new Map((deptData || []).map(d => [d.id, d.name]));
 
         // 3. Fetch Shifts
-        const { data: shiftData } = await supabase
+        let shiftQ = supabase
           .from('shifts')
           .select('id, name, code, start_time, end_time, grace_entry_minutes, is_overnight');
+        if (isOrgValid) shiftQ = shiftQ.eq('organization_id', activeOrgId);
+        const { data: shiftData } = await shiftQ;
         const sMap = new Map<string, ShiftItem>((shiftData || []).map(s => [s.id, s as ShiftItem]));
         setShiftMap(sMap);
 
         // 4. Fetch Shift Assignments
-        const { data: assignData } = await supabase
+        let assignQ = supabase
           .from('employee_shift_assignments')
           .select('employee_id, shift_id')
           .is('effective_to', null);
+        if (isOrgValid) assignQ = assignQ.eq('organization_id', activeOrgId);
+        const { data: assignData } = await assignQ;
         const assignMap = new Map((assignData || []).map(a => [a.employee_id, a.shift_id]));
 
         // 5. Fetch Work Locations
-        const { data: locData } = await supabase
+        let locQ = supabase
           .from('work_locations')
           .select('id, name, address_line1')
-          .eq('is_active', true)
-          .order('name', { ascending: true });
+          .eq('is_active', true);
+        if (isOrgValid) locQ = locQ.eq('organization_id', activeOrgId);
+        const { data: locData } = await locQ.order('name', { ascending: true });
 
         const mappedLocs: LocationOption[] = (locData || []).map(l => ({
           id: l.id,
@@ -356,20 +367,26 @@ export const ManualAttendanceView: React.FC<ManualAttendanceViewProps> = ({
 
       if (pErr) console.warn('Notice loading manual punches:', pErr);
 
+      const activeOrgId = getActiveOrgId();
+      const isOrgValid = activeOrgId && activeOrgId !== 'platform-root';
+
       // Fetch regularizations
-      const { data: regData, error: rErr } = await supabase
-        .from('attendance_regularizations')
-        .select('*')
-        .order('created_at', { ascending: false });
+      let regQ = supabase.from('attendance_regularizations').select('*');
+      if (isOrgValid) regQ = regQ.eq('organization_id', activeOrgId);
+      const { data: regData, error: rErr } = await regQ.order('created_at', { ascending: false });
 
       if (rErr) console.warn('Notice loading regularizations:', rErr);
 
       // Fetch locations lookup
-      const { data: locs } = await supabase.from('work_locations').select('id, name');
+      let locsQ = supabase.from('work_locations').select('id, name');
+      if (isOrgValid) locsQ = locsQ.eq('organization_id', activeOrgId);
+      const { data: locs } = await locsQ;
       const locMap = new Map((locs || []).map(l => [l.id, l.name]));
 
       // Fetch shifts lookup
-      const { data: shs } = await supabase.from('shifts').select('id, name, code, start_time, end_time, is_overnight');
+      let shsQ = supabase.from('shifts').select('id, name, code, start_time, end_time, is_overnight');
+      if (isOrgValid) shsQ = shsQ.eq('organization_id', activeOrgId);
+      const { data: shs } = await shsQ;
       const sLookup = new Map((shs || []).map(s => [s.id, s]));
 
       // Map employees lookup

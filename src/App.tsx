@@ -757,7 +757,13 @@ const AppContent: React.FC = () => {
     currentRoute === 'privacy' ||
     currentRoute === 'privacy-policy' ||
     currentRoute === 'terms' ||
-    currentRoute === 'terms-of-service';
+    currentRoute === 'terms-of-service' ||
+    currentRoute === 'refund' ||
+    currentRoute === 'refunds' ||
+    currentRoute === 'cancellation' ||
+    currentRoute === 'shipping' ||
+    currentRoute === 'contact' ||
+    currentRoute === 'contact-us';
 
   if (!user && isPublicLegalRoute) {
     const getInitialTab = (): any => {
@@ -775,6 +781,8 @@ const AppContent: React.FC = () => {
       if (currentRoute === 'dpa') return 'dpa';
       if (currentRoute === 'privacy' || currentRoute === 'privacy-policy') return 'privacy';
       if (currentRoute === 'terms' || currentRoute === 'terms-of-service') return 'terms';
+      if (currentRoute === 'refund' || currentRoute === 'refunds' || currentRoute === 'cancellation' || currentRoute === 'shipping') return 'refund';
+      if (currentRoute === 'contact' || currentRoute === 'contact-us') return 'contact';
       return 'security';
     };
 

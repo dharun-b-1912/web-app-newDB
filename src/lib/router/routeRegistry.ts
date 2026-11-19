@@ -462,7 +462,7 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
   { id: 'notifications', label: 'Notifications & Alerts', canonicalPath: '/notifications', section: 'AUTOMATION & ADMIN' },
   { id: 'admin-notifications', label: 'Notification Settings', canonicalPath: '/admin/notifications', section: 'AUTOMATION & ADMIN', aliases: ['/admin-notifications'] },
   { id: 'company-onboarding', label: 'Company Setup Wizard', canonicalPath: '/company-onboarding', section: 'AUTOMATION & ADMIN' },
-  { id: 'trust-legal', label: 'Trust & Legal Center', canonicalPath: '/legal', section: 'AUTOMATION & ADMIN', aliases: ['/trust-legal', '/legal-center'] },
+  { id: 'trust-legal', label: 'Trust & Legal Center', canonicalPath: '/legal', section: 'AUTOMATION & ADMIN', aliases: ['/trust-legal', '/legal-center', '/terms', '/privacy', '/refund', '/cancellation', '/contact'] },
 
   // ── PLATFORM & SAAS CONTROL PLANE ──
   { id: 'platform-dashboard', label: 'Platform Command Center', canonicalPath: '/platform/dashboard', section: 'PLATFORM', aliases: ['/platform', '/platform-dashboard', '/platform/dashboard'] },

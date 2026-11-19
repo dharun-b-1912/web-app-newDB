@@ -38,6 +38,7 @@ interface DispatchRequestBody {
   subject?: string;
   requesterPhone?: string;
   requesterName?: string;
+  force?: boolean;
 }
 
 // Meta WhatsApp Cloud API credentials
@@ -196,6 +197,7 @@ serve(async (req: Request) => {
 
     // 2. Dynamically Resolve Tenant Authentic Company Name (Multi-Tenant SaaS)
     let companyName = body.companyName || "";
+    let orgData: any = null;
     if (!companyName && orgId) {
       const { data: compData } = await supabase
         .from("companies")
@@ -212,11 +214,12 @@ serve(async (req: Request) => {
       }
 
       if (!companyName) {
-        const { data: orgData } = await supabase
+        const res = await supabase
           .from("organizations")
           .select("display_name, legal_name, name")
           .eq("id", orgId)
           .maybeSingle();
+        orgData = res.data;
 
         if (orgData?.display_name && !/workforce organization/i.test(orgData.display_name)) {
           companyName = orgData.display_name;

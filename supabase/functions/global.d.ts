@@ -21,3 +21,15 @@ declare module 'https://*' {
   export const checkRateLimit: any;
   export const jsPDF: any;
 }
+
+declare module 'npm:*' {
+  const content: any;
+  export default content;
+  export const withSupabase: any;
+  export const createClient: any;
+  export const createContextClient: any;
+  export const createAdminClient: any;
+  export const verifyAuth: any;
+  export const verifyCredentials: any;
+  export const extractCredentials: any;
+}

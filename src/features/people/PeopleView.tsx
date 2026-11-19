@@ -98,20 +98,16 @@ export const PeopleView: React.FC = () => {
       const rawList = data || [];
       const viewSeenIds = new Set<string>();
       const viewSeenCodes = new Set<string>();
-      const viewSeenEmails = new Set<string>();
       const cleanList = rawList.filter((emp) => {
         if (!emp || !emp.id) return false;
         const idKey = String(emp.id).toLowerCase();
         const codeKey = String(emp.employee_code || '').trim().toUpperCase();
-        const emailKey = String(emp.work_email || (emp as any).personal_email || '').trim().toLowerCase();
 
         if (viewSeenIds.has(idKey)) return false;
         if (codeKey && viewSeenCodes.has(codeKey)) return false;
-        if (emailKey && viewSeenEmails.has(emailKey)) return false;
 
         viewSeenIds.add(idKey);
         if (codeKey) viewSeenCodes.add(codeKey);
-        if (emailKey) viewSeenEmails.add(emailKey);
         return true;
       });
       setEmployees(cleanList);
@@ -212,33 +208,31 @@ export const PeopleView: React.FC = () => {
     const list = filterAccessibleEmployees(employees);
     const seenIds = new Set<string>();
     const seenCodes = new Set<string>();
-    const seenEmails = new Set<string>();
-    const seenNames = new Set<string>();
     return list.filter((emp) => {
       if (!emp || !emp.id) return false;
       const idKey = String(emp.id).toLowerCase();
       const codeKey = String(emp.employee_code || '').trim().toUpperCase();
-      const emailKey = String(emp.work_email || (emp as any).personal_email || '').trim().toLowerCase();
-      const nameKey = `${String(emp.first_name || '').trim()} ${String(emp.last_name || '').trim()}`.toLowerCase().replace(/\s+/g, ' ');
 
       if (seenIds.has(idKey)) return false;
       if (codeKey && seenCodes.has(codeKey)) return false;
-      if (emailKey && seenEmails.has(emailKey)) return false;
-      if (nameKey && nameKey !== ' ' && seenNames.has(nameKey)) return false;
 
       seenIds.add(idKey);
       if (codeKey) seenCodes.add(codeKey);
-      if (emailKey) seenEmails.add(emailKey);
-      if (nameKey && nameKey !== ' ') seenNames.add(nameKey);
       return true;
     });
   }, [employees, filterAccessibleEmployees]);
 
   // Helper to check if an employee is Vendor
   const isEmployeeVendor = (emp: Employee): boolean => {
+    if (emp.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e') return true;
+    if (emp.company_id === 'c0bbfb28-1500-4ebb-aba8-453b3681f342') return true;
+    if (String(emp.employee_code || '').trim().toUpperCase().startsWith('EEV')) return true;
     const source = emp.employment_source || emp.employment?.employment_source;
-    if (source === 'VENDOR' || source === 'MANPOWER_PROVIDER') return true;
+    if (source === 'VENDOR' || source === 'MANPOWER_PROVIDER' || source === 'CONTRACT') return true;
+    const type = String(emp.employment_type || emp.employment?.employment_type || '').toUpperCase();
+    if (type === 'CONTRACT') return true;
     if (source === 'DIRECT') return false;
+    if (emp.vendor_id || emp.employment?.vendor_id) return true;
     if (emp.vendor_name && emp.vendor_name.trim() !== '') return true;
     if (emp.employment?.vendor_name && emp.employment.vendor_name.trim() !== '') return true;
     if (emp.company_name && emp.company_name.toLowerCase().includes('vendor')) return true;

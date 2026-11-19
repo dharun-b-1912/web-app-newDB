@@ -140,7 +140,10 @@ class SmartShiftResolutionService {
       }
     } catch (_) {}
 
-    return DEFAULT_SHIFTS;
+    if (organizationId === '0c621892-e938-4707-9957-13534ea32c19') {
+      return DEFAULT_SHIFTS;
+    }
+    return [];
   }
 
   /**

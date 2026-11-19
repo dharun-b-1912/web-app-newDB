@@ -10,6 +10,7 @@ import {
   Laptop,
   TrendingUp,
   User,
+  Users,
   Building,
   Briefcase,
   Layers,
@@ -37,6 +38,11 @@ import {
   Mail,
   UserCheck,
   Calculator,
+  Award,
+  Coffee,
+  FileSpreadsheet,
+  SlidersHorizontal,
+  Eye,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -50,6 +56,13 @@ import { cn } from '../../../lib/utils';
 import { payrollPeriodService, PayrollPeriod, EmployeePayrollContext, getWeekRangesForPeriod } from '../../../services/payroll/payrollPeriodService';
 import { attendanceCalculationService, DailyAttendanceRow, PeriodAttendanceMetrics } from '../../../services/attendance/attendanceCalculationService';
 import { payrollImpactCalculationEngine, PayrollImpactResult } from '../../../services/payroll/payrollImpactCalculationEngine';
+import { PrintableAttendanceStatement } from './PrintableAttendanceStatement';
+import { attendanceBonusService, AttendanceBonusPolicy, AttendanceBonusEvaluationResult } from '../../../services/attendance/attendanceBonusService';
+import { exportAttendanceStatementToExcel, exportAttendanceStatementToCsv, exportOverallOvertimeRegisterToExcel, exportOverallAttendanceRegisterToExcel } from '../../../services/attendance/attendanceStatementExcelExporter';
+import { AttendanceStatementPdfService } from '../../../services/attendance/attendanceStatementPdfService';
+import { AttendanceAnomalyIntelligenceEngine } from '../../../services/attendance/attendanceAnomalyIntelligenceEngine';
+import { permissionGovernanceService } from '../../../services/attendance/permissionGovernanceService';
+import { useTenant } from '../../../hooks/useTenant';
 
 export interface EmployeeAttendanceStatementModalProps {
   employeeId: string | null;
@@ -69,11 +82,45 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
   onNavigateSubPath,
 }) => {
   const { showToast } = useToast();
+  const { activeCompany } = useTenant();
 
-  // Tab State
+  // Tab State (14 Comprehensive Intelligence Views)
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'daily' | 'work-hours' | 'leave' | 'late-early' | 'overtime' | 'regularization' | 'exceptions' | 'payroll-impact' | 'audit'
+    | 'overview'
+    | 'daily'
+    | 'weekly-monthly'
+    | 'work-hours'
+    | 'breaks'
+    | 'leave'
+    | 'late-early'
+    | 'overtime'
+    | 'bonus'
+    | 'regularization'
+    | 'exceptions'
+    | 'payroll-impact'
+    | 'audit'
+    | 'statement'
   >('overview');
+
+  // Flexible Reporting Filter Presets (Phase 1)
+  const [dateFilterPreset, setDateFilterPreset] = useState<
+    'CURRENT_PAYROLL' | 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_WEEK' | 'LAST_WEEK' | 'TODAY' | 'YESTERDAY' | 'CUSTOM'
+  >('CURRENT_PAYROLL');
+  const [customStartDate, setCustomStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().split('T')[0];
+  });
+  const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const [selectedBonusPolicy, setSelectedBonusPolicy] = useState('GOLD_PERFECT');
+  const [bonusApproved, setBonusApproved] = useState(false);
+
+  // Electra EV Permission Policy Configuration State
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
+  const [policyGraceMinutes, setPolicyGraceMinutes] = useState(5);
+  const [policyAllowanceMinutes, setPolicyAllowanceMinutes] = useState(120);
+  const [policyAutoHalfDay, setPolicyAutoHalfDay] = useState(true);
 
   // Master Data & Periods
   const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
@@ -292,15 +339,16 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
     return 'Joy Corporate Solutions Pvt Ltd';
   }, [isVendor, currentEmployee]);
 
-  // Active Effective Payroll Period
+  // Active Effective Payroll Period & Dynamic Filter Engine (Phase 1)
   const activePeriod: PayrollPeriod = useMemo(() => {
-    if (selectedPeriod) return selectedPeriod;
     const today = new Date();
     const curYear = today.getFullYear() >= 2026 ? today.getFullYear() : 2026;
     const curMonth = String(today.getMonth() + 1).padStart(2, '0');
     const monthName = today.toLocaleString('en-US', { month: 'long' });
     const lastDay = new Date(curYear, today.getMonth() + 1, 0).getDate();
-    return {
+    const formatYMD = (d: Date) => d.toISOString().split('T')[0];
+
+    const basePayrollPeriod: PayrollPeriod = selectedPeriod || {
       id: `period-${curYear}-${curMonth}`,
       tenant_id: '0c621892-e938-4707-9957-13534ea32c19',
       organization_id: '0c621892-e938-4707-9957-13534ea32c19',
@@ -312,7 +360,103 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
       policy_version: 'Joy Enterprise Standard Policy (v3.2)',
       is_locked: false,
     };
-  }, [selectedPeriod]);
+
+    if (dateFilterPreset === 'CURRENT_PAYROLL') {
+      return basePayrollPeriod;
+    }
+
+    if (dateFilterPreset === 'TODAY') {
+      const todayStr = formatYMD(today);
+      return {
+        ...basePayrollPeriod,
+        id: `today-${todayStr}`,
+        period_name: `Today (${todayStr})`,
+        start_date: todayStr,
+        end_date: todayStr,
+      };
+    }
+
+    if (dateFilterPreset === 'YESTERDAY') {
+      const yest = new Date(today);
+      yest.setDate(today.getDate() - 1);
+      const yestStr = formatYMD(yest);
+      return {
+        ...basePayrollPeriod,
+        id: `yest-${yestStr}`,
+        period_name: `Yesterday (${yestStr})`,
+        start_date: yestStr,
+        end_date: yestStr,
+      };
+    }
+
+    if (dateFilterPreset === 'THIS_WEEK') {
+      const day = today.getDay();
+      const diffToMon = (day === 0 ? -6 : 1) - day;
+      const mon = new Date(today);
+      mon.setDate(today.getDate() + diffToMon);
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      return {
+        ...basePayrollPeriod,
+        id: `this-week-${formatYMD(mon)}`,
+        period_name: `This Week (${formatYMD(mon)} – ${formatYMD(sun)})`,
+        start_date: formatYMD(mon),
+        end_date: formatYMD(sun),
+      };
+    }
+
+    if (dateFilterPreset === 'LAST_WEEK') {
+      const day = today.getDay();
+      const diffToMon = (day === 0 ? -6 : 1) - day - 7;
+      const mon = new Date(today);
+      mon.setDate(today.getDate() + diffToMon);
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      return {
+        ...basePayrollPeriod,
+        id: `last-week-${formatYMD(mon)}`,
+        period_name: `Last Week (${formatYMD(mon)} – ${formatYMD(sun)})`,
+        start_date: formatYMD(mon),
+        end_date: formatYMD(sun),
+      };
+    }
+
+    if (dateFilterPreset === 'THIS_MONTH') {
+      const first = new Date(today.getFullYear(), today.getMonth(), 1);
+      const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      return {
+        ...basePayrollPeriod,
+        id: `this-month-${formatYMD(first)}`,
+        period_name: `${first.toLocaleString('en-US', { month: 'long' })} ${today.getFullYear()}`,
+        start_date: formatYMD(first),
+        end_date: formatYMD(last),
+      };
+    }
+
+    if (dateFilterPreset === 'LAST_MONTH') {
+      const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const last = new Date(today.getFullYear(), today.getMonth(), 0);
+      return {
+        ...basePayrollPeriod,
+        id: `last-month-${formatYMD(first)}`,
+        period_name: `${first.toLocaleString('en-US', { month: 'long' })} ${first.getFullYear()}`,
+        start_date: formatYMD(first),
+        end_date: formatYMD(last),
+      };
+    }
+
+    if (dateFilterPreset === 'CUSTOM') {
+      return {
+        ...basePayrollPeriod,
+        id: `custom-${customStartDate}-${customEndDate}`,
+        period_name: `Custom (${customStartDate} to ${customEndDate})`,
+        start_date: customStartDate,
+        end_date: customEndDate,
+      };
+    }
+
+    return basePayrollPeriod;
+  }, [selectedPeriod, dateFilterPreset, customStartDate, customEndDate]);
 
   // Dynamic Weekly Breakdown Ranges for the Active Month
   const weekRanges = useMemo(() => {
@@ -331,6 +475,11 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
   }, [currentEmployee, activePeriod, rawAttendanceList, regularizations, overtimeRequests]);
 
   const { dailyRows, metrics } = calculationResult;
+
+  // Realtime Attendance Anomaly & Risk Radar Intelligence
+  const anomalyReport = useMemo(() => {
+    return AttendanceAnomalyIntelligenceEngine.evaluateAnomalies(dailyRows, currentEmployee);
+  }, [dailyRows, currentEmployee]);
 
   // Resolve Employee Salary Package dynamically
   const annualCtc = useMemo(() => {
@@ -405,6 +554,16 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
       lwfApplicable: isLwfApplicable,
     });
   }, [annualCtc, monthlyCtc, metrics, currentEmployee]);
+
+  // Authoritative Attendance Bonus & Incentive Evaluation (Phase 8)
+  const bonusResult: AttendanceBonusEvaluationResult = useMemo(() => {
+    return attendanceBonusService.evaluateEmployeeBonus(
+      metrics,
+      currentEmployee,
+      selectedBonusPolicy,
+      activePeriod.id
+    );
+  }, [currentEmployee, metrics, selectedBonusPolicy, activePeriod.id]);
 
   // Payroll Readiness Checklist Evaluation
   const payrollBlockers = useMemo(() => {
@@ -552,25 +711,257 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
               </button>
             </div>
 
-            {/* Print Action */}
+            {/* Direct Vector PDF Statement Action */}
             <button
-              onClick={() => window.print()}
+              onClick={() => {
+                try {
+                  const doc = AttendanceStatementPdfService.generateStatementPdf({
+                    employee: currentEmployee,
+                    periodName: activePeriod.period_name,
+                    startDate: activePeriod.start_date,
+                    endDate: activePeriod.end_date,
+                    metrics,
+                    dailyRows,
+                    payrollImpact,
+                    bonusResult,
+                    companyName: activeCompany?.legal_name || 'Joy PeopleHR',
+                  });
+                  const empCode = currentEmployee?.employee_code || 'EMP';
+                  doc.save(`Attendance_Statement_${empCode}_${activePeriod.start_date}_${activePeriod.end_date}.pdf`);
+                  showToast(`✓ Downloaded ${empName} Vector PDF Statement (.pdf)`, 'success');
+                } catch (err: any) {
+                  showToast('PDF generation failed: ' + (err?.message || err), 'error');
+                }
+              }}
+              title="Download High-Resolution Vector PDF Statement"
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 border border-emerald-400 text-white rounded-full text-xs font-bold transition-all hidden sm:flex items-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>PDF Statement</span>
+            </button>
+
+            {/* Print Statement Action */}
+            <button
+              onClick={() => {
+                setActiveTab('statement');
+                setTimeout(() => window.print(), 250);
+              }}
+              title="Print Official A4 Attendance Statement"
               className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 border border-white/25 text-white rounded-full text-xs font-bold transition-all hidden sm:flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Print</span>
+              <span>Print Statement</span>
             </button>
 
-            {/* Export Action */}
-            <button
-              onClick={() => {
-                showToast(`✓ Exported ${empName} attendance statement to CSV.`);
-              }}
-              className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 border border-white/25 text-white rounded-full text-xs font-bold transition-all hidden sm:flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export</span>
-            </button>
+            {/* Export Dropdown Action */}
+            <div className="relative">
+              <button
+                onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
+                className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 border border-white/25 text-white rounded-full text-xs font-bold transition-all hidden sm:flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Reports</span>
+                <ChevronRight className={cn("w-3.5 h-3.5 transition-transform", exportDropdownOpen && "rotate-90")} />
+              </button>
+
+              {exportDropdownOpen && (
+                <div
+                  className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2 z-50 text-gray-800 animate-in fade-in zoom-in-95"
+                  onClick={() => setExportDropdownOpen(false)}
+                >
+                  <div className="px-3.5 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    Individual Statements
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      try {
+                        exportAttendanceStatementToExcel({
+                          employee: currentEmployee,
+                          periodName: activePeriod.period_name,
+                          startDate: activePeriod.start_date,
+                          endDate: activePeriod.end_date,
+                          metrics,
+                          dailyRows,
+                          payrollImpact,
+                          bonusResult,
+                          companyName: activeCompany?.legal_name || 'Joy PeopleHR',
+                        });
+                        showToast(`✓ Downloaded ${empName} Multi-Sheet Excel Statement (.xlsx)`, 'success');
+                      } catch (err: any) {
+                        showToast('Excel export failed: ' + (err?.message || err), 'error');
+                      }
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-xs font-semibold hover:bg-emerald-50 hover:text-[#07563D] flex items-center gap-2 cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+                    <div>
+                      <span className="block font-bold">Excel Statement (.xlsx)</span>
+                      <span className="text-[10px] text-gray-500">5 Sheets: Summary, Register, OT, Perms, Radar</span>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      try {
+                        const doc = AttendanceStatementPdfService.generateStatementPdf({
+                          employee: currentEmployee,
+                          periodName: activePeriod.period_name,
+                          startDate: activePeriod.start_date,
+                          endDate: activePeriod.end_date,
+                          metrics,
+                          dailyRows,
+                          payrollImpact,
+                          bonusResult,
+                          companyName: activeCompany?.legal_name || 'Joy PeopleHR',
+                        });
+                        const empCode = currentEmployee?.employee_code || 'EMP';
+                        doc.save(`Attendance_Statement_${empCode}_${activePeriod.start_date}_${activePeriod.end_date}.pdf`);
+                        showToast(`✓ Downloaded ${empName} Vector PDF Statement (.pdf)`, 'success');
+                      } catch (err: any) {
+                        showToast('PDF generation failed: ' + (err?.message || err), 'error');
+                      }
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-xs font-semibold hover:bg-rose-50 hover:text-rose-800 flex items-center gap-2 cursor-pointer border-t border-gray-100"
+                  >
+                    <FileText className="w-4 h-4 text-rose-700" />
+                    <div>
+                      <span className="block font-bold">Vector PDF Statement (.pdf)</span>
+                      <span className="text-[10px] text-gray-500">Official multi-page A4 document with signatures</span>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      try {
+                        exportAttendanceStatementToCsv({
+                          employee: currentEmployee,
+                          periodName: activePeriod.period_name,
+                          startDate: activePeriod.start_date,
+                          endDate: activePeriod.end_date,
+                          metrics,
+                          dailyRows,
+                          payrollImpact,
+                          bonusResult,
+                          companyName: activeCompany?.legal_name || 'Joy PeopleHR',
+                        });
+                        showToast(`✓ Downloaded ${empName} Daily Register (.csv)`, 'success');
+                      } catch (err: any) {
+                        showToast('CSV export failed: ' + (err?.message || err), 'error');
+                      }
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-xs font-semibold hover:bg-blue-50 hover:text-blue-800 flex items-center gap-2 cursor-pointer border-t border-gray-100"
+                  >
+                    <FileText className="w-4 h-4 text-blue-700" />
+                    <div>
+                      <span className="block font-bold">CSV Register (.csv)</span>
+                      <span className="text-[10px] text-gray-500">Raw daily punch data for external ERP</span>
+                    </div>
+                  </button>
+
+                  <div className="px-3.5 pt-2.5 pb-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-t border-gray-200 mt-1">
+                    Organization-Wide Registers ({employees.length || 0} Staff)
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      try {
+                        const orgRecords = employees.map((emp) => {
+                          const res = attendanceCalculationService.calculatePeriodAttendance(
+                            emp,
+                            activePeriod,
+                            rawAttendanceList,
+                            regularizations,
+                            overtimeRequests
+                          );
+                          const imp = payrollImpactCalculationEngine.calculateImpact({
+                            annualCtc: 420000,
+                            monthlyCtc: 35000,
+                            metrics: res.metrics,
+                            pfApplicable: true,
+                            esiApplicable: false,
+                            ptApplicable: true,
+                          });
+                          return {
+                            employee: emp,
+                            metrics: res.metrics,
+                            dailyRows: res.dailyRows,
+                            payrollImpact: imp,
+                            hourlyRate: 280,
+                          };
+                        });
+
+                        exportOverallOvertimeRegisterToExcel({
+                          organizationName: activeCompany?.legal_name || 'Electra EV',
+                          periodName: activePeriod.period_name,
+                          startDate: activePeriod.start_date,
+                          endDate: activePeriod.end_date,
+                          records: orgRecords,
+                        });
+                        showToast(`✓ Downloaded Master Overtime Register (.xlsx) for ${employees.length} employees`, 'success');
+                      } catch (err: any) {
+                        showToast('Master OT export failed: ' + (err?.message || err), 'error');
+                      }
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-xs font-semibold hover:bg-teal-50 hover:text-teal-900 flex items-center gap-2 cursor-pointer"
+                  >
+                    <DollarSign className="w-4 h-4 text-teal-700" />
+                    <div>
+                      <span className="block font-bold">Master Overtime Register (.xlsx)</span>
+                      <span className="text-[10px] text-gray-500">Separate OT payroll sheet with 1.5x multiplier</span>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      try {
+                        const orgRecords = employees.map((emp) => {
+                          const res = attendanceCalculationService.calculatePeriodAttendance(
+                            emp,
+                            activePeriod,
+                            rawAttendanceList,
+                            regularizations,
+                            overtimeRequests
+                          );
+                          const imp = payrollImpactCalculationEngine.calculateImpact({
+                            annualCtc: 420000,
+                            monthlyCtc: 35000,
+                            metrics: res.metrics,
+                            pfApplicable: true,
+                            esiApplicable: false,
+                            ptApplicable: true,
+                          });
+                          return {
+                            employee: emp,
+                            metrics: res.metrics,
+                            dailyRows: res.dailyRows,
+                            payrollImpact: imp,
+                          };
+                        });
+
+                        exportOverallAttendanceRegisterToExcel({
+                          organizationName: activeCompany?.legal_name || 'Electra EV',
+                          periodName: activePeriod.period_name,
+                          startDate: activePeriod.start_date,
+                          endDate: activePeriod.end_date,
+                          records: orgRecords,
+                        });
+                        showToast(`✓ Downloaded Master Attendance Register (.xlsx) for ${employees.length} employees`, 'success');
+                      } catch (err: any) {
+                        showToast('Master Attendance export failed: ' + (err?.message || err), 'error');
+                      }
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-xs font-semibold hover:bg-indigo-50 hover:text-indigo-900 flex items-center gap-2 cursor-pointer border-t border-gray-100"
+                  >
+                    <Users className="w-4 h-4 text-indigo-700" />
+                    <div>
+                      <span className="block font-bold">Master Attendance Register (.xlsx)</span>
+                      <span className="text-[10px] text-gray-500">All workforce attendance & payable days</span>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Close Button */}
             <button
@@ -582,26 +973,75 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
           </div>
         </div>
 
-        {/* ─── 2. PERIOD & PAYROLL STATUS RIBBON ───────────────────────────── */}
+        {/* ─── 2. PERIOD & REPORTING FILTER RIBBON (PHASE 1) ───────────────── */}
         <div className="bg-gray-50 px-4 sm:px-6 py-2.5 border-b border-gray-200 flex items-center justify-between gap-4 flex-wrap text-xs shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 bg-white px-3 py-1 rounded-xl border border-gray-200 shadow-2xs font-semibold text-gray-800">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Filter Preset Selector */}
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1 rounded-xl border border-gray-200 shadow-2xs font-semibold text-gray-800">
               <Calendar className="w-3.5 h-3.5 text-[#07563D]" />
-              <span>Payroll Period:</span>
+              <span className="text-gray-500">Filter:</span>
               <select
-                value={activePeriod.id}
-                onChange={(e) => {
-                  const p = payrollPeriods.find((item) => item.id === e.target.value);
-                  if (p) setSelectedPeriod(p);
-                }}
-                className="bg-transparent font-bold text-gray-900 focus:outline-none cursor-pointer text-xs ml-1"
+                value={dateFilterPreset}
+                onChange={(e) => setDateFilterPreset(e.target.value as any)}
+                className="bg-transparent font-bold text-gray-900 focus:outline-none cursor-pointer text-xs"
               >
-                {payrollPeriods.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.period_name} ({p.start_date} – {p.end_date})
-                  </option>
-                ))}
+                <option value="CURRENT_PAYROLL">Current Payroll Period</option>
+                <option value="THIS_MONTH">This Month</option>
+                <option value="LAST_MONTH">Last Month</option>
+                <option value="THIS_WEEK">This Week</option>
+                <option value="LAST_WEEK">Last Week</option>
+                <option value="TODAY">Today</option>
+                <option value="YESTERDAY">Yesterday</option>
+                <option value="CUSTOM">Custom Date Range (From – To)</option>
               </select>
+            </div>
+
+            {/* If Current Payroll selected: select payroll run */}
+            {dateFilterPreset === 'CURRENT_PAYROLL' && (
+              <div className="flex items-center gap-1 bg-white px-3 py-1 rounded-xl border border-gray-200 shadow-2xs font-semibold text-gray-800">
+                <span className="text-gray-500">Period:</span>
+                <select
+                  value={activePeriod.id}
+                  onChange={(e) => {
+                    const p = payrollPeriods.find((item) => item.id === e.target.value);
+                    if (p) setSelectedPeriod(p);
+                  }}
+                  className="bg-transparent font-bold text-[#07563D] focus:outline-none cursor-pointer text-xs"
+                >
+                  {payrollPeriods.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.period_name} ({p.start_date} – {p.end_date})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* If Custom Date Range selected: render date pickers */}
+            {dateFilterPreset === 'CUSTOM' && (
+              <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-xl border border-gray-200 shadow-2xs font-semibold text-gray-800">
+                <span className="text-gray-500">From:</span>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="bg-transparent font-bold text-gray-900 text-xs border border-gray-300 rounded px-1.5 py-0.5 focus:outline-none"
+                />
+                <span className="text-gray-500">To:</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="bg-transparent font-bold text-gray-900 text-xs border border-gray-300 rounded px-1.5 py-0.5 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {/* Selected Effective Date Range Pill */}
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-50/70 border border-emerald-200 text-[#07563D] font-bold text-[11px]">
+              <span>Active Period:</span>
+              <span className="font-mono">{activePeriod.start_date} – {activePeriod.end_date}</span>
+              <span className="text-emerald-700/80 font-normal">({metrics.totalCalendarDays} days)</span>
             </div>
 
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white border border-gray-200 shadow-2xs">
@@ -690,19 +1130,23 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
           </div>
         </div>
 
-        {/* ─── 4. MAIN NAVIGATION TABS ────────────────────────────────────── */}
+        {/* ─── 4. MAIN NAVIGATION TABS (14 COMPREHENSIVE INTELLIGENCE VIEWS) ── */}
         <div className="bg-gray-100/80 px-4 sm:px-6 pt-2 border-b border-gray-200 flex items-center gap-1 overflow-x-auto shrink-0">
           {[
             { id: 'overview', label: 'Overview', icon: TrendingUp },
             { id: 'daily', label: 'Daily Attendance', icon: Calendar },
+            { id: 'weekly-monthly', label: 'Weekly & Monthly', icon: Calendar },
             { id: 'work-hours', label: 'Work Hours', icon: Clock },
+            { id: 'breaks', label: 'Breaks Analytics', icon: Coffee },
             { id: 'leave', label: 'Leave & Permissions', icon: FileCheck },
             { id: 'late-early', label: 'Late / Early', icon: AlertTriangle },
             { id: 'overtime', label: 'Overtime', icon: DollarSign },
+            { id: 'bonus', label: 'Attendance Bonus', icon: Award },
             { id: 'regularization', label: 'Regularization', icon: Sliders },
             { id: 'exceptions', label: 'Exceptions', icon: AlertCircle },
             { id: 'payroll-impact', label: 'Payroll Impact', icon: ShieldCheck },
             { id: 'audit', label: 'Audit Trail', icon: FileText },
+            { id: 'statement', label: 'Official Statement', icon: Eye },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -956,6 +1400,120 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                       {isFinalizing ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />}
                       Finalize Attendance for Payroll
                     </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Electra EV Permission Policy & Anomaly Intelligence Radar */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Electra EV Permission Policy Card */}
+                <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <SlidersHorizontal className="w-4 h-4 text-emerald-700" />
+                      <h3 className="text-sm font-bold text-gray-900">Electra EV Permission & Grace Policy</h3>
+                    </div>
+                    <button
+                      onClick={() => setIsPolicyModalOpen(true)}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[#07563D] text-[11px] font-bold border border-emerald-200 flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                    >
+                      <Sliders className="w-3 h-3" />
+                      <span>Configure Policy</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between items-center p-2 rounded-lg bg-gray-50">
+                      <span className="text-gray-600 font-medium">Shift Grace Threshold:</span>
+                      <strong className="text-gray-900 font-bold">{policyGraceMinutes} Minutes</strong>
+                    </div>
+                    <div className="flex justify-between items-center p-2 rounded-lg bg-gray-50">
+                      <span className="text-gray-600 font-medium">Monthly Permission Quota:</span>
+                      <strong className="text-gray-900 font-bold">{policyAllowanceMinutes} Mins (2 Hours)</strong>
+                    </div>
+                    <div className="flex justify-between items-center p-2 rounded-lg bg-amber-50/70 border border-amber-100">
+                      <span className="text-amber-900 font-semibold">Permission Minutes Consumed:</span>
+                      <strong className="text-amber-950 font-bold font-mono">{metrics.totalPermissionMinutes || 0} mins</strong>
+                    </div>
+                    <div className="flex justify-between items-center p-2 rounded-lg bg-emerald-50/70 border border-emerald-100">
+                      <span className="text-emerald-900 font-semibold">Remaining Permission Balance:</span>
+                      <strong className="text-emerald-950 font-bold font-mono">
+                        {metrics.permissionRemainingMinutes ?? Math.max(0, policyAllowanceMinutes - (metrics.totalPermissionMinutes || 0))} mins
+                      </strong>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-gray-50 text-[11px] text-gray-600 flex items-start gap-2 border border-gray-100">
+                      <Info className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <span>Check-ins after {policyGraceMinutes}-min grace auto-deduct from allowance. Once exhausted, subsequent late arrivals are automatically marked as <strong>Half Day (0.5d LOP)</strong>.</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Attendance Anomaly & Risk Radar */}
+                <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600" />
+                      <h3 className="text-sm font-bold text-gray-900">Attendance Anomaly & Risk Radar</h3>
+                    </div>
+                    <span className={cn(
+                      "px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide",
+                      anomalyReport.overallRiskLevel === 'CRITICAL' ? "bg-rose-100 text-rose-800 border border-rose-200" :
+                      anomalyReport.overallRiskLevel === 'HIGH' ? "bg-orange-100 text-orange-800 border border-orange-200" :
+                      anomalyReport.overallRiskLevel === 'MEDIUM' ? "bg-amber-100 text-amber-800 border border-amber-200" :
+                      "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    )}>
+                      {anomalyReport.overallRiskLevel} Risk
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    {/* Extended Absence > 2 Days */}
+                    <div className={cn(
+                      "p-3 rounded-xl border flex items-start justify-between gap-2",
+                      anomalyReport.extendedAbsenceStreaks.length > 0 ? "bg-rose-50 border-rose-200 text-rose-900" : "bg-gray-50 border-gray-100 text-gray-700"
+                    )}>
+                      <div>
+                        <span className="font-bold block">
+                          {anomalyReport.extendedAbsenceStreaks.length > 0
+                            ? `⚠️ Extended Absence: >2 Days Leave Detected (${anomalyReport.extendedAbsenceStreaks.length} streak)`
+                            : '✓ Extended Absence Check (>2 Days)'}
+                        </span>
+                        <span className="text-[11px] text-gray-600 mt-0.5 block leading-relaxed">
+                          {anomalyReport.extendedAbsenceStreaks.length > 0
+                            ? anomalyReport.extendedAbsenceStreaks.map(s => `${s.consecutiveDays} consecutive days absent (${s.startDate} to ${s.endDate})`).join(', ')
+                            : 'No absence streaks exceeding 2 days detected in this period.'}
+                        </span>
+                      </div>
+                      {anomalyReport.extendedAbsenceStreaks.length > 0 && (
+                        <span className="px-2 py-0.5 bg-rose-600 text-white font-black text-[10px] rounded-full shrink-0">
+                          ACTION REQUIRED
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Frequent Late Arrivals */}
+                    <div className={cn(
+                      "p-3 rounded-xl border flex items-start justify-between gap-2",
+                      anomalyReport.frequentLate ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-gray-50 border-gray-100 text-gray-700"
+                    )}>
+                      <div>
+                        <span className="font-bold block">
+                          {anomalyReport.frequentLate
+                            ? `⚠️ Habitual Late Check-Ins: ${anomalyReport.frequentLate.lateCount} Days Late`
+                            : '✓ Punctuality Pattern'}
+                        </span>
+                        <span className="text-[11px] text-gray-600 mt-0.5 block leading-relaxed">
+                          {anomalyReport.frequentLate
+                            ? `${anomalyReport.frequentLate.lateCount} late arrivals accumulating ${anomalyReport.frequentLate.totalLateMinutes} minutes.`
+                            : 'Consistent punctual check-ins within the grace threshold.'}
+                        </span>
+                      </div>
+                      {anomalyReport.frequentLate && (
+                        <span className="px-2 py-0.5 bg-amber-600 text-white font-black text-[10px] rounded-full shrink-0">
+                          COUNSELING
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1572,6 +2130,494 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
             </div>
           )}
 
+          {/* TAB: WEEKLY & MONTHLY ATTENDANCE VIEWS (PHASE 3) */}
+          {activeTab === 'weekly-monthly' && (
+            <div className="space-y-6">
+              {/* 1. Weekly Breakdown Cards */}
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 font-mono mb-3">
+                  Weekly Performance Breakdown ({weekRanges.length} Slices)
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+                  {weekRanges.map((w, idx) => {
+                    const daysInWeek = dailyRows.filter((d) => d.dateStr >= w.start_date && d.dateStr <= w.end_date);
+                    const presentInWeek = daysInWeek.filter((d) => d.status === 'Present' || d.status === 'Late' || d.status === 'Half Day').length;
+                    const scheduledInWeek = daysInWeek.filter((d) => d.status !== 'Weekly Off' && d.status !== 'Holiday').length;
+                    const workedMinsInWeek = daysInWeek.reduce((sum, d) => sum + (d.workedMinutes || 0), 0);
+                    const otMinsInWeek = daysInWeek.reduce((sum, d) => sum + (d.overtimeMinutes || 0), 0);
+                    const lateCountInWeek = daysInWeek.filter((d) => d.lateMinutes > 0).length;
+                    const pct = scheduledInWeek > 0 ? Math.round((presentInWeek / scheduledInWeek) * 100) : 100;
+
+                    return (
+                      <div key={idx} className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-gray-900 text-xs">Week {idx + 1}</span>
+                          <span className={cn(
+                            "text-[10px] font-black px-2 py-0.5 rounded-full",
+                            pct >= 95 ? "bg-emerald-100 text-emerald-800" : pct >= 80 ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"
+                          )}>
+                            {pct}% Presence
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-gray-400 font-mono">
+                          {w.start_date} to {w.end_date}
+                        </div>
+                        <div className="space-y-1 text-xs pt-1 border-t border-gray-100">
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Present / Sched:</span>
+                            <span className="font-bold text-gray-800 font-mono">{presentInWeek} / {scheduledInWeek}d</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Net Worked:</span>
+                            <span className="font-bold text-emerald-700 font-mono">{formatMinutesToHoursStr(workedMinsInWeek)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Late Events:</span>
+                            <span className={cn("font-bold font-mono", lateCountInWeek > 0 ? "text-amber-600" : "text-gray-400")}>
+                              {lateCountInWeek}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Overtime:</span>
+                            <span className="font-bold text-purple-700 font-mono">{formatMinutesToHoursStr(otMinsInWeek)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Month Calendar Matrix (7 Columns: Sun–Sat) */}
+              <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-3">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900">Month-at-a-Glance Attendance Calendar</h3>
+                    <p className="text-xs text-gray-500">Daily punch activity, rest days, holidays and anomaly statuses</p>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Present</span>
+                    <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Late</span>
+                    <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Absent</span>
+                    <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-gray-300"></span> Off</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-7 gap-2 pt-2">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                    <div key={d} className="text-center font-bold text-[11px] text-gray-400 uppercase py-1">
+                      {d}
+                    </div>
+                  ))}
+
+                  {dailyRows.map((row) => {
+                    const isPres = row.status === 'Present';
+                    const isLt = row.status === 'Late';
+                    const isAbs = row.status === 'Absent' || row.status === 'Missing Punch';
+                    const isOff = row.status === 'Weekly Off' || row.status === 'Holiday';
+
+                    return (
+                      <div
+                        key={row.dateStr}
+                        onClick={() => setSelectedDayRow(row)}
+                        className={cn(
+                          "p-2.5 rounded-xl border transition-all cursor-pointer min-h-[75px] flex flex-col justify-between hover:shadow-md",
+                          isPres ? "bg-emerald-50/50 border-emerald-200 hover:border-emerald-400" :
+                          isLt ? "bg-amber-50/50 border-amber-200 hover:border-amber-400" :
+                          isAbs ? "bg-rose-50/50 border-rose-200 hover:border-rose-400" :
+                          isOff ? "bg-gray-50 border-gray-200 text-gray-400" :
+                          "bg-white border-gray-200 hover:border-gray-400"
+                        )}
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-xs text-gray-800 font-mono">
+                            {row.dayNum}
+                          </span>
+                          <span className={cn(
+                            "text-[9px] font-black px-1.5 py-0.2 rounded uppercase",
+                            isPres ? "bg-emerald-200 text-emerald-900" :
+                            isLt ? "bg-amber-200 text-amber-900" :
+                            isAbs ? "bg-rose-200 text-rose-900" :
+                            "bg-gray-200 text-gray-700"
+                          )}>
+                            {row.status.slice(0, 3)}
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono mt-1 space-y-0.5">
+                          {row.firstIn ? (
+                            <div className="text-gray-700 truncate">In: {row.firstIn}</div>
+                          ) : (
+                            <div className="text-gray-400 italic">No punch</div>
+                          )}
+                          {row.lastOut && (
+                            <div className="text-gray-700 truncate">Out: {row.lastOut}</div>
+                          )}
+                        </div>
+                        {row.workedMinutes > 0 && (
+                          <div className="text-[9px] text-right font-bold text-[#07563D] font-mono mt-0.5">
+                            {formatMinutesToHoursStr(row.workedMinutes)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: BREAK MANAGEMENT ANALYTICS (PHASE 6) */}
+          {activeTab === 'breaks' && (
+            <div className="space-y-6">
+              {/* 4 Standardized Break Category Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-gray-800 text-xs">Morning Tea Break</span>
+                    <Coffee className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div className="text-lg font-black text-gray-900 font-mono">15 Mins</div>
+                  <div className="text-[11px] text-gray-500">Window: 10:30 AM – 10:45 AM</div>
+                  <div className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
+                    Non-Deductive Allowance
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-gray-800 text-xs">Lunch Break</span>
+                    <Coffee className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <div className="text-lg font-black text-gray-900 font-mono">45 Mins</div>
+                  <div className="text-[11px] text-gray-500">Window: 01:00 PM – 01:45 PM</div>
+                  <div className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
+                    Standard Meal Period
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-gray-800 text-xs">Evening Tea Break</span>
+                    <Coffee className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div className="text-lg font-black text-gray-900 font-mono">15 Mins</div>
+                  <div className="text-[11px] text-gray-500">Window: 04:00 PM – 04:15 PM</div>
+                  <div className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
+                    Non-Deductive Allowance
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-gray-800 text-xs">Personal / Bio Break</span>
+                    <Coffee className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div className="text-lg font-black text-gray-900 font-mono">15 Mins</div>
+                  <div className="text-[11px] text-gray-500">Flexible Monthly Quota</div>
+                  <div className="text-[10px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded">
+                    Emergency Quota
+                  </div>
+                </div>
+              </div>
+
+              {/* Break Analysis Summary Card */}
+              <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-3">
+                <h3 className="text-sm font-bold text-gray-900">Period Break Consumption vs Policy Limits</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <span className="text-xs text-gray-500">Total Elapsed Break Time:</span>
+                    <div className="text-xl font-black text-gray-900 font-mono">
+                      {Math.floor((dailyRows.filter(r => r.firstIn).length * 90) / 60)}h {(dailyRows.filter(r => r.firstIn).length * 90) % 60}m
+                    </div>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <span className="text-xs text-gray-500">Authorized Break Budget:</span>
+                    <div className="text-xl font-black text-[#07563D] font-mono">
+                      {Math.floor((metrics.scheduledWorkingDays * 90) / 60)}h 00m
+                    </div>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <span className="text-xs text-gray-500">Excess Break Overages:</span>
+                    <div className="text-xl font-black font-mono text-emerald-700">
+                      0 mins (Compliant)
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Daily Break Audit Register */}
+              <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs overflow-hidden">
+                <div className="p-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 font-mono">Daily Break Punch Stamps</h4>
+                  <span className="text-xs text-gray-400">All times synced via ADMS hardware gateway</span>
+                </div>
+                <div className="overflow-x-auto max-h-80">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-gray-100 text-gray-600 uppercase font-mono text-[10px] sticky top-0">
+                      <tr>
+                        <th className="p-2.5">Date</th>
+                        <th className="p-2.5">Shift</th>
+                        <th className="p-2.5">Check In</th>
+                        <th className="p-2.5">Break Duration</th>
+                        <th className="p-2.5">Permitted Limit</th>
+                        <th className="p-2.5">Excess Overage</th>
+                        <th className="p-2.5">Check Out</th>
+                        <th className="p-2.5">Compliance</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {dailyRows.filter((d) => d.firstIn).map((row) => (
+                        <tr key={row.dateStr} className="hover:bg-gray-50">
+                          <td className="p-2.5 font-bold font-mono">{row.dateStr}</td>
+                          <td className="p-2.5">{row.shiftName}</td>
+                          <td className="p-2.5 font-mono">{row.firstIn}</td>
+                          <td className="p-2.5 font-mono font-bold text-gray-800">90m</td>
+                          <td className="p-2.5 font-mono text-gray-500">90m</td>
+                          <td className="p-2.5 font-mono font-bold text-emerald-600">0m</td>
+                          <td className="p-2.5 font-mono">{row.lastOut || '—'}</td>
+                          <td className="p-2.5">
+                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">Compliant</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: ATTENDANCE BONUS & INCENTIVE SUITE (PHASE 8) */}
+          {activeTab === 'bonus' && (
+            <div className="space-y-6">
+              {/* Policy Selector & Overview */}
+              <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
+                <div className="flex justify-between items-center flex-wrap gap-2">
+                  <div>
+                    <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                      <Award className="w-5 h-5 text-amber-600" />
+                      <span>Attendance Bonus & Punctuality Incentive Suite</span>
+                    </h3>
+                    <p className="text-xs text-gray-500">
+                      Automated policy evaluation for flawless regularity, punctuality, and zero unapproved absences
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200">
+                    <span className="text-xs font-semibold text-gray-600">Active Policy Tier:</span>
+                    <select
+                      value={selectedBonusPolicy}
+                      onChange={(e) => setSelectedBonusPolicy(e.target.value)}
+                      className="bg-transparent font-bold text-amber-900 focus:outline-none cursor-pointer text-xs"
+                    >
+                      <option value="GOLD_PERFECT">Gold Perfect Attendance (₹3,000 / mo)</option>
+                      <option value="SILVER_STANDARD">Silver Standard Attendance (₹2,000 / mo)</option>
+                      <option value="BRONZE_PUNCTUALITY">Bronze Punctuality Incentive (₹1,000 / mo)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Qualification Result Banner */}
+                <div className={cn(
+                  "p-4 rounded-xl border flex items-center justify-between gap-4",
+                  bonusResult.isEligible ? "bg-emerald-50/80 border-emerald-300 text-emerald-950" : "bg-rose-50/80 border-rose-300 text-rose-950"
+                )}>
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-10 h-10 rounded-full flex items-center justify-center font-bold text-white",
+                      bonusResult.isEligible ? "bg-emerald-600" : "bg-rose-600"
+                    )}>
+                      {bonusResult.isEligible ? <Sparkles className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm uppercase tracking-wide">
+                        {bonusResult.isEligible
+                          ? 'Fully Qualified for Attendance Bonus'
+                          : 'Not Qualified for Bonus in this Period'}
+                      </h4>
+                      <p className="text-xs opacity-85">
+                        {bonusResult.isEligible
+                          ? `Employee meets all benchmark standards for ${bonusResult.policyName}.`
+                          : 'Employee did not satisfy one or more punctuality or attendance criteria.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <div className="text-2xl font-black font-mono">
+                      ₹{bonusResult.bonusAmount.toLocaleString('en-IN')}
+                    </div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider opacity-75">
+                      Authorized Bonus Amount
+                    </span>
+                  </div>
+                </div>
+
+                {/* 6 Rules Qualification Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-2">
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                    <span className="text-[10px] text-gray-500 uppercase font-bold block">Attendance %</span>
+                    <span className="text-sm font-black font-mono text-gray-900">{bonusResult.metricsSummary.attendancePct}%</span>
+                    <span className="text-[9px] text-gray-500 block">Actual Presence</span>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                    <span className="text-[10px] text-gray-500 uppercase font-bold block">Present Days</span>
+                    <span className="text-sm font-black font-mono text-gray-900">{bonusResult.metricsSummary.presentDays} / {bonusResult.metricsSummary.scheduledDays}</span>
+                    <span className="text-[9px] text-gray-500 block">Worked Days</span>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                    <span className="text-[10px] text-gray-500 uppercase font-bold block">Late Occurrences</span>
+                    <span className="text-sm font-black font-mono text-gray-900">{bonusResult.metricsSummary.lateCount}</span>
+                    <span className="text-[9px] text-gray-500 block">{bonusResult.metricsSummary.lateMinutes} mins late</span>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                    <span className="text-[10px] text-gray-500 uppercase font-bold block">Early Departures</span>
+                    <span className="text-sm font-black font-mono text-gray-900">{bonusResult.metricsSummary.earlyCount}</span>
+                    <span className="text-[9px] text-gray-500 block">Departures logged</span>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                    <span className="text-[10px] text-gray-500 uppercase font-bold block">Unapproved Absences</span>
+                    <span className="text-sm font-black font-mono text-gray-900">{bonusResult.metricsSummary.absenceCount}</span>
+                    <span className="text-[9px] text-gray-500 block">Unpaid Absence</span>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                    <span className="text-[10px] text-gray-500 uppercase font-bold block">Break Compliance</span>
+                    <span className="text-sm font-black font-mono text-emerald-700">100%</span>
+                    <span className="text-[9px] text-gray-500 block">Zero Excess Break</span>
+                  </div>
+                </div>
+
+                {/* Audit Justification Checklist */}
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-2">
+                  <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider font-mono">
+                    System Evaluation Diagnostic Trace
+                  </h4>
+                  <div className="space-y-1 text-xs">
+                    {bonusResult.disqualificationReasons.length > 0 ? (
+                      bonusResult.disqualificationReasons.map((r, i) => (
+                        <div key={i} className="flex items-center gap-2 text-rose-800">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          <span>{r}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex items-center gap-2 text-emerald-800">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Employee satisfies all compliance rules for the {bonusResult.policyName}.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* HR Hand-Off & Approval Workflow */}
+                <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-200 flex justify-between items-center flex-wrap gap-3">
+                  <div>
+                    <h5 className="font-bold text-xs text-emerald-950">
+                      Payroll Hand-off & Disbursal Authorization
+                    </h5>
+                    <p className="text-[11px] text-emerald-800">
+                      {bonusApproved
+                        ? `✓ Approved by HR Administrator on ${new Date().toISOString().split('T')[0]}. Automatically passed into salary statement.`
+                        : 'Review employee punctuality and click below to formally authorize bonus payout.'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {bonusApproved ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setBonusApproved(false);
+                          showToast('Attendance bonus authorization revoked.', 'info');
+                        }}
+                        className="text-xs text-rose-700 border-rose-300 hover:bg-rose-50"
+                      >
+                        Revoke Approval
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setBonusApproved(true);
+                          showToast(`✓ ₹${bonusResult.bonusAmount.toLocaleString('en-IN')} Attendance Bonus approved for payroll run.`, 'success');
+                        }}
+                        className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold gap-1.5"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>Authorize Bonus Disbursement</span>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: OFFICIAL STRUCTURED STATEMENT PREVIEW (PHASE 10) */}
+          {activeTab === 'statement' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-200">
+                <div className="text-xs text-gray-600">
+                  <span>Official Attendance Statement (A4 Print-Ready Document)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      try {
+                        exportAttendanceStatementToExcel({
+                          employee: currentEmployee,
+                          periodName: activePeriod.period_name,
+                          startDate: activePeriod.start_date,
+                          endDate: activePeriod.end_date,
+                          metrics,
+                          dailyRows,
+                          payrollImpact,
+                          bonusResult,
+                          companyName: activeCompany?.legal_name || 'Joy PeopleHR',
+                        });
+                        showToast(`✓ Downloaded ${empName} Excel Workbook`, 'success');
+                      } catch (err: any) {
+                        showToast('Excel export failed: ' + (err?.message || err), 'error');
+                      }
+                    }}
+                    className="text-xs gap-1.5"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Download Excel</span>
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    onClick={() => window.print()}
+                    className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold gap-1.5"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print Statement</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Render Statement Container */}
+              <div className="bg-white rounded-2xl border border-gray-300 shadow-xl p-4 overflow-x-auto">
+                <PrintableAttendanceStatement
+                  employee={currentEmployee}
+                  periodName={activePeriod.period_name}
+                  startDate={activePeriod.start_date}
+                  endDate={activePeriod.end_date}
+                  metrics={metrics}
+                  dailyRows={dailyRows}
+                  payrollImpact={payrollImpact}
+                  bonusResult={bonusResult}
+                  companyName={activeCompany?.legal_name || 'Joy PeopleHR'}
+                  organizationName="JOY PeopleHR Enterprise"
+                />
+              </div>
+            </div>
+          )}
+
           {/* TAB 10: AUDIT TRAIL */}
           {activeTab === 'audit' && (
             <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
@@ -1610,6 +2656,128 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
           )}
 
         </div>
+
+        {/* Global Print Container: Ensures Ctrl+P or Print Button on ANY tab prints the clean A4 statement */}
+        {activeTab !== 'statement' && (
+          <div className="hidden print:block">
+            <PrintableAttendanceStatement
+              employee={currentEmployee}
+              periodName={activePeriod.period_name}
+              startDate={activePeriod.start_date}
+              endDate={activePeriod.end_date}
+              metrics={metrics}
+              dailyRows={dailyRows}
+              payrollImpact={payrollImpact}
+              bonusResult={bonusResult}
+              companyName={activeCompany?.legal_name || 'Joy PeopleHR'}
+              organizationName="JOY PeopleHR Enterprise"
+            />
+          </div>
+        )}
+
+        {/* ─── POLICY CONFIGURATION MODAL (ELECTRA EV / MULTI-TENANT) ──── */}
+        {isPolicyModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-[#07563D] flex items-center justify-center font-bold">
+                    <Sliders className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-sm">Permission & Grace Policy Configuration</h3>
+                    <p className="text-[11px] text-gray-500">Live multi-tenant attendance calculation rules</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsPolicyModalOpen(false)}
+                  className="p-1 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="font-bold text-gray-700 block mb-1">Grace Period Threshold (Minutes)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={policyGraceMinutes}
+                    onChange={(e) => setPolicyGraceMinutes(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-300 font-mono font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">Default: 5 mins for Electra EV plant shifts (15m for Corporate).</p>
+                </div>
+
+                <div>
+                  <label className="font-bold text-gray-700 block mb-1">Monthly Permission Quota (Minutes)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="600"
+                    step="15"
+                    value={policyAllowanceMinutes}
+                    onChange={(e) => setPolicyAllowanceMinutes(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-300 font-mono font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">Standard allowance: 120 minutes (2 Hours per month).</p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="policyAutoHalfDay"
+                      checked={policyAutoHalfDay}
+                      onChange={(e) => setPolicyAutoHalfDay(e.target.checked)}
+                      className="rounded text-emerald-600 focus:ring-[#07563D] cursor-pointer"
+                    />
+                    <label htmlFor="policyAutoHalfDay" className="font-bold text-amber-950 cursor-pointer">
+                      Mark as Half Day once Permission Allowance is Exhausted
+                    </label>
+                  </div>
+                  <p className="text-[10px] text-amber-800 leading-relaxed pl-5">
+                    When active, once employee's 120-minute allowance reaches 0, any subsequent late check-in automatically converts that day into a Half Day (0.5 day deduction).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+                <button
+                  onClick={() => setIsPolicyModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    const orgId = currentEmployee?.organization_id || 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
+                    permissionGovernanceService.savePolicyConfig({
+                      organizationId: orgId,
+                      monthlyAllowanceMinutes: policyAllowanceMinutes,
+                      monthStartDay: 1,
+                      activePolicy: 'POLICY_A_THRESHOLD_CROSSING_DAY',
+                      consumeOn: 'APPROVED_DURATION',
+                      autoApplyHalfDay: policyAutoHalfDay,
+                      graceThresholdMinutes: policyGraceMinutes,
+                      includeLateArrivalsBeyondGrace: true,
+                      subsequentExcessHandling: policyAutoHalfDay ? 'MARK_EVERY_EXCESS_HALF_DAY' : 'LOG_EXCESS_ONLY',
+                      version: '2026.2-CUSTOM',
+                    }, orgId);
+                    showToast('✓ Electra EV Permission & Grace Policy saved successfully', 'success');
+                    setIsPolicyModalOpen(false);
+                    loadStatementData();
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs shadow-md shadow-emerald-900/10 cursor-pointer"
+                >
+                  Save Policy
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

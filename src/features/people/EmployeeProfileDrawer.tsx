@@ -243,7 +243,14 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
 
   if (!employee) return null;
 
-  const isVendor = employee.employment_source === 'VENDOR' || employee.employment?.employment_source === 'VENDOR';
+  const isVendor =
+    employee.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ||
+    employee.company_id === 'c0bbfb28-1500-4ebb-aba8-453b3681f342' ||
+    String(employee.employee_code || '').trim().toUpperCase().startsWith('EEV') ||
+    employee.employment_source === 'VENDOR' ||
+    employee.employment?.employment_source === 'VENDOR' ||
+    String(employee.employment_type || employee.employment?.employment_type || '').toUpperCase() === 'CONTRACT' ||
+    Boolean(employee.vendor_id || employee.employment?.vendor_id);
   const joinDate = employee.employment?.doj || employee.created_at?.split('T')[0] || 'Not specified';
   const managerName = employee.employment?.reporting_manager_name || employee.reporting_manager_name || (employee as any).manager_name || 'Not assigned';
   const workLocation = employee.employment?.work_location || (employee as any).work_location || (employee as any).location || 'Not specified';

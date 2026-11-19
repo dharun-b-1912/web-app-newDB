@@ -65,8 +65,10 @@ import {
   BiometricDeviceStatus,
   BiometricEmployeeMapping,
 } from '../../../services/platform/biometricHubService';
+import { AdmsCloudPushVisualizer } from '../components/AdmsCloudPushVisualizer';
 
 type SubTabId =
+  | 'adms-cloud'
   | 'overview'
   | 'inventory'
   | 'monitoring'
@@ -186,6 +188,7 @@ export const BiometricHubMasterView: React.FC = () => {
   };
 
   const subTabs: SubTabItem[] = [
+    { id: 'adms-cloud', label: 'ADMS Cloud Push Architecture', icon: UploadCloud, badge: 'Realtime Flow' },
     { id: 'overview', label: 'Overview', icon: Radio },
     { id: 'inventory', label: 'Device Inventory', icon: Fingerprint, badge: `${devices.length}` },
     { id: 'connectors', label: 'Connector Management', icon: Server, badge: `${connectors.length}` },
@@ -485,9 +488,40 @@ export const BiometricHubMasterView: React.FC = () => {
         </button>
       </div>
 
+      {/* TAB 0: ADMS CLOUD PUSH REALTIME VISUAL ARCHITECTURE */}
+      {activeTab === 'adms-cloud' && (
+        <AdmsCloudPushVisualizer />
+      )}
+
       {/* TAB 1: OVERVIEW DASHBOARD (REALTIME DATABASE METRICS) */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
+          {/* Quick Access to ADMS Cloud Architecture */}
+          <div className="bg-gradient-to-r from-emerald-950 via-gray-900 to-indigo-950 rounded-2xl border border-emerald-500/30 p-5 text-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                <UploadCloud className="w-6 h-6 text-emerald-400 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-base text-white">ADMS Cloud Push Visual Architecture</h4>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">
+                    Interactive Live Engine
+                  </span>
+                </div>
+                <p className="text-xs text-emerald-100/70 mt-1">
+                  Manage organization device connections, authenticate ZKTeco/eSSL cloud push, inspect employee code mappings, and monitor realtime punch packets.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab('adms-cloud')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-gray-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all shrink-0 cursor-pointer"
+            >
+              <span>Launch Architecture Flow</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
           {/* JOY FaceAttend — Biometric Engine & CompreFace Diagnostics */}
           <div className="bg-white rounded-2xl border border-gray-200/90 shadow-xs p-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">

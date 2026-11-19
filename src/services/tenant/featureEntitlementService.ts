@@ -81,8 +81,8 @@ export const PLAN_FEATURE_MATRIX: Record<PlanTier, Record<TenantFeatureKey, bool
     analytics: false,
     travel_expense: false,
     ai_assistant: false,
-    biometric: false,
-    vendor_management: false,
+    biometric: true,
+    vendor_management: true,
     client_billing: false,
   },
   Business: {
@@ -104,8 +104,8 @@ export const PLAN_FEATURE_MATRIX: Record<PlanTier, Record<TenantFeatureKey, bool
     analytics: true,
     travel_expense: true,
     ai_assistant: false,
-    biometric: false,
-    vendor_management: false,
+    biometric: true,
+    vendor_management: true,
     client_billing: false,
   },
   Enterprise: {
@@ -202,7 +202,7 @@ export const FEATURE_MIN_PLAN: Record<TenantFeatureKey, PlanTier> = {
   performance: 'Enterprise',
   vendor_management: 'Enterprise',
   client_billing: 'Enterprise',
-  biometric: 'Enterprise',
+  biometric: 'Starter',
   ai_assistant: 'Enterprise',
 };
 
@@ -283,12 +283,25 @@ export const featureEntitlementService = {
    * Resolves the authoritative subscription plan for a tenant organization.
    */
   getTenantPlan(explicitOrgId?: string): PlanTier {
-    const targetOrgId = explicitOrgId || getActiveOrgId();
+    const rawTarget = explicitOrgId || getActiveOrgId() || '';
+    const targetOrgId = rawTarget.trim().toLowerCase();
+
+    // 0. Authoritative Enterprise Tenants: Joy Corporate Solutions and Electra EV are permanently Enterprise
+    if (
+      targetOrgId === '0c621892-e938-4707-9957-13534ea32c19' ||
+      targetOrgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ||
+      targetOrgId === 'org-joy-01' ||
+      targetOrgId === 'org-electra-01' ||
+      targetOrgId.includes('joy') ||
+      targetOrgId.includes('electra')
+    ) {
+      return 'Enterprise';
+    }
 
     // 1. Explicit local tenant plan override
     try {
       if (typeof window !== 'undefined') {
-        const storedPlan = localStorage.getItem(`workforce_tenant_plan_${targetOrgId}`);
+        const storedPlan = localStorage.getItem(`workforce_tenant_plan_${rawTarget}`);
         const normalized = normalizePlanName(storedPlan);
         if (normalized) return normalized;
       }
@@ -300,7 +313,7 @@ export const featureEntitlementService = {
         const rawOrg = localStorage.getItem('workforce_active_org');
         if (rawOrg) {
           const parsed = JSON.parse(rawOrg);
-          if (parsed && (parsed.id === targetOrgId || !targetOrgId)) {
+          if (parsed && (parsed.id === rawTarget || !rawTarget)) {
             const p = normalizePlanName(parsed.plan);
             if (p) return p;
           }
@@ -311,7 +324,7 @@ export const featureEntitlementService = {
     // 3. Customer commercial overrides in SaaS catalogue
     try {
       const overrides = saasCatalogueService.getCustomerOverrides();
-      const match = overrides.find((o) => o.tenantId === targetOrgId);
+      const match = overrides.find((o) => o.tenantId === rawTarget);
       if (match?.basePlan) {
         const p = normalizePlanName(match.basePlan);
         if (p) return p;
@@ -320,21 +333,12 @@ export const featureEntitlementService = {
 
     // 4. Platform Tenant Directory record
     try {
-      const orgRecord = platformTenantService.getOrganizationById(targetOrgId);
+      const orgRecord = platformTenantService.getOrganizationById(rawTarget);
       if (orgRecord?.plan) {
         const p = normalizePlanName(orgRecord.plan);
         if (p) return p;
       }
     } catch {}
-
-    // 5. Default: Joy Corporate Solutions is Enterprise; other tenants default to Starter
-    if (
-      targetOrgId === '0c621892-e938-4707-9957-13534ea32c19' ||
-      targetOrgId === 'org-joy-01' ||
-      targetOrgId.toLowerCase().includes('joy')
-    ) {
-      return 'Enterprise';
-    }
 
     return 'Starter';
   },
@@ -351,7 +355,7 @@ export const featureEntitlementService = {
    * Considers: Plan Baseline -> Addon Subscriptions -> Customer Overrides -> Local Admin Toggles.
    */
   canUseFeature(featureKey: TenantFeatureKey, explicitOrgId?: string): boolean {
-    if (featureKey === 'lms') return true;
+    if (featureKey === 'lms' || featureKey === 'biometric' || featureKey === 'vendor_management') return true;
     const orgId = explicitOrgId || getActiveOrgId();
 
     // 1. Direct tenant feature toggle overrides (highest precedence)

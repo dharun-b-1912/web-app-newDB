@@ -72,7 +72,8 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
   const [selectedCandidate, setSelectedCandidate] = useState<DiscoveredDevice | null>(null);
 
   // Form Fields
-  const [vendor, setVendor] = useState<'eSSL' | 'ZKTeco' | 'Mantra' | 'Matrix' | 'Generic'>('eSSL');
+  const [vendor, setVendor] = useState<'eSSL' | 'ZKTeco' | 'Realtime' | 'Mantra' | 'Matrix' | 'Suprema' | 'Hikvision' | 'Generic'>('eSSL');
+  const [deviceType, setDeviceType] = useState<string>('Facial Recognition');
   const [model, setModel] = useState('AiFace Magnum');
   const [serialNumber, setSerialNumber] = useState('');
   const [simCarrier, setSimCarrier] = useState('Airtel 4G / JIO IoT SIM');
@@ -278,7 +279,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
     return biometricGatewayService.registerDevice({
       device_name: deviceName,
       vendor: vendor as any,
-      device_type: 'Facial Recognition',
+      device_type: deviceType as any,
       model,
       serial_number: resolveSerialNumber(),
       ip_address: isSimAdms ? (ipAddress.trim() || '100.64.0.1') : ipAddress,
@@ -701,9 +702,27 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                   >
                     <option value="eSSL">eSSL</option>
                     <option value="ZKTeco">ZKTeco</option>
+                    <option value="Realtime">Realtime (Realtime Biometrics)</option>
                     <option value="Mantra">Mantra</option>
-                    <option value="Matrix">Matrix</option>
-                    <option value="Generic">Generic</option>
+                    <option value="Matrix">Matrix COSEC</option>
+                    <option value="Hikvision">Hikvision</option>
+                    <option value="Suprema">Suprema</option>
+                    <option value="Generic">Generic (TCP/IP)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-gray-700">Device Type</label>
+                  <select
+                    value={deviceType}
+                    onChange={(e) => setDeviceType(e.target.value)}
+                    className="w-full mt-1 px-3 py-1.5 text-xs border border-gray-300 rounded-xl bg-white"
+                  >
+                    <option value="Facial Recognition">Facial Recognition</option>
+                    <option value="Fingerprint">Fingerprint</option>
+                    <option value="Fingerprint & RFID">Fingerprint & RFID</option>
+                    <option value="RFID Card">RFID Card</option>
+                    <option value="Multi-Modal">Multi-Modal (Face + Finger + Card)</option>
+                    <option value="Turnstile Gate">Turnstile Flap Barrier / Gate</option>
                   </select>
                 </div>
                 <div>

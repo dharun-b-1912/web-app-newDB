@@ -92,6 +92,17 @@ export const DEFAULT_ORGANIZATIONS: Organization[] = [
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
   },
+  {
+    id: 'c5ab6b03-adde-47cc-a033-064f4c39b21e',
+    name: 'Electra EV',
+    slug: 'electra-ev',
+    status: 'Active',
+    plan: 'Enterprise',
+    default_currency: 'INR',
+    timezone: 'Asia/Kolkata',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
 ];
 
 export const DEFAULT_LEGAL_ENTITIES: Company[] = [
@@ -107,6 +118,21 @@ export const DEFAULT_LEGAL_ENTITIES: Company[] = [
     currency: 'INR',
     timezone: 'Asia/Kolkata',
     address: 'Avinashi Road, Peelamedu, Coimbatore, Tamil Nadu 641004',
+    status: 'Active',
+    created_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: '3041388a-b7b2-438a-cfba-5fd788b4cbf3',
+    organization_id: 'c5ab6b03-adde-47cc-a033-064f4c39b21e',
+    legal_name: 'Electra EV Pvt Ltd',
+    trade_name: 'Electra EV',
+    statutory_registration_no: 'U34100TN2024PTC054321',
+    tax_id: 'BBBEV5678G',
+    country: 'India',
+    city: 'Chennai',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata',
+    address: 'Plant 1, Industrial Corridor, Chennai, Tamil Nadu 600001',
     status: 'Active',
     created_at: '2024-01-01T00:00:00Z',
   },
@@ -284,9 +310,10 @@ export class OrganizationContextService {
             const rawOrgId = user.organization_id || (user as any).organizationId;
             const isUuid = typeof rawOrgId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawOrgId);
             const userOrgId = isUuid ? rawOrgId : '0c621892-e938-4707-9957-13534ea32c19';
+            const isPrivileged = isPlatformAdmin || (primaryRole as string) === 'HR Head' || (primaryRole as string) === 'Company Admin' || (primaryRole as string) === 'Platform Admin';
             let orgQ = supabase.from('organizations').select('*');
             let compQ = supabase.from('companies').select('*');
-            if (rawOrgId !== 'platform-root') {
+            if (rawOrgId !== 'platform-root' && !isPrivileged) {
               orgQ = orgQ.eq('id', userOrgId);
               compQ = compQ.eq('organization_id', userOrgId);
             }
@@ -320,23 +347,44 @@ export class OrganizationContextService {
             console.warn('[OrgContextService] Supabase context query notice:', err);
           }
 
+          // Ensure default organizations (Joy Corporate and Electra EV) are present
+          for (const defOrg of DEFAULT_ORGANIZATIONS) {
+            if (!allOrgs.some((o) => o.id === defOrg.id)) {
+              allOrgs.push(defOrg);
+            }
+          }
+          for (const defEnt of DEFAULT_LEGAL_ENTITIES) {
+            if (!allEntities.some((e) => e.id === defEnt.id)) {
+              allEntities.push(defEnt);
+            }
+          }
+
           if (allOrgs.length > 0) OrganizationContextService.cachedOrgs = allOrgs;
           if (allEntities.length > 0) OrganizationContextService.cachedEntities = allEntities;
           OrganizationContextService.cacheTimestamp = Date.now();
         }
 
-      // 2. Authoritative Active Organization Selection: strictly enforce user.organization_id
+      // 2. Authoritative Active Organization Selection: check cached/selected active org first if valid
       let activeOrg: Organization | null = null;
-      const userOrgId = user.organization_id || (user as any).organizationId;
+      let targetOrgId: string | null = null;
+      if (typeof localStorage !== 'undefined') {
+        const cachedOrgId = localStorage.getItem(STORAGE_KEYS.ACTIVE_ORG_ID);
+        if (cachedOrgId && (allOrgs.some((o) => o.id === cachedOrgId) || cachedOrgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' || cachedOrgId === '0c621892-e938-4707-9957-13534ea32c19')) {
+          targetOrgId = cachedOrgId;
+        }
+      }
+      if (!targetOrgId) {
+        targetOrgId = user.organization_id || (user as any).organizationId;
+      }
 
-      if (userOrgId) {
-        activeOrg = allOrgs.find((o) => o.id === userOrgId) || null;
+      if (targetOrgId) {
+        activeOrg = allOrgs.find((o) => o.id === targetOrgId) || null;
         if (!activeOrg) {
           // Construct authentic tenant organization descriptor preserving the user's real organization_id
           activeOrg = {
-            id: userOrgId,
-            name: (user as any).organization_name || (user as any).tenant_name || (userOrgId === '0c621892-e938-4707-9957-13534ea32c19' ? 'Joy Corporate Solutions' : 'Authorized Organization'),
-            slug: `tenant-${userOrgId.slice(0, 8)}`,
+            id: targetOrgId,
+            name: (user as any).organization_name || (user as any).tenant_name || (targetOrgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ? 'Electra EV' : targetOrgId === '0c621892-e938-4707-9957-13534ea32c19' ? 'Joy Corporate Solutions' : 'Authorized Organization'),
+            slug: targetOrgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ? 'electra-ev' : `tenant-${targetOrgId.slice(0, 8)}`,
             status: 'Active',
             plan: 'Enterprise',
             default_currency: 'INR',
@@ -447,6 +495,9 @@ export class OrganizationContextService {
     };
 
     localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG_ID, targetOrg.id);
+    localStorage.setItem('joy_active_tenant_id', targetOrg.id);
+    localStorage.setItem('workforce_active_org', JSON.stringify(targetOrg));
+    localStorage.setItem('workforce_active_organization', JSON.stringify(targetOrg));
 
     // Refresh context for target org
     OrganizationContextService.clearCache();
