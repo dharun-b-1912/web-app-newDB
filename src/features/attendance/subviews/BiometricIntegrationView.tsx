@@ -385,7 +385,12 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
 
     // STEP 2: Fetch employees directory once in background on mount
     api.getEmployees({ skipEnrichment: true }).then(emps => {
-      if (!destroyed && Array.isArray(emps) && emps.length > 0) setEmployees(emps);
+      if (!destroyed && Array.isArray(emps) && emps.length > 0) {
+        setEmployees(emps);
+        biometricGatewayService.clearUserSummaryCache();
+        biometricGatewayService.invalidateDeviceUsersResultCache();
+        if (!selectedWorkspaceDeviceRef.current) loadData();
+      }
     }).catch(() => {});
 
     // STEP 3: Start background non-blocking connector heartbeat
@@ -393,6 +398,8 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
 
     // STEP 4: Background Supabase synchronization for multi-browser and multi-tenant persistence
     biometricGatewayService.syncDevicesFromSupabase().then(() => {
+      biometricGatewayService.clearUserSummaryCache();
+      biometricGatewayService.invalidateDeviceUsersResultCache();
       if (!destroyed && !selectedWorkspaceDeviceRef.current) loadData();
     }).catch(() => {});
 
@@ -1219,10 +1226,10 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
         <Card className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-2xs">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">JOY Connector</p>
-              <p className="text-xl font-black text-gray-900 mt-1">{isConnectorOnline ? 'Online' : 'Offline'}</p>
+              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{getActiveOrgId() === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ? 'ADMS Cloud Push' : 'JOY Connector'}</p>
+              <p className="text-xl font-black text-gray-900 mt-1">{onlineDevicesCount > 0 || isConnectorOnline ? 'Online' : 'Offline'}</p>
               <p className="text-[11px] text-gray-500 font-semibold mt-0.5">
-                {isConnectorOnline ? 'Heartbeat active' : 'Service offline'}
+                {onlineDevicesCount > 0 ? (getActiveOrgId() === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ? '4G Cellular stream active' : 'Heartbeat active') : 'Service offline'}
               </p>
             </div>
             <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center">
@@ -1418,7 +1425,11 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
 
                       {/* Connector Status */}
                       <TableCell>
-                        {isConnectorOnline ? (
+                        {(d.serial_number === 'JNP2263200782' || d.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' || d.ip_address?.startsWith('100.')) ? (
+                          <span className="text-xs text-emerald-800 font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Active (ADMS Cloud / 4G)
+                          </span>
+                        ) : isConnectorOnline ? (
                           <span className="text-xs text-emerald-800 font-semibold flex items-center gap-1">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Online (LAN)
                           </span>

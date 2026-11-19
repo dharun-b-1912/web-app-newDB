@@ -17,3 +17,4 @@ async function fixBiometricDeviceCols() {
 }
 
 fixBiometricDeviceCols();
+
