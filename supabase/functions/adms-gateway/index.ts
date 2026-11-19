@@ -477,35 +477,49 @@ async function redisDel(key: string): Promise<void> {
 serve(async (req: Request) => {
   try {
     const url = new URL(req.url);
-  const pathname = url.pathname;
-  const sn = (url.searchParams.get('SN') || url.searchParams.get('sn') || '').trim();
+    const pathname = url.pathname;
+    let jsonBody: any = null;
+    if (req.method === 'POST' && req.headers.get('content-type')?.includes('application/json')) {
+      try {
+        jsonBody = await req.json();
+      } catch (_) {}
+    }
 
-  // Create authoritative Supabase Admin Client
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SECRET_KEY') || '';
-  const supabase = createClient(supabaseUrl, supabaseKey);
+    const sn = (url.searchParams.get('SN') || url.searchParams.get('sn') || jsonBody?.sn || jsonBody?.SN || '').trim();
 
-  // --------------------------------------------------------------------------
-  // 0. ADMIN / MANUAL SYNC TRIGGER
-  // e.g. GET /functions/v1/adms-gateway?sync=1&sn=TDBD253600550
-  // --------------------------------------------------------------------------
-  if (url.searchParams.get('sync') === '1' || url.searchParams.get('action') === 'sync' || url.searchParams.get('cmd')) {
-    const targetSn = (url.searchParams.get('sn') || sn || 'TDBD253600550').trim();
-    const commandText = url.searchParams.get('raw_cmd') || `C:1001:CHECK\nC:1002:DATA QUERY ATTLOG`;
-    await redisSet(`adms_cmd_queue:${targetSn}`, commandText, 300);
-    // Also clear auto lock so periodic sync can proceed later
-    await redisDel(`adms_auto_lock:${targetSn}`);
-    console.log(`[ADMS-EDGE] 📥 Manual command queued for terminal ${targetSn}:\n${commandText}`);
-    return new Response(JSON.stringify({
-      success: true,
-      sn: targetSn,
-      message: `Sync command successfully queued for biometric terminal ${targetSn}. It will be picked up on its next poll (<= 10 seconds).`,
-      command: commandText,
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+    // Create authoritative Supabase Admin Client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SECRET_KEY') || '';
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // --------------------------------------------------------------------------
+    // 0. ADMIN / MANUAL SYNC TRIGGER
+    // e.g. GET /functions/v1/adms-gateway?sync=1&sn=TDBD253600550
+    // e.g. POST /functions/v1/adms-gateway with { action: 'sync', sn: '...', raw_cmd: '...' }
+    // --------------------------------------------------------------------------
+    const isSync = url.searchParams.get('sync') === '1' || 
+                   url.searchParams.get('action') === 'sync' || 
+                   Boolean(url.searchParams.get('cmd')) || 
+                   jsonBody?.action === 'sync' || 
+                   Boolean(jsonBody?.cmd);
+
+    if (isSync) {
+      const targetSn = (url.searchParams.get('sn') || jsonBody?.sn || sn || 'JNP2263200782').trim();
+      const commandText = url.searchParams.get('raw_cmd') || jsonBody?.raw_cmd || `C:1001:CHECK\nC:1002:DATA QUERY ATTLOG`;
+      await redisSet(`adms_cmd_queue:${targetSn}`, commandText, 86400);
+      // Also clear auto lock so periodic sync can proceed immediately
+      await redisDel(`adms_auto_lock:${targetSn}`);
+      console.log(`[ADMS-EDGE] 📥 Command queued for terminal ${targetSn} (length: ${commandText.length} bytes)`);
+      return new Response(JSON.stringify({
+        success: true,
+        sn: targetSn,
+        message: `Sync command successfully queued for biometric terminal ${targetSn}. It will be picked up on its next poll (<= 10 seconds).`,
+        command: commandText.length > 500 ? `${commandText.slice(0, 500)}... (${commandText.split('\n').length} commands)` : commandText,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
   // --------------------------------------------------------------------------
   // 1. TERMINAL INITIAL HANDSHAKE (GET /iclock/cdata.aspx?SN=...)

@@ -40,3 +40,4 @@ for (let i = 1; i < lines.length; i++) {
 
 console.log('Distinct Departments in raw data:', Array.from(deps));
 console.log('Distinct Designations in raw data:', Array.from(desigs));
+

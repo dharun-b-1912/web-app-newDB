@@ -10,3 +10,4 @@ const p3Lines = fs.readFileSync(path.join(__dirname, 'raw_part3.csv'), 'utf8').s
 console.log('Part 1 total lines (including header):', p1Lines.length);
 console.log('Part 2 total lines (including header):', p2Lines.length);
 console.log('Part 3 total lines (including header):', p3Lines.length);
+

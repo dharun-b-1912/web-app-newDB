@@ -75,3 +75,4 @@ p1NotIn171.forEach(r => {
   newByStatus[s] = (newByStatus[s] || 0) + 1;
 });
 console.log('\nNew records by status:', newByStatus);
+

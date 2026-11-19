@@ -66,3 +66,4 @@ p3.forEach(r => {
   p3Status[st] = (p3Status[st] || 0) + 1;
 });
 console.log('Part 3 status breakdown:', p3Status);
+

@@ -39,3 +39,4 @@ console.log('38805 ->', excelSerialToDateStr(38805));
 console.log('46202 ->', excelSerialToDateStr(46202));
 console.log('21.07.2026 ->', excelSerialToDateStr('21.07.2026'));
 console.log('16-11-20206 ->', excelSerialToDateStr('16-11-20206'));
+

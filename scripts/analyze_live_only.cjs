@@ -103,3 +103,4 @@ liveCategorized.filter(x => x.type === 'SUB').forEach(x => console.log(`Badge ${
 
 console.log('\nBlank / unassigned list:');
 liveCategorized.filter(x => x.type === 'BLANK').forEach(x => console.log(`Unassigned: ${x.name} (${x.dept || 'NO DEPT'}, Desig: ${x.desig})`));
+

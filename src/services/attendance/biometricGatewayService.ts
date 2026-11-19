@@ -1182,28 +1182,31 @@ class BiometricGatewayService {
           last_punch_at: '2026-11-19T05:28:11.000Z',
           last_attendance_sync_at: new Date().toISOString(),
         };
-        const defaultDevice2: BiometricDevice = {
-          id: '45f06da9-066b-428c-baa7-973c500850a6',
+        list = [...list, defaultDevice1];
+        setStore(STORAGE_KEYS.DEVICES, list);
+      } else if (targetOrg === 'c5ab6b03-adde-47cc-a033-064f4c39b21e') {
+        const electraDevice: BiometricDevice = {
+          id: 'b0e1d1a6-0c6f-4782-950f-eb4d80dc006e',
           organization_id: targetOrg,
-          gateway_agent_id: 'agent-cbe-01',
-          device_name: 'eSSL MB160 — Bus Attendance Terminal',
+          gateway_agent_id: 'agent-electra-01',
+          device_name: 'eSSL MB160 — Plant Main Gate (4G FDLTE)',
           device_type: 'Fingerprint & RFID',
           vendor: 'eSSL',
           model: 'MB160',
           serial_number: 'JNP2263200782',
-          ip_address: '100.64.211.128',
-          port: 80,
-          location_description: 'Transport / Bus Gate',
-          branch: 'Joy Office',
+          ip_address: '100.109.56.254',
+          port: 4370,
+          location_description: 'Plant Main Gate (4G FDLTE)',
+          branch: 'Electra EV Plant',
           direction_mode: 'BOTH',
           status: 'Online',
-          registered_users_count: 14,
+          registered_users_count: 217,
           sync_frequency_mins: 1,
           last_sync: new Date().toISOString(),
           last_punch_at: undefined,
           last_attendance_sync_at: new Date().toISOString(),
         };
-        list = [...list, defaultDevice1, defaultDevice2];
+        list = [...list, electraDevice];
         setStore(STORAGE_KEYS.DEVICES, list);
       }
     }
@@ -1300,31 +1303,32 @@ class BiometricGatewayService {
             if (seenKeys.has(key)) continue;
             seenKeys.add(key);
 
-            const isMB160 = (d.device_name || '').toUpperCase().includes('MB160') || d.serial_number === 'JNP2263200782' || d.port === 80;
-            const devName = d.device_name || (isMB160 ? 'eSSL MB160 — Bus Attendance Terminal' : 'eSSL Ai-FACE MAGNUM Terminal — Main Entrance');
+            const isMB160 = (d.device_name || '').toUpperCase().includes('MB160') || d.serial_number === 'JNP2263200782' || d.port === 80 || d.port === 4370;
+            const isElectra = (d.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' || targetOrg === 'c5ab6b03-adde-47cc-a033-064f4c39b21e');
+            const devName = d.device_name || (isMB160 ? (isElectra ? 'eSSL MB160 — Plant Main Gate (4G FDLTE)' : 'eSSL MB160 — Bus Attendance Terminal') : 'eSSL Ai-FACE MAGNUM Terminal — Main Entrance');
             const devModel = d.model || (isMB160 ? 'MB160' : 'Ai-FACE MAGNUM');
             const devType = d.device_type || (isMB160 ? 'Fingerprint & RFID' : 'Facial Recognition');
             const devSerial = d.serial_number || (isMB160 ? 'JNP2263200782' : 'TDBD253600550');
-            const devBranch = branchMap[d.branch_id] || d.branch || 'Joy Office';
-            const devLocation = d.location_description || (isMB160 ? 'Transport / Bus Gate' : 'Main Entrance');
+            const devBranch = branchMap[d.branch_id] || d.branch || (isElectra ? 'Electra EV Plant' : 'Joy Office');
+            const devLocation = d.location_description || (isMB160 ? (isElectra ? 'Plant Main Gate (4G FDLTE)' : 'Transport / Bus Gate') : 'Main Entrance');
             const devLastPunch = punchMap[d.id] || (isMB160 ? undefined : '2026-11-19T05:28:11.000Z');
 
             mapped.push({
               id: d.id,
               organization_id: d.organization_id || targetOrg,
-              gateway_agent_id: d.connector_id || d.gateway_agent_id || 'agent-cbe-01',
+              gateway_agent_id: d.connector_id || d.gateway_agent_id || (isElectra ? 'agent-electra-01' : 'agent-cbe-01'),
               device_name: devName,
               device_type: devType as any,
               vendor: (d.vendor || 'eSSL') as any,
               model: devModel,
               serial_number: devSerial,
-              ip_address: d.ip_address || (isMB160 ? '100.64.211.128' : '192.168.1.201'),
-              port: d.port || (isMB160 ? 80 : 4370),
+              ip_address: d.ip_address || (isMB160 ? '100.109.56.254' : '192.168.1.201'),
+              port: d.port || 4370,
               location_description: devLocation,
               branch: devBranch,
               direction_mode: (d.direction || d.direction_mode || 'BOTH') as any,
               status: ((d.last_heartbeat_at && (Date.now() - new Date(d.last_heartbeat_at).getTime() < 15 * 60 * 1000)) ? 'Online' : (this._connectorStatus === 'online' && d.is_active ? 'Online' : (d.status || (d.is_active ? 'Standby' : 'Offline')))) as any,
-              registered_users_count: (typeof d.registered_users_count === 'number' && d.registered_users_count > 0) ? d.registered_users_count : (isMB160 ? 14 : 23),
+              registered_users_count: (typeof d.registered_users_count === 'number' && d.registered_users_count > 0) ? d.registered_users_count : (isElectra ? 217 : (isMB160 ? 14 : 23)),
               sync_frequency_mins: d.sync_frequency_mins || 1,
               last_sync: d.last_heartbeat_at || d.updated_at || new Date().toISOString(),
               last_punch_at: devLastPunch,
@@ -2193,9 +2197,13 @@ class BiometricGatewayService {
     // If cloud / ADMS device, dispatch user updates to ADMS Queue
     if (dev.serial_number) {
       try {
-        const admsCommands = usersToPush.slice(0, 50).map((u, i) =>
-          `C:${2000 + i}:DATA UPDATE USER PIN=${u.pin}\tName=${u.name.replace(/\t/g, ' ')}\tPri=${u.privilege === 'ADMIN' ? '14' : '0'}${u.cardNumber ? `\tCard=${u.cardNumber}` : ''}`
-        ).join('\n');
+        const admsCommands = [
+          'C:1000:CHECK',
+          'C:1001:DATA QUERY ATTLOG',
+          ...usersToPush.map((u, i) =>
+            `C:${2000 + i}:DATA UPDATE USERINFO PIN=${u.pin}\tName=${u.name.replace(/[\t\r\n]/g, ' ').slice(0, 24).trim()}\tPri=${u.privilege === 'ADMIN' ? '14' : '0'}\tPasswd=\tCard=${u.cardNumber || ''}\tGrp=1\tTZ=0`
+          )
+        ].join('\n');
         
         if (isSupabaseEnabled && supabase) {
           supabase.functions.invoke('adms-gateway', {
