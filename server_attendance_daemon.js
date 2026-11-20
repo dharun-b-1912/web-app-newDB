@@ -435,6 +435,124 @@ export async function checkAndRunScheduledReports() {
   }
 }
 
+// ── Biometric Device Heartbeat & Offline Telegram Watchdog ───────────────────
+const TG_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '9137821052:AAH40OpD041tLdmC0_fheiZbk9_AxGs2TQ0';
+const TG_CHAT_IDS = (process.env.TELEGRAM_CHAT_ID || '-5189746331,9155594412').split(',').map(s => s.trim()).filter(Boolean);
+
+// Track alerted state for each device to avoid duplicate spamming
+const deviceOfflineState = new Map(); // serial -> { isOffline: boolean, offlineSince: string, lastAlertAt: number }
+
+async function sendTelegramAlert(html) {
+  for (const chatId of TG_CHAT_IDS) {
+    try {
+      await fetch(`https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: html,
+          parse_mode: 'HTML',
+        }),
+      });
+    } catch (e) {
+      console.warn(`[BiometricWatchdog] Telegram send error (${chatId}):`, e.message);
+    }
+  }
+}
+
+let isDeviceWatchdogRunning = false;
+export async function checkBiometricDeviceHeartbeats() {
+  if (isDeviceWatchdogRunning) return;
+  isDeviceWatchdogRunning = true;
+
+  try {
+    const res = await sbFetch('biometric_devices?is_active=eq.true&select=id,device_name,serial_number,ip_address,organization_id,last_heartbeat_at');
+    const devices = Array.isArray(res.data) ? res.data : [];
+    if (devices.length === 0) return;
+
+    const nowMs = Date.now();
+    const TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes without heartbeat = offline
+
+    for (const dev of devices) {
+      const serial = dev.serial_number;
+      if (!serial) continue;
+
+      const lastHbMs = dev.last_heartbeat_at ? new Date(dev.last_heartbeat_at).getTime() : 0;
+      const ageMs = nowMs - lastHbMs;
+      const isDead = ageMs > TIMEOUT_MS;
+
+      const state = deviceOfflineState.get(serial) || { isOffline: false, offlineSince: null, lastAlertAt: 0 };
+      const devName = dev.device_name || `eSSL Device (${serial})`;
+      const orgLabel = dev.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ? 'Electra EV' : 'Joy Corporate Solutions';
+      const timeStr = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+      if (isDead) {
+        // Device is OFFLINE
+        if (!state.isOffline || (nowMs - state.lastAlertAt > 30 * 60 * 1000)) { // alert on transition or every 30 mins
+          const deadMinutes = Math.round(ageMs / 60000);
+          const lastHbTime = lastHbMs ? new Date(lastHbMs).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Never';
+
+          const alertHtml = `🚨 <b>[BIOMETRIC TERMINAL OFFLINE] JOY SENTINEL</b>
+━━━━━━━━━━━━━━━━━━━━
+<b>Terminal</b>: ${devName}
+<b>Serial Number</b>: <code>${serial}</code>
+<b>Organization</b>: <b>${orgLabel}</b>
+<b>IP / Port</b>: <code>${dev.ip_address || '4G SIM'}:4370</code>
+
+⚠️ <b>Status</b>: <b>OFFLINE / HEARTBEAT FAILED</b>
+⏱ <b>Last Heartbeat</b>: ${lastHbTime} (${deadMinutes} mins ago)
+🕒 <b>Alert Time</b>: ${timeStr}
+
+<b>Probable Causes:</b>
+• Terminal powered OFF or plant main gate power outage
+• 4G SIM cellular network loss / APN disconnect
+• Hardware freeze or reboot required
+
+<i>System will automatically alert when connection recovers.</i>
+━━━━━━━━━━━━━━━━━━━━`;
+
+          console.log(`[BiometricWatchdog] Device ${serial} is OFFLINE (${deadMinutes} mins). Sending Telegram alert...`);
+          await sendTelegramAlert(alertHtml);
+
+          deviceOfflineState.set(serial, {
+            isOffline: true,
+            offlineSince: dev.last_heartbeat_at,
+            lastAlertAt: nowMs,
+          });
+        }
+      } else {
+        // Device is ONLINE
+        if (state.isOffline) {
+          // Transitioned from OFFLINE -> ONLINE (Recovered!)
+          const recoveredHtml = `🟢 <b>[BIOMETRIC TERMINAL RESTORED] JOY SENTINEL</b>
+━━━━━━━━━━━━━━━━━━━━
+<b>Terminal</b>: ${devName}
+<b>Serial Number</b>: <code>${serial}</code>
+<b>Organization</b>: <b>${orgLabel}</b>
+<b>Status</b>: <b>RESTORED ONLINE (Heartbeat Active)</b>
+🕒 <b>Restored At</b>: ${timeStr}
+
+✓ <i>4G ADMS Cloud connection re-established. Buffered offline attendance punches are syncing.</i>
+━━━━━━━━━━━━━━━━━━━━`;
+
+          console.log(`[BiometricWatchdog] Device ${serial} RESTORED ONLINE. Sending Telegram recovery alert...`);
+          await sendTelegramAlert(recoveredHtml);
+
+          deviceOfflineState.set(serial, {
+            isOffline: false,
+            offlineSince: null,
+            lastAlertAt: 0,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[BiometricWatchdog] Check error:', err.message);
+  } finally {
+    isDeviceWatchdogRunning = false;
+  }
+}
+
 /**
  * Start the 24/7 attendance notification daemon
  */
@@ -459,4 +577,9 @@ export function startAttendanceRealtimeDaemon() {
   setTimeout(checkAndRunScheduledReports, 2000);
   setInterval(checkAndRunScheduledReports, 30000);
   console.log('[AttendanceDaemon] ✓ 24/7 Report Scheduler active (30s interval for Email & WhatsApp)');
+
+  // 24/7 Biometric device heartbeat & offline Telegram watchdog (checks every 60 seconds)
+  setTimeout(checkBiometricDeviceHeartbeats, 5000);
+  setInterval(checkBiometricDeviceHeartbeats, 60000);
+  console.log('[AttendanceDaemon] ✓ 24/7 Biometric Device Telegram Watchdog active (60s interval)');
 }
