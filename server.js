@@ -347,26 +347,47 @@ connectorRouter.post(['/push-user', '/push-employees', '/api/push-employees'], a
 
 connectorRouter.get(['/users', '/api/device-users'], async (req, res) => {
   try {
-    const orgId = req.query.organizationId || req.query.orgId || req.query.organization_id;
+    let orgId = req.query.organizationId || req.query.orgId || req.query.organization_id || req.headers['x-organization-id'];
     const devIp = req.query.ip;
-    let q = supabaseAdminClient
-      .from('employees')
-      .select('id, employee_code, first_name, last_name, display_name, department_id, designation_id, organization_id, employment_status');
+    const serial = req.query.serial_number || req.query.serialNumber;
+    const deviceId = req.query.deviceId || req.query.device_id;
 
-    if (orgId && isValidUUID(orgId) && orgId !== 'platform-root') {
-      q = q.eq('organization_id', orgId);
-    } else if (devIp === '100.109.56.254' || req.query.serial_number === 'JNP2263200782') {
-      q = q.eq('organization_id', 'c5ab6b03-adde-47cc-a033-064f4c39b21e');
+    // Strict multi-tenant isolation: resolve organization from device metadata if not passed directly
+    if (!orgId || !isValidUUID(orgId) || orgId === 'platform-root') {
+      if (devIp === '100.109.56.254' || serial === 'JNP2263200782' || deviceId === 'b0e1d1a6-0c6f-4782-950f-eb4d80dc006e') {
+        orgId = 'c5ab6b03-adde-47cc-a033-064f4c39b21e'; // Electra EV
+      } else if (devIp === '192.168.1.201' || serial === 'TDBD253600550' || deviceId === 'c7286b0d-d9d5-4cc2-9045-578d1d4cc464') {
+        orgId = '0c621892-e938-4707-9957-13534ea32c19'; // Joy Corporate Solutions
+      } else if (devIp || serial || deviceId) {
+        // Look up device in database to strictly bind organization
+        const { data: devMatch } = await supabaseAdminClient
+          .from('biometric_devices')
+          .select('organization_id')
+          .or(`serial_number.eq.${serial || 'none'},ip_address.eq.${devIp || 'none'},id.eq.${deviceId && isValidUUID(deviceId) ? deviceId : '00000000-0000-0000-0000-000000000000'}`)
+          .maybeSingle();
+        if (devMatch?.organization_id) {
+          orgId = devMatch.organization_id;
+        }
+      }
     }
 
-    const { data: emps, error } = await q;
+    // Security Gate: NEVER query employees table without a valid scoped organization_id
+    if (!orgId || !isValidUUID(orgId) || orgId === 'platform-root') {
+      return res.status(200).json({ success: true, count: 0, users: [] });
+    }
+
+    const { data: emps, error } = await supabaseAdminClient
+      .from('employees')
+      .select('id, employee_code, first_name, last_name, display_name, department_id, designation_id, organization_id, employment_status')
+      .eq('organization_id', orgId);
+
     if (error) {
       return res.status(200).json({ success: true, count: 0, users: [] });
     }
 
     const users = (emps || []).map((emp, idx) => {
       const rawDigits = (emp.employee_code || '').replace(/\D/g, '');
-      const pin = emp.employee_code.startsWith('TEMP-')
+      const pin = emp.employee_code?.startsWith('TEMP-')
         ? String(parseInt(emp.employee_code.replace(/\D/g, ''), 10))
         : (emp.employee_code === 'SUB01' ? '9001' : (rawDigits || String(1001 + idx)));
       return {
@@ -396,16 +417,40 @@ connectorRouter.get(['/users', '/api/device-users'], async (req, res) => {
 
 connectorRouter.get('/punches', async (req, res) => {
   try {
-    const orgId = req.query.organizationId || req.query.orgId || 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
+    let orgId = req.query.organizationId || req.query.orgId || req.query.organization_id || req.headers['x-organization-id'];
+    const devIp = req.query.ip;
+    const serial = req.query.serial_number || req.query.serialNumber;
+    const deviceId = req.query.deviceId || req.query.device_id;
+
+    // Strict multi-tenant isolation: resolve organization from device metadata if not passed directly
+    if (!orgId || !isValidUUID(orgId) || orgId === 'platform-root') {
+      if (devIp === '100.109.56.254' || serial === 'JNP2263200782' || deviceId === 'b0e1d1a6-0c6f-4782-950f-eb4d80dc006e') {
+        orgId = 'c5ab6b03-adde-47cc-a033-064f4c39b21e'; // Electra EV
+      } else if (devIp === '192.168.1.201' || serial === 'TDBD253600550' || deviceId === 'c7286b0d-d9d5-4cc2-9045-578d1d4cc464') {
+        orgId = '0c621892-e938-4707-9957-13534ea32c19'; // Joy Corporate Solutions
+      } else if (devIp || serial || deviceId) {
+        const { data: devMatch } = await supabaseAdminClient
+          .from('biometric_devices')
+          .select('organization_id')
+          .or(`serial_number.eq.${serial || 'none'},ip_address.eq.${devIp || 'none'},id.eq.${deviceId && isValidUUID(deviceId) ? deviceId : '00000000-0000-0000-0000-000000000000'}`)
+          .maybeSingle();
+        if (devMatch?.organization_id) {
+          orgId = devMatch.organization_id;
+        }
+      }
+    }
+
+    // Security Gate: NEVER return punches without a scoped organization_id
+    if (!orgId || !isValidUUID(orgId) || orgId === 'platform-root') {
+      return res.status(200).json({ success: true, count: 0, punches: [] });
+    }
+
     let q = supabaseAdminClient
       .from('attendance_punches')
       .select('*, employees(id, display_name, first_name, last_name, employee_code)')
+      .eq('organization_id', orgId)
       .order('punch_time', { ascending: false })
       .limit(100);
-
-    if (orgId && isValidUUID(orgId) && orgId !== 'platform-root') {
-      q = q.eq('organization_id', orgId);
-    }
 
     const { data, error } = await q;
     const isElectra = orgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
@@ -427,7 +472,32 @@ connectorRouter.get('/punches', async (req, res) => {
 
       return {
         id: p.id,
+        organization_id: p.organization_id || orgId,
         device_id: p.device_id || devId,
+        device_serial: devSerial,
+        device_name: devName,
+        biometric_pin: pin,
+        employee_id: p.employee_id,
+        employee_name: empName,
+        employee_code: emp?.employee_code,
+        punch_time: p.punch_time,
+        punch_direction: (p.punch_type === 'OUT' || p.punch_type === 'CHECK_OUT' ? 'OUT' : 'IN'),
+        verification_mode: (p.verification_mode || 'Face'),
+        source_type: 'ADMS_PUSH_LIVE',
+        processed_status: 'PROCESSED',
+        created_at: p.created_at
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: enriched.length,
+      punches: enriched
+    });
+  } catch (err) {
+    return res.status(200).json({ success: true, count: 0, punches: [] });
+  }
+});
         device_serial: devSerial,
         device_name: devName,
         biometric_pin: pin,

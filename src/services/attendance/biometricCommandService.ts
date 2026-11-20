@@ -54,6 +54,14 @@ export function getActiveOrgId(): string {
   // 1. Explicitly selected active tenant in current session/localStorage
   if (typeof window !== 'undefined') {
     try {
+      const activeCompStr = localStorage.getItem('workforce_active_company');
+      if (activeCompStr) {
+        const parsed = JSON.parse(activeCompStr);
+        if (parsed?.organization_id && parsed.organization_id.length === 36) return parsed.organization_id;
+        if (parsed?.id && parsed.id.length === 36) return parsed.id;
+      }
+    } catch {}
+    try {
       const cached = localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id');
       if (cached && (cached.length === 36 || cached.startsWith('org-'))) return cached;
     } catch {}
@@ -61,6 +69,7 @@ export function getActiveOrgId(): string {
       const activeOrg = localStorage.getItem('workforce_active_org');
       if (activeOrg) {
         const parsed = JSON.parse(activeOrg);
+        if (parsed?.organization_id && parsed.organization_id.length === 36) return parsed.organization_id;
         if (parsed?.id) return parsed.id;
       }
     } catch {}
@@ -68,6 +77,7 @@ export function getActiveOrgId(): string {
       const activeOrgObj = localStorage.getItem('workforce_active_organization');
       if (activeOrgObj) {
         const parsed = JSON.parse(activeOrgObj);
+        if (parsed?.organization_id && parsed.organization_id.length === 36) return parsed.organization_id;
         if (parsed?.id) return parsed.id;
       }
     } catch {}

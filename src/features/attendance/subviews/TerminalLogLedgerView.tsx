@@ -134,8 +134,9 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
   const loadLedgerEvents = () => {
     setIsLoading(true);
     try {
-      // 1. Pull raw punches from biometricGatewayService (strictly hardware biometric)
-      const gatewayPunches = (biometricGatewayService.getRawPunches(1000) || []).filter(isHardwareBiometricPunch);
+      // 1. Pull raw punches from biometricGatewayService (strictly hardware biometric and scoped to active organization)
+      const activeOrg = getActiveOrgId();
+      const gatewayPunches = (biometricGatewayService.getRawPunches(1000, activeOrg) || []).filter(isHardwareBiometricPunch);
       // 2. Pull audit events from attendanceDecisionEngine
       const decisionEvents = attendanceDecisionEngine.getRawEvents(1000) || [];
 

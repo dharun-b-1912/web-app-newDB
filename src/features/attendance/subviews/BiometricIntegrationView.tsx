@@ -310,10 +310,11 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   // Only surfaces punches from the last 48 hours to prevent stale historical data in the live stream
   const loadData = () => {
     try {
+      const activeOrg = getActiveOrgId();
       const currentAgents = biometricGatewayService.getGatewayAgents();
-      const currentDevs = biometricGatewayService.getBiometricDevices();
+      const currentDevs = biometricGatewayService.getBiometricDevices(activeOrg);
       const cutoffMs = Date.now() - 48 * 60 * 60 * 1000;
-      const currentPunches = biometricGatewayService.getRawPunches(200).filter(p => {
+      const currentPunches = biometricGatewayService.getRawPunches(200, activeOrg).filter(p => {
         if (!p.punch_time) return false;
         if (!isHardwareBiometricPunch(p)) return false;
         try { return new Date(p.punch_time).getTime() >= cutoffMs; } catch { return false; }
@@ -414,14 +415,15 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
     const syncLivePunches = async () => {
       if (destroyed || selectedWorkspaceDeviceRef.current) return;
       try {
+        const activeOrg = getActiveOrgId();
         if (biometricGatewayService.isLocalAgentOnline()) {
-          await biometricGatewayService.syncRealPunchesFromAgent().catch(() => {});
+          await biometricGatewayService.syncRealPunchesFromAgent(undefined, false, activeOrg).catch(() => {});
         }
-        await biometricGatewayService.syncPunchesFromSupabase(50).catch(() => {});
+        await biometricGatewayService.syncPunchesFromSupabase(50, activeOrg).catch(() => {});
 
         if (!destroyed && !selectedWorkspaceDeviceRef.current) {
           const _cutoff = Date.now() - 48 * 60 * 60 * 1000;
-          const fresh = biometricGatewayService.getRawPunches(200).filter(p => {
+          const fresh = biometricGatewayService.getRawPunches(200, activeOrg).filter(p => {
             try { return !!p.punch_time && isHardwareBiometricPunch(p) && new Date(p.punch_time).getTime() >= _cutoff; } catch { return false; }
           }).slice(0, 50);
           setPunches(fresh);

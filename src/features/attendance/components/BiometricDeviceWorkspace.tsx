@@ -136,8 +136,9 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
       setLiveDevice(updatedDev);
 
       // 1. Always load users so tab header Machine Users (${users.length}) always has the real users
-      const targetOrg = liveDevice.organization_id || getActiveOrgId();
-      const devUsers = biometricGatewayService.getDeviceUsers(device.id, { pageSize: 500 }).users || [];
+      const targetOrg = liveDevice.organization_id || device.organization_id || getActiveOrgId();
+      const rawDevUsers = biometricGatewayService.getDeviceUsers(device.id, { pageSize: 500 }).users || [];
+      const devUsers = rawDevUsers.filter(u => !u.organization_id || u.organization_id === targetOrg);
       setUsers(devUsers);
 
       // Auto-hydrate real users from live terminal gateway if cached list is completely empty
@@ -145,9 +146,10 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
         biometricGatewayService.triggerDeviceUserSync(device.id, 'Live Terminal Hydration')
           .then(res => {
             if (res.status === 'COMPLETED') {
-              const refreshedUsers = biometricGatewayService.getDeviceUsers(device.id, { pageSize: 500 }).users || [];
+              const refreshedUsers = (biometricGatewayService.getDeviceUsers(device.id, { pageSize: 500 }).users || [])
+                .filter(u => !u.organization_id || u.organization_id === targetOrg);
               setUsers(refreshedUsers);
-              const allDevsNow = biometricGatewayService.getBiometricDevices();
+              const allDevsNow = biometricGatewayService.getBiometricDevices(targetOrg);
               const freshDev = allDevsNow.find(d => d.id === device.id);
               if (freshDev) setLiveDevice(freshDev);
             }
@@ -169,13 +171,16 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
         }
       }
 
-      // 2. Always load punches matching device identifiers
-      const rawAllPunches = biometricGatewayService.getRawPunches(500) || [];
-      const devPunches = rawAllPunches.filter(p =>
-        p.device_id === device.id ||
-        (device.serial_number && p.device_serial === device.serial_number) ||
-        (liveDevice.ip_address && (p as any).device_ip === liveDevice.ip_address)
-      );
+      // 2. Always load punches matching device identifiers and scoped strictly to this organization
+      const rawAllPunches = biometricGatewayService.getRawPunches(500, targetOrg) || [];
+      const devPunches = rawAllPunches.filter(p => {
+        if (p.organization_id && p.organization_id !== targetOrg) return false;
+        return (
+          p.device_id === device.id ||
+          (device.serial_number && p.device_serial === device.serial_number) ||
+          (liveDevice.ip_address && (p as any).device_ip === liveDevice.ip_address)
+        );
+      });
 
       setPunches(devPunches);
 
@@ -247,7 +252,8 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
     const rafId = requestAnimationFrame(() => loadWorkspaceData());
 
     // One-time initial hydration of live punches from hardware agent
-    biometricGatewayService.syncRealPunchesFromAgent(device.id).then(() => {
+    const targetOrg = device.organization_id || getActiveOrgId();
+    biometricGatewayService.syncRealPunchesFromAgent(device.id, false, targetOrg).then(() => {
       loadWorkspaceData();
     }).catch(() => {});
 
