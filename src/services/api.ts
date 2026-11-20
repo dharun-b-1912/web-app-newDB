@@ -23,6 +23,7 @@ import { hrEventBus } from './hrEventBus';
 import { logger } from './diagnostics/loggerService';
 import { CorrelationService } from './diagnostics/correlationService';
 import { getActiveOrgId } from './attendance/biometricCommandService';
+import { safeStorage } from '../utils/storageQuotaManager';
 
 export function isValidUUID(id?: string | null): boolean {
   if (!id) return false;
@@ -425,8 +426,7 @@ const _nodeApiFallback = new Map<string, string>();
 function getStorage<T>(key: string, defaultValue: T): T {
   try {
     if (typeof localStorage !== 'undefined') {
-      const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : defaultValue;
+      return safeStorage.getObject<T>(key, defaultValue);
     } else {
       const data = _nodeApiFallback.get(key);
       return data ? JSON.parse(data) : defaultValue;
@@ -439,12 +439,12 @@ function getStorage<T>(key: string, defaultValue: T): T {
 function setStorage<T>(key: string, value: T): void {
   try {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(key, JSON.stringify(value));
+      safeStorage.setObject<T>(key, value);
     } else {
       _nodeApiFallback.set(key, JSON.stringify(value));
     }
-  } catch (err) {
-    console.error('Error writing to storage', err);
+  } catch {
+    // Fail safe to in-memory fallback
   }
 }
 

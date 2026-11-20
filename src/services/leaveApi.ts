@@ -22,6 +22,7 @@ import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { notificationService } from './notification/notificationService';
 import { leaveEngine } from './leave/leaveEngine';
 import { api } from './api';
+import { safeStorage } from '../utils/storageQuotaManager';
 
 const STORAGE_KEYS = {
   LEAVE_TYPES: 'workforce_leave_types_v2',
@@ -599,23 +600,18 @@ const initialLeavePolicies: LeavePolicy[] = [
   },
 ];
 
-// Helper Functions for Local Storage
+// Helper Functions for Local Storage & In-Memory Resilient Cache
 function getStored<T>(key: string, defaultVal: T): T {
-  try {
-    if (typeof localStorage === 'undefined') return defaultVal;
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : defaultVal;
-  } catch {
-    return defaultVal;
-  }
+  return safeStorage.getObject<T>(key, defaultVal);
 }
 
 function setStored<T>(key: string, val: T): void {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(key, JSON.stringify(val));
-  } catch (e) {
-    console.error('LocalStorage error', e);
+  // If array is oversized (e.g. all employees' entitlements/ledger), keep full array in memory cache
+  // and persist only a bounded slice to localStorage to guarantee QuotaExceededError is never thrown
+  if (Array.isArray(val) && val.length > 30) {
+    safeStorage.setObject<T>(key, val.slice(0, 30) as unknown as T, val);
+  } else {
+    safeStorage.setObject<T>(key, val);
   }
 }
 
@@ -1437,7 +1433,8 @@ export const leaveApi = {
   async getLeaveRequestsAsync(): Promise<LeaveRequest[]> {
     if (isSupabaseEnabled) {
       try {
-        const { data, error } = await supabase
+        const orgId = getActiveOrgId();
+        let reqQuery = supabase
           .from('leave_requests')
           .select(`
             *,
@@ -1460,8 +1457,11 @@ export const leaveApi = {
               is_encashable,
               is_paid
             )
-          `)
-          .order('created_at', { ascending: false });
+          `);
+        if (orgId && isValidUUID(orgId)) {
+          reqQuery = reqQuery.eq('organization_id', orgId);
+        }
+        const { data, error } = await reqQuery.order('created_at', { ascending: false });
 
         if (!error && Array.isArray(data) && data.length > 0) {
           const mapped: LeaveRequest[] = data.map((r: any) => {
@@ -2080,11 +2080,24 @@ export const leaveApi = {
   async getEntitlementsAsync(): Promise<LeaveEntitlement[]> {
     if (isSupabaseEnabled) {
       try {
+        const orgId = getActiveOrgId();
+        let empQ = supabase.from('employees').select('id, first_name, last_name, employee_code, department_id, departments:department_id(name), designations:designation_id(title)').order('employee_code');
+        if (orgId && isValidUUID(orgId)) {
+          empQ = empQ.eq('organization_id', orgId);
+        }
+        let typeQ = supabase.from('leave_types').select('*').order('name');
+        let reqQ = supabase.from('leave_requests').select('*');
+        let balQ = supabase.from('leave_balances').select('*');
+        if (orgId && isValidUUID(orgId)) {
+          reqQ = reqQ.eq('organization_id', orgId);
+          balQ = balQ.eq('organization_id', orgId);
+        }
+
         const [{ data: emps, error: empErr }, { data: types, error: typeErr }, { data: reqs }, { data: balances }] = await Promise.all([
-          supabase.from('employees').select('id, first_name, last_name, employee_code, department_id, departments:department_id(name), designations:designation_id(title)').order('employee_code'),
-          supabase.from('leave_types').select('*').order('name'),
-          supabase.from('leave_requests').select('*'),
-          supabase.from('leave_balances').select('*')
+          empQ,
+          typeQ,
+          reqQ,
+          balQ
         ]);
 
         if (!empErr && Array.isArray(emps) && emps.length > 0 && !typeErr && Array.isArray(types) && types.length > 0) {
@@ -2187,7 +2200,11 @@ export const leaveApi = {
   async getLedgerAsync(employeeId?: string): Promise<LeaveLedgerTransaction[]> {
     if (isSupabaseEnabled) {
       try {
+        const orgId = getActiveOrgId();
         let q = supabase.from('leave_ledger_entries').select('*').order('created_at', { ascending: false });
+        if (orgId && isValidUUID(orgId)) {
+          q = q.eq('organization_id', orgId);
+        }
         if (employeeId && isValidUUID(employeeId)) {
           q = q.eq('employee_id', employeeId);
         }
@@ -2195,6 +2212,9 @@ export const leaveApi = {
         if (error && (error as any).code === '42P01') {
           // Alternative schema: leave_ledger_transactions
           let altQ = supabase.from('leave_ledger_transactions').select('*').order('created_at', { ascending: false });
+          if (orgId && isValidUUID(orgId)) {
+            altQ = altQ.eq('organization_id', orgId);
+          }
           if (employeeId && isValidUUID(employeeId)) {
             altQ = altQ.eq('employee_id', employeeId);
           }

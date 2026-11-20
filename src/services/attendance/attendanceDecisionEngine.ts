@@ -239,8 +239,9 @@ class AttendanceDecisionEngine {
     if (typeof localStorage === 'undefined') return;
     try {
       const sessionList = Array.from(this.inMemorySessions.values());
-      localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(sessionList.slice(-2000)));
-      localStorage.setItem(STORAGE_KEYS.RAW_EVENTS, JSON.stringify(this.inMemoryRawEvents.slice(-5000)));
+      // Bound snapshot for local storage recovery to keep browser quota lean
+      localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(sessionList.slice(-50)));
+      localStorage.setItem(STORAGE_KEYS.RAW_EVENTS, JSON.stringify(this.inMemoryRawEvents.slice(-100)));
     } catch (_) {}
   }
 

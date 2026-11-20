@@ -4,6 +4,7 @@ import App from './App.tsx';
 import './index.css';
 import { GlobalErrorInterceptor } from './services/observability/globalErrorInterceptor';
 import { supabaseProject, supabaseUrl, ensureSupabaseSession } from './lib/supabase';
+import './utils/storageQuotaManager';
 
 // ── PRODUCTION PII & CONSOLE HARDENING ─────────────────────────────────────
 // Strip all debug and information logs in production to prevent leaking sensitive
