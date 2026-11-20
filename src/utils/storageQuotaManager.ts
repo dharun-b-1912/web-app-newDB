@@ -126,6 +126,17 @@ export function cleanStorageOnStartup(): void {
       try { localStorage.removeItem(k); } catch {}
     });
 
+    // Ensure workforce_employees is purged of stale zombie records and aligns with 217 DB records
+    const PURGE_TOKEN_KEY = 'joy_wf_authoritative_sync_token';
+    const CURRENT_SYNC_VERSION = 'v22_electra_217_clean';
+    if (localStorage.getItem(PURGE_TOKEN_KEY) !== CURRENT_SYNC_VERSION) {
+      try {
+        localStorage.removeItem('workforce_employees');
+        localStorage.removeItem('workforce_leave_entitlements_v2');
+        localStorage.setItem(PURGE_TOKEN_KEY, CURRENT_SYNC_VERSION);
+      } catch {}
+    }
+
     // Check if total usage exceeds threshold
     const usedBytes = getStorageUsage();
     if (usedBytes > MAX_TOTAL_STORAGE_BYTES) {

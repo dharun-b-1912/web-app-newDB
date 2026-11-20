@@ -300,7 +300,7 @@ const _nodeApiFallback = new Map<string, string>();
 (function purgeSeededLocalStateSync() {
   if (typeof localStorage === 'undefined') return;
   try {
-    const PURGE_TOKEN = 'wf_strict_zero_seed_v18_purge_21_workers_plant_structures';
+    const PURGE_TOKEN = 'wf_strict_sync_v22_electra_217_authoritative_workforce_purge';
     const shouldFullPurge = localStorage.getItem('wf_zero_seed_token') !== PURGE_TOKEN;
     if (shouldFullPurge) {
       localStorage.setItem('wf_zero_seed_token', PURGE_TOKEN);
@@ -2105,26 +2105,8 @@ export const api = {
               deduplicated.push(emp);
             }
 
-            // Only permit local-only employees that match the active tenant and do NOT collide with any DB record
-            const cachedEmployees = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
-            for (const ce of cachedEmployees) {
-              if (!ce || !ce.id || !isValidUUID(ce.id)) continue;
-              // STRICT MULTI-TENANT ISOLATION: Never merge cached employees belonging to another tenant!
-              if (targetOrg && targetOrg !== 'platform-root' && ce.organization_id && ce.organization_id !== targetOrg) continue;
-              if (targetOrg && targetOrg !== 'platform-root' && !ce.organization_id && targetOrg !== '0c621892-e938-4707-9957-13534ea32c19') continue;
-              const idKey = String(ce.id).toLowerCase();
-              const codeKey = String(ce.employee_code || '').trim().toUpperCase();
-
-              if (seenIds.has(idKey) || dbIds.has(idKey)) continue;
-              if (codeKey && (seenCodes.has(codeKey) || dbCodes.has(codeKey))) continue;
-
-              if (codeKey.startsWith('CE0')) continue;
-
-              seenIds.add(idKey);
-              if (codeKey) seenCodes.add(codeKey);
-              deduplicated.push(ce);
-            }
-
+            // Authoritative Single Source of Truth: When Supabase returns workforce records for targetOrg,
+            // strictly rely on database records without merging phantom or deleted records from localStorage.
             const combined = deduplicated;
             const resultList = filterObj ? filterEmployeesLocalHelper(combined, filterObj) : combined;
             if (isUnfiltered) {
