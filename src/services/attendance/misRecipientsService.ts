@@ -6,6 +6,7 @@
 
 import { supabase, supabaseAdmin } from '../../lib/supabase';
 import { normalizeIndianPhone } from '../whatsapp/phoneUtils';
+import { api } from '../api';
 
 export interface MisReportRecipientRecord {
   id: string;
@@ -78,12 +79,15 @@ class MisRecipientsService {
   /**
    * Fetch all authorized recipients for an organization
    */
-  async getRecipients(organizationId = DEFAULT_ORG_ID): Promise<MisReportRecipientRecord[]> {
+  async getRecipients(organizationId?: string): Promise<MisReportRecipientRecord[]> {
     try {
+      const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+      const targetOrgId = organizationId || activeComp?.organization_id || activeComp?.id || DEFAULT_ORG_ID;
+
       const { data, error } = await this.getClient()
         .from('mis_report_recipients')
         .select('*, departments(name)')
-        .eq('organization_id', organizationId)
+        .eq('organization_id', targetOrgId)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -106,19 +110,22 @@ class MisRecipientsService {
    */
   async upsertRecipient(
     payload: Partial<MisReportRecipientRecord> & {
-      organization_id: string;
+      organization_id?: string;
       name: string;
       phone: string;
     }
   ): Promise<{ success: boolean; data?: MisReportRecipientRecord; error?: string }> {
     try {
+      const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+      const targetOrgId = payload.organization_id || activeComp?.organization_id || activeComp?.id || DEFAULT_ORG_ID;
+
       const cleanPhone = normalizeIndianPhone(payload.phone).replace(/[^0-9]/g, '');
       if (cleanPhone.length < 10) {
         return { success: false, error: 'Valid 10-digit Indian mobile number is required.' };
       }
 
       const updateData = {
-        organization_id: payload.organization_id || DEFAULT_ORG_ID,
+        organization_id: targetOrgId,
         employee_id: payload.employee_id || null,
         name: payload.name.trim(),
         email: payload.email ? payload.email.trim().toLowerCase() : null,
@@ -221,12 +228,15 @@ class MisRecipientsService {
   /**
    * Fetch recent delivery audit logs
    */
-  async getAuditLogs(organizationId = DEFAULT_ORG_ID, limit = 20): Promise<DeliveryAuditLogRow[]> {
+  async getAuditLogs(organizationId?: string, limit = 20): Promise<DeliveryAuditLogRow[]> {
     try {
+      const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+      const targetOrgId = organizationId || activeComp?.organization_id || activeComp?.id || DEFAULT_ORG_ID;
+
       const { data, error } = await this.getClient()
         .from('mis_delivery_audit_logs')
         .select('*')
-        .eq('organization_id', organizationId)
+        .eq('organization_id', targetOrgId)
         .order('created_at', { ascending: false })
         .limit(limit);
 

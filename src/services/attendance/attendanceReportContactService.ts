@@ -34,10 +34,10 @@ class AttendanceReportContactService {
   /**
    * Refreshes contacts directly from Supabase PostgreSQL database for the active tenant.
    */
-  async refreshContactsFromDb(): Promise<RecipientContact[]> {
+  async refreshContactsFromDb(targetOrgId?: string): Promise<RecipientContact[]> {
     try {
       const activeComp = api.getActiveCompany();
-      const orgId = activeComp?.organization_id;
+      const orgId = targetOrgId || activeComp?.organization_id || activeComp?.id;
       const compId = activeComp?.id;
 
       let query = supabase
@@ -45,10 +45,10 @@ class AttendanceReportContactService {
         .select('id, organization_id, company_id, employee_code, first_name, last_name, display_name, work_email, personal_email, phone, employment_status')
         .is('deleted_at', null);
 
-      if (compId) {
-        query = query.eq('company_id', compId);
-      } else if (orgId) {
+      if (orgId) {
         query = query.eq('organization_id', orgId);
+      } else if (compId) {
+        query = query.eq('company_id', compId);
       }
 
       const { data, error } = await query;
@@ -82,9 +82,7 @@ class AttendanceReportContactService {
           });
         });
 
-        if (mapped.length > 0) {
-          this.dbContactsCache = mapped;
-        }
+        this.dbContactsCache = mapped;
       }
     } catch (e) {
       console.warn('[ContactService] Error loading DB employees:', e);

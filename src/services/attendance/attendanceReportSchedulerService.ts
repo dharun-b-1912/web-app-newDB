@@ -84,7 +84,7 @@ export interface ScheduleRunLog {
 }
 
 const DEFAULT_SCHEDULE_CONFIG: AttendanceReportScheduleConfig = {
-  enabled: true,
+  enabled: false,
   scheduleMode: 'TWICE_DAILY',
 
   // Slot 1: Morning Check-In (10:30 AM)
@@ -98,7 +98,7 @@ const DEFAULT_SCHEDULE_CONFIG: AttendanceReportScheduleConfig = {
 
   frequency: 'DAILY',
   recipients: [],
-  whatsAppRecipients: ['919840209900'],
+  whatsAppRecipients: [],
   cc: '',
   attachExcel: true,
   attachCsv: true,
@@ -109,6 +109,7 @@ const DEFAULT_SCHEDULE_CONFIG: AttendanceReportScheduleConfig = {
 };
 
 class AttendanceReportSchedulerService {
+  private cachedConfigByOrg = new Map<string, AttendanceReportScheduleConfig>();
   private cachedConfig: AttendanceReportScheduleConfig = { ...DEFAULT_SCHEDULE_CONFIG };
   private cachedLogs: ScheduleRunLog[] = [];
   private isLoadedFromDb = false;
@@ -138,13 +139,13 @@ class AttendanceReportSchedulerService {
   /**
    * Loads schedule configuration directly from Supabase PostgreSQL database for active tenant.
    */
-  async loadScheduleConfigAsync(): Promise<AttendanceReportScheduleConfig> {
+  async loadScheduleConfigAsync(targetOrgId?: string): Promise<AttendanceReportScheduleConfig> {
     if (isSupabaseCircuitOpen()) {
-      return this.cachedConfig;
+      return this.getScheduleConfig(targetOrgId);
     }
     try {
-      const activeComp = api.getActiveCompany();
-      const orgId = activeComp?.organization_id;
+      const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+      const orgId = targetOrgId || activeComp?.organization_id || activeComp?.id;
 
       let query = supabase
         .from('attendance_report_schedules')
@@ -166,13 +167,13 @@ class AttendanceReportSchedulerService {
             console.warn('[AttendanceScheduler] Could not fetch schedules from DB:', errMsg);
           }
         }
-        return this.cachedConfig;
+        return this.getScheduleConfig(orgId);
       }
 
       if (data) {
         const recipients = Array.isArray(data.recipients) && data.recipients.length > 0
           ? data.recipients.filter((r: any) => typeof r === 'string' && r.includes('@'))
-          : attendanceReportContactService.getAutoDetectedHrEmails();
+          : [];
 
         const formatIsoDate = (iso?: string) => (iso ? iso.split('T')[0] : undefined);
         const formatIsoTime = (iso?: string) => {
@@ -190,62 +191,85 @@ class AttendanceReportSchedulerService {
         const eveningSent = this.dispatchedSlotsToday.has(`${todayDate}_EVENING`) ||
           (typeof localStorage !== 'undefined' && Boolean(localStorage.getItem(`joy_att_report_sent_${todayDate}_EVENING`)));
 
-        const resolvedMorningDate = formatIsoDate(data.last_morning_run_at) || (morningSent ? todayDate : this.cachedConfig.lastMorningRunDate);
-        const resolvedMorningStatus = data.last_morning_status || (morningSent ? 'SUCCESS' : this.cachedConfig.lastMorningStatus);
+        const resolvedMorningDate = formatIsoDate(data.last_morning_run_at) || (morningSent ? todayDate : undefined);
+        const resolvedMorningStatus = data.last_morning_status || (morningSent ? 'SUCCESS' : undefined);
 
-        const resolvedEveningDate = formatIsoDate(data.last_evening_run_at) || (eveningSent ? todayDate : this.cachedConfig.lastEveningRunDate);
-        const resolvedEveningStatus = data.last_evening_status || (eveningSent ? 'SUCCESS' : this.cachedConfig.lastEveningStatus);
+        const resolvedEveningDate = formatIsoDate(data.last_evening_run_at) || (eveningSent ? todayDate : undefined);
+        const resolvedEveningStatus = data.last_evening_status || (eveningSent ? 'SUCCESS' : undefined);
 
         const merged: AttendanceReportScheduleConfig = {
           id: data.id,
-          enabled: data.enabled ?? true,
+          enabled: data.enabled ?? false,
           scheduleMode: (data.schedule_mode as any) || 'TWICE_DAILY',
           morningEnabled: data.morning_enabled ?? true,
           morningTime: data.morning_time || '10:30',
           lastMorningRunDate: resolvedMorningDate,
-          lastMorningRunTime: formatIsoTime(data.last_morning_run_at) || (morningSent ? this.cachedConfig.lastMorningRunTime : undefined),
+          lastMorningRunTime: formatIsoTime(data.last_morning_run_at),
           lastMorningStatus: resolvedMorningStatus,
-          lastMorningMessage: data.last_morning_message || (morningSent ? this.cachedConfig.lastMorningMessage : undefined),
+          lastMorningMessage: data.last_morning_message,
 
           eveningEnabled: data.evening_enabled ?? true,
           eveningTime: data.evening_time || '19:00',
           scheduledTime: data.evening_time || '19:00',
           lastEveningRunDate: resolvedEveningDate,
-          lastEveningRunTime: formatIsoTime(data.last_evening_run_at) || (eveningSent ? this.cachedConfig.lastEveningRunTime : undefined),
+          lastEveningRunTime: formatIsoTime(data.last_evening_run_at),
           lastEveningStatus: resolvedEveningStatus,
-          lastEveningMessage: data.last_evening_message || (eveningSent ? this.cachedConfig.lastEveningMessage : undefined),
+          lastEveningMessage: data.last_evening_message,
 
           frequency: (data.frequency as any) || 'DAILY',
-          recipients: recipients.length > 0 ? recipients : attendanceReportContactService.getAutoDetectedHrEmails(),
-          whatsAppRecipients: Array.isArray(data.whatsapp_recipients) && data.whatsapp_recipients.length > 0
+          recipients: recipients,
+          whatsAppRecipients: Array.isArray(data.whatsapp_recipients)
             ? data.whatsapp_recipients
-            : ['919840209900'],
+            : [],
           cc: data.cc || '',
           attachExcel: data.attach_excel ?? true,
-          attachCsv: data.attach_csv ?? true,
+          attachCsv: data.attach_csv ?? false,
           includePunches: data.include_punches ?? true,
           includeShiftBreakdown: data.include_shift_breakdown ?? true,
           customNote: data.custom_note || DEFAULT_SCHEDULE_CONFIG.customNote,
           updatedAt: data.updated_at || new Date().toISOString(),
         };
 
+        if (orgId) {
+          this.cachedConfigByOrg.set(orgId, merged);
+        }
         this.cachedConfig = merged;
         this.isLoadedFromDb = true;
         return { ...merged };
+      } else {
+        // Clean isolated default for tenant without existing config in DB
+        const cleanDefault: AttendanceReportScheduleConfig = {
+          ...DEFAULT_SCHEDULE_CONFIG,
+          id: undefined,
+          enabled: false,
+          recipients: [],
+          whatsAppRecipients: [],
+          updatedAt: new Date().toISOString(),
+        };
+        if (orgId) {
+          this.cachedConfigByOrg.set(orgId, cleanDefault);
+        }
+        this.cachedConfig = cleanDefault;
+        return { ...cleanDefault };
       }
     } catch (err) {
       console.warn('[AttendanceScheduler] Exception loading from DB:', err);
     }
 
-    return this.cachedConfig;
+    return this.getScheduleConfig(targetOrgId);
   }
 
   /**
    * Retrieves active scheduling configuration synchronously from cache.
    */
-  getScheduleConfig(): AttendanceReportScheduleConfig {
+  getScheduleConfig(targetOrgId?: string): AttendanceReportScheduleConfig {
+    const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+    const orgId = targetOrgId || activeComp?.organization_id || activeComp?.id;
+    if (orgId && this.cachedConfigByOrg.has(orgId)) {
+      return { ...this.cachedConfigByOrg.get(orgId)! };
+    }
     if (!this.isLoadedFromDb) {
-      this.loadScheduleConfigAsync().catch(() => {});
+      this.loadScheduleConfigAsync(orgId).catch(() => {});
     }
     return { ...this.cachedConfig };
   }
@@ -253,8 +277,11 @@ class AttendanceReportSchedulerService {
   /**
    * Saves updated schedule configuration to Supabase PostgreSQL database.
    */
-  async saveScheduleConfigAsync(update: Partial<AttendanceReportScheduleConfig>): Promise<AttendanceReportScheduleConfig> {
-    const base = this.cachedConfig || { ...DEFAULT_SCHEDULE_CONFIG };
+  async saveScheduleConfigAsync(update: Partial<AttendanceReportScheduleConfig>, targetOrgId?: string): Promise<AttendanceReportScheduleConfig> {
+    const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+    const orgId = targetOrgId || activeComp?.organization_id || activeComp?.id;
+
+    const base = (orgId && this.cachedConfigByOrg.get(orgId)) || this.cachedConfig || { ...DEFAULT_SCHEDULE_CONFIG };
     const merged: AttendanceReportScheduleConfig = {
       ...base,
       ...update,
@@ -271,14 +298,11 @@ class AttendanceReportSchedulerService {
             .filter((e) => e.length > 3 && e.includes('@') && !e.includes('mari@joypeoplehr.com'))
         )
       );
-      if (merged.recipients.length === 0) {
-        merged.recipients = attendanceReportContactService.getAutoDetectedHrEmails();
-      }
     }
 
     // If morning time was modified to a new time today, reset morning lock so it can trigger
-    const morningTimeChanged = update.morningTime && update.morningTime !== this.cachedConfig.morningTime;
-    const eveningTimeChanged = update.eveningTime && update.eveningTime !== this.cachedConfig.eveningTime;
+    const morningTimeChanged = update.morningTime && update.morningTime !== base.morningTime;
+    const eveningTimeChanged = update.eveningTime && update.eveningTime !== base.eveningTime;
 
     if (morningTimeChanged) {
       merged.lastMorningStatus = undefined;
@@ -289,12 +313,14 @@ class AttendanceReportSchedulerService {
       merged.lastEveningRunDate = undefined;
     }
 
+    if (orgId) {
+      this.cachedConfigByOrg.set(orgId, merged);
+    }
     this.cachedConfig = merged;
 
     try {
-      const activeComp = api.getActiveCompany();
       const payload: any = {
-        organization_id: activeComp?.organization_id || undefined,
+        organization_id: orgId || undefined,
         enabled: merged.enabled,
         schedule_mode: merged.scheduleMode,
         morning_enabled: merged.morningEnabled,
@@ -302,8 +328,8 @@ class AttendanceReportSchedulerService {
         evening_enabled: merged.eveningEnabled,
         evening_time: merged.eveningTime,
         frequency: merged.frequency,
-        recipients: merged.recipients,
-        whatsapp_recipients: merged.whatsAppRecipients || ['919840209900'],
+        recipients: merged.recipients || [],
+        whatsapp_recipients: merged.whatsAppRecipients || [],
         cc: merged.cc || '',
         attach_excel: merged.attachExcel,
         attach_csv: merged.attachCsv,
@@ -345,11 +371,22 @@ class AttendanceReportSchedulerService {
         }
       }
 
-      if (merged.id) {
+      let existingId = merged.id;
+      if (!existingId && orgId) {
+        const { data: row } = await supabase
+          .from('attendance_report_schedules')
+          .select('id')
+          .eq('organization_id', orgId)
+          .maybeSingle();
+        if (row?.id) existingId = row.id;
+      }
+
+      if (existingId) {
         await supabase
           .from('attendance_report_schedules')
           .update(payload)
-          .eq('id', merged.id);
+          .eq('id', existingId);
+        merged.id = existingId;
       } else {
         const { data: newRow } = await supabase
           .from('attendance_report_schedules')
@@ -365,7 +402,7 @@ class AttendanceReportSchedulerService {
       console.error('[AttendanceScheduler] Failed to save config to Supabase DB:', e);
     }
 
-    return merged;
+    return { ...merged };
   }
 
   /**
@@ -503,11 +540,20 @@ class AttendanceReportSchedulerService {
   /**
    * Retrieves past execution logs from Supabase PostgreSQL database.
    */
-  async getRunLogsAsync(): Promise<ScheduleRunLog[]> {
+  async getRunLogsAsync(targetOrgId?: string): Promise<ScheduleRunLog[]> {
     try {
-      const { data, error } = await supabase
+      const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+      const orgId = targetOrgId || activeComp?.organization_id || activeComp?.id;
+
+      let query = supabase
         .from('attendance_report_logs')
-        .select('*')
+        .select('*');
+
+      if (orgId) {
+        query = query.eq('organization_id', orgId);
+      }
+
+      const { data, error } = await query
         .order('executed_at', { ascending: false })
         .limit(40);
 
@@ -549,9 +595,12 @@ class AttendanceReportSchedulerService {
     this.cachedLogs = [entry, ...this.cachedLogs].slice(0, 40);
 
     try {
+      const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+      const orgId = activeComp?.organization_id || activeComp?.id || '0c621892-e938-4707-9957-13534ea32c19';
+
       await supabase.from('attendance_report_logs').insert([
         {
-          organization_id: '0c621892-e938-4707-9957-13534ea32c19',
+          organization_id: orgId,
           slot: log.slot,
           status: log.status,
           mode: log.mode,
@@ -598,10 +647,12 @@ class AttendanceReportSchedulerService {
     // Direct Supabase fallback if local memory cache was empty
     if (!allEmps || allEmps.length === 0) {
       try {
+        const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+        const targetOrg = activeComp?.organization_id || activeComp?.id || '0c621892-e938-4707-9957-13534ea32c19';
         const { data: dbEmps } = await (supabaseAdmin || supabase)
           .from('employees')
           .select('*')
-          .eq('organization_id', '0c621892-e938-4707-9957-13534ea32c19');
+          .eq('organization_id', targetOrg);
         if (dbEmps && dbEmps.length > 0) {
           allEmps = dbEmps;
         }
@@ -1307,7 +1358,7 @@ class AttendanceReportSchedulerService {
           ? options.customWhatsAppRecipients
           : (config.whatsAppRecipients && config.whatsAppRecipients.length > 0
             ? config.whatsAppRecipients
-            : ['919840209900']),
+            : []),
         customNote: config.customNote,
         attachExcel: config.attachExcel,
         attachCsv: false, // strictly 2 executive files (PDF + Excel)

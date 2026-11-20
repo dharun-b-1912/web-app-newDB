@@ -35,6 +35,7 @@ import {
 } from '../../../services/attendance/misRecipientsService';
 import { attendanceReportContactService, RecipientContact } from '../../../services/attendance/attendanceReportContactService';
 import { normalizeIndianPhone, maskPhoneNumber } from '../../../services/whatsapp/phoneUtils';
+import { api } from '../../../services/api';
 
 interface MisRecipientsManagementViewProps {
   organizationId?: string;
@@ -43,11 +44,13 @@ interface MisRecipientsManagementViewProps {
 }
 
 export const MisRecipientsManagementView: React.FC<MisRecipientsManagementViewProps> = ({
-  organizationId = '0c621892-e938-4707-9957-13534ea32c19',
+  organizationId,
   companyName = 'Joy Corporate Solutions',
   onRecipientsUpdated,
 }) => {
   const { showToast } = useToast();
+  const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+  const effectiveOrgId = organizationId || activeComp?.organization_id || activeComp?.id || '0c621892-e938-4707-9957-13534ea32c19';
 
   const [recipients, setRecipients] = useState<MisReportRecipientRecord[]>([]);
   const [auditLogs, setAuditLogs] = useState<DeliveryAuditLogRow[]>([]);
@@ -84,9 +87,9 @@ export const MisRecipientsManagementView: React.FC<MisRecipientsManagementViewPr
     setIsLoading(true);
     try {
       const [recs, logs, allContacts] = await Promise.all([
-        misRecipientsService.getRecipients(organizationId),
-        misRecipientsService.getAuditLogs(organizationId, 15),
-        attendanceReportContactService.refreshContactsFromDb(),
+        misRecipientsService.getRecipients(effectiveOrgId),
+        misRecipientsService.getAuditLogs(effectiveOrgId, 15),
+        attendanceReportContactService.refreshContactsFromDb(effectiveOrgId),
       ]);
       setRecipients(recs);
       setAuditLogs(logs);
@@ -101,7 +104,7 @@ export const MisRecipientsManagementView: React.FC<MisRecipientsManagementViewPr
 
   useEffect(() => {
     loadData();
-  }, [organizationId]);
+  }, [effectiveOrgId]);
 
   // Filtered recipients
   const filteredRecipients = useMemo(() => {
@@ -180,7 +183,7 @@ export const MisRecipientsManagementView: React.FC<MisRecipientsManagementViewPr
     setIsSaving(true);
     try {
       const res = await misRecipientsService.upsertRecipient({
-        organization_id: organizationId,
+        organization_id: effectiveOrgId,
         employee_id: selectedContact?.id || undefined,
         name: formName.trim(),
         email: formEmail.trim() || undefined,

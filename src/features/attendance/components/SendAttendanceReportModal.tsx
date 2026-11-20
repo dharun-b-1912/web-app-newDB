@@ -179,6 +179,7 @@ export interface SendAttendanceReportModalProps {
   selectedIds?: Set<string>;
   reportDate: string;
   companyName?: string;
+  organizationId?: string;
   punches?: ClassifiedPunchEvent[];
 }
 
@@ -190,9 +191,12 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
   selectedIds = new Set(),
   reportDate,
   companyName = 'Joy Corporate Solutions',
+  organizationId,
   punches = [],
 }) => {
   const { showToast } = useToast();
+  const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+  const effectiveOrgId = organizationId || activeComp?.organization_id || activeComp?.id || '0c621892-e938-4707-9957-13534ea32c19';
 
   // Active Tab: 'DISPATCH' (Manual Send) | 'SCHEDULE' (Automated Time Dispatch) | 'RECIPIENTS' (Access Control) | 'PREVIEW'
   const [activeTab, setActiveTab] = useState<'DISPATCH' | 'SCHEDULE' | 'RECIPIENTS' | 'PREVIEW'>('DISPATCH');
@@ -291,9 +295,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
     name: string;
     role: string;
     employeeId?: string;
-  }>>([
-    { phone: '919840209900', name: 'Executive Leadership (Director)', role: 'Authorized Management' },
-  ]);
+  }>>([]);
   const [whatsAppPhoneInput, setWhatsAppPhoneInput] = useState('');
   const [showConfirmDispatchModal, setShowConfirmDispatchModal] = useState(false);
   const [detailedDeliveryResults, setDetailedDeliveryResults] = useState<any | null>(null);
@@ -321,7 +323,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
 
   // Scheduler State
   const [scheduleConfig, setScheduleConfig] = useState<AttendanceReportScheduleConfig>(() =>
-    attendanceReportSchedulerService.getScheduleConfig()
+    attendanceReportSchedulerService.getScheduleConfig(effectiveOrgId)
   );
   const [runLogs, setRunLogs] = useState<ScheduleRunLog[]>([]);
   const [isSavingSchedule, setIsSavingSchedule] = useState(false);
@@ -337,8 +339,8 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
   // Initialize Contacts on open without pre-filling recipients
   useEffect(() => {
     if (isOpen) {
-      // 1. Refresh contacts from Supabase DB
-      attendanceReportContactService.refreshContactsFromDb().then((allContacts) => {
+      // 1. Refresh contacts from Supabase DB scoped to effective organization
+      attendanceReportContactService.refreshContactsFromDb(effectiveOrgId).then((allContacts) => {
         setContacts(allContacts);
       });
 
@@ -346,14 +348,14 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
       setRecipients([]);
       setCcEmail('');
 
-      // 2. Load schedule configuration & logs from Supabase DB
-      attendanceReportSchedulerService.loadScheduleConfigAsync().then((sched) => {
+      // 2. Load schedule configuration & logs from Supabase DB scoped to effective organization
+      attendanceReportSchedulerService.loadScheduleConfigAsync(effectiveOrgId).then((sched) => {
         setScheduleConfig(sched);
       });
 
-      // 3. Load authoritative WhatsApp recipients from mis_report_recipients table
+      // 3. Load authoritative WhatsApp recipients from mis_report_recipients table scoped to effective organization
       import('../../../services/attendance/misRecipientsService').then(({ misRecipientsService }) => {
-        misRecipientsService.getRecipients('0c621892-e938-4707-9957-13534ea32c19').then((list) => {
+        misRecipientsService.getRecipients(effectiveOrgId).then((list) => {
           const activeWa = list
             .filter((r) => r.is_active && r.delivery_channels.includes('WHATSAPP'))
             .map((r) => ({
@@ -362,12 +364,10 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
               role: r.designation || 'Authorized Recipient',
               employeeId: r.employee_id || undefined,
             }));
-          if (activeWa.length > 0) {
-            setWhatsAppRecipientList(activeWa);
-          }
+          setWhatsAppRecipientList(activeWa);
         });
       });
-      attendanceReportSchedulerService.getRunLogsAsync().then((logs) => {
+      attendanceReportSchedulerService.getRunLogsAsync(effectiveOrgId).then((logs) => {
         setRunLogs(logs);
       });
 
@@ -375,7 +375,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
       const loadPeriodicData = async () => {
         try {
           setIsLoadingPeriodicData(true);
-          const orgId = '0c621892-e938-4707-9957-13534ea32c19';
+          const orgId = effectiveOrgId;
           
           // Query active payroll billing cycle
           const { data: periodRow } = await supabase
@@ -948,6 +948,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
         reportDate,
         reportType: activeFmt,
         companyName,
+        organizationId: effectiveOrgId,
         scope,
         emailRecipients: wantsEmail ? allTargets : undefined,
         whatsAppRecipients: wantsWhatsApp ? whatsAppRecipientList.map((w) => w.phone) : undefined,
@@ -1007,7 +1008,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
         whatsAppRecipients: whatsAppRecipientList.map((w) => w.phone),
         attachCsv: false,
       };
-      const saved = await attendanceReportSchedulerService.saveScheduleConfigAsync(configToSave);
+      const saved = await attendanceReportSchedulerService.saveScheduleConfigAsync(configToSave, effectiveOrgId);
       setScheduleConfig(saved);
       const mStr = saved.morningEnabled ? formatTo12Hour(saved.morningTime) : 'Disabled';
       const eStr = saved.eveningEnabled ? formatTo12Hour(saved.eveningTime) : 'Disabled';
@@ -1031,13 +1032,18 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
     showToast(`Triggering immediate test execution of ${slotLabel} (${slotTime})...`, 'info');
 
     try {
+      const fallbackHrEmail = contacts.find(c => c.isHr)?.email || '';
+      const testEmailRecipients = scheduleConfig.recipients.length > 0
+        ? scheduleConfig.recipients
+        : (fallbackHrEmail ? [fallbackHrEmail] : []);
+
       const res = await attendanceReportSchedulerService.executeDispatch({
         mode: 'MANUAL_TEST',
         slot,
         dateOverride: reportDate,
         rowsOverride: targetRows,
         punchesOverride: punches,
-        customRecipients: scheduleConfig.recipients.length > 0 ? scheduleConfig.recipients : ['thirumalai@joyglobalcorp.com'],
+        customRecipients: testEmailRecipients,
         customWhatsAppRecipients: whatsAppRecipientList.map((w) => w.phone),
       });
 
@@ -2793,10 +2799,10 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                TAB: MIS RECIPIENTS & WHATSAPP ACCESS
                ========================================================================= */
             <MisRecipientsManagementView
-              organizationId="0c621892-e938-4707-9957-13534ea32c19"
+              organizationId={effectiveOrgId}
               companyName={companyName}
               onRecipientsUpdated={() => {
-                misRecipientsService.getRecipients('0c621892-e938-4707-9957-13534ea32c19').then((list) => {
+                misRecipientsService.getRecipients(effectiveOrgId).then((list) => {
                   const activeWa = list
                     .filter((r) => r.is_active && r.delivery_channels.includes('WHATSAPP'))
                     .map((r) => ({
@@ -2805,9 +2811,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                       role: r.designation || 'Authorized Management',
                       employeeId: r.employee_id || undefined,
                     }));
-                  if (activeWa.length > 0) {
-                    setWhatsAppRecipientList(activeWa);
-                  }
+                  setWhatsAppRecipientList(activeWa);
                 });
               }}
             />

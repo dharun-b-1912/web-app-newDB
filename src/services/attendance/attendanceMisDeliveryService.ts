@@ -291,7 +291,7 @@ export class AttendanceMisDeliveryService {
       company = 'Joy Corporate Solutions';
     }
 
-    const organizationId = options.organizationId || activeTenantComp?.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
+    const organizationId = options.organizationId || activeTenantComp?.organization_id || activeTenantComp?.id || '0c621892-e938-4707-9957-13534ea32c19';
     const runId = `mis-run-${dateStr}-${reportType}-${Date.now()}`;
 
     // 1. Generate the finalized PDF through the canonical attendanceReportExportService
@@ -432,7 +432,8 @@ export class AttendanceMisDeliveryService {
     whatsAppTargets?: string[];
     requestedByUserId?: string;
   }): Promise<ResolvedMisRecipients> {
-    const orgId = params.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+    const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+    const orgId = params.organizationId || activeComp?.organization_id || activeComp?.id || '0c621892-e938-4707-9957-13534ea32c19';
     const emailTargets = params.emailTargets || [];
     const whatsAppTargets = params.whatsAppTargets || [];
     const workforceScope = params.scope || 'ALL';
@@ -537,14 +538,11 @@ export class AttendanceMisDeliveryService {
       }
     });
 
-    // Known management / test phone numbers configured for Joy PeopleHR + authoritative DB recipients
-    const knownAuthorizedPhones = [
-      '919840209900',
-      '919840111111',
-      '917825906580',
-      '919080776580',
-      ...dbRecipients.map((r) => String(r.phone).replace(/[^0-9]/g, '')).filter(Boolean),
-    ];
+    // Authoritative DB recipients for this organization
+    const dbRecipientPhones = dbRecipients.map((r) => String(r.phone).replace(/[^0-9]/g, '')).filter(Boolean);
+    const knownAuthorizedPhones = (orgId === '0c621892-e938-4707-9957-13534ea32c19' || !orgId)
+      ? ['919840209900', '919840111111', '917825906580', '919080776580', ...dbRecipientPhones]
+      : [...dbRecipientPhones];
 
     // Process WhatsApp Targets
     whatsAppTargets.forEach((rawPhone) => {
@@ -698,7 +696,8 @@ export class AttendanceMisDeliveryService {
     if (companyName === 'Workforce Organization' || !companyName) {
       companyName = 'Joy Corporate Solutions';
     }
-    const organizationId = params.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+    const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+    const organizationId = params.organizationId || activeComp?.organization_id || activeComp?.id || '0c621892-e938-4707-9957-13534ea32c19';
     const workforceScope = params.scope || 'ALL';
 
     // Step 1: Resolve and authorize recipients with strict RBAC & Scope checks

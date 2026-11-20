@@ -1785,6 +1785,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           selectedIds={selectedIds}
           reportDate={selectedDate}
           companyName={api.getActiveCompany()?.name || api.getActiveCompany()?.trade_name || api.getActiveCompany()?.legal_name || 'Joy Corporate Solutions'}
+          organizationId={api.getActiveCompany()?.organization_id || api.getActiveCompany()?.id}
           punches={allPunchesForModal}
         />
       )}

@@ -200,12 +200,18 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
             decisionReason = 'Duplicate punch within debounce window.';
           }
         } else {
+          const firstPunchTime = new Date(empPunches[0]?.punch_time || pTimeUtc).getTime();
+          const currentPunchTime = new Date(pTimeUtc).getTime();
+          const gapMinutes = Math.round((currentPunchTime - firstPunchTime) / 60000);
+
+          const isCheckoutCandidate = isExplicitOut || (isLastPunch && (isEndOfShift || gapMinutes >= 240));
+
           // Autonomous business logic
           if (isFirstPunch) {
             decision = 'CHECK-IN';
             decisionCode = 'ACCEPTED_CHECK_IN';
             decisionReason = 'Shift commencement check-in accepted.';
-          } else if (isExplicitOut || (isLastPunch && isEndOfShift)) {
+          } else if (isCheckoutCandidate) {
             decision = 'CHECK-OUT';
             decisionCode = 'ACCEPTED_CHECK_OUT';
             decisionReason = 'Shift departure checkout accepted.';
