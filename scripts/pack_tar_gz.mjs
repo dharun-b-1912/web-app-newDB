@@ -162,12 +162,42 @@ for (const file of files) {
   if (file.isDir) {
     tarBuffers.push(createTarHeader(file.relPath, 0, 0o755, '5'));
   } else {
-    tarBuffers.push(createTarHeader(file.relPath, file.size, 0o644, '0'));
-    const content = fs.readFileSync(file.path);
+    let content = fs.readFileSync(file.path);
+    let size = file.size;
+
+    // Production safety: If packaging root index.html, ALWAYS use the production-compiled dist/index.html!
+    // This ensures that even if Hostinger's static fallback triggers, it NEVER requests uncompiled /src/main.tsx
+    if (file.relPath === 'index.html' && fs.existsSync(path.join(rootDir, 'dist', 'index.html'))) {
+      content = fs.readFileSync(path.join(rootDir, 'dist', 'index.html'));
+      size = content.length;
+    }
+
+    tarBuffers.push(createTarHeader(file.relPath, size, 0o644, '0'));
     tarBuffers.push(content);
-    const padding = (512 - (file.size % 512)) % 512;
+    const padding = (512 - (size % 512)) % 512;
     if (padding > 0) {
       tarBuffers.push(Buffer.alloc(padding));
+    }
+
+    // Also mirror dist/.htaccess to root .htaccess in the archive
+    if (file.relPath === 'dist/.htaccess') {
+      const rootHtaccessHeader = createTarHeader('.htaccess', size, 0o644, '0');
+      tarBuffers.push(rootHtaccessHeader);
+      tarBuffers.push(content);
+      if (padding > 0) {
+        tarBuffers.push(Buffer.alloc(padding));
+      }
+    }
+
+    // Also mirror dist/assets files to root assets/ in the archive for dual-mode static & node routing
+    if (file.relPath.startsWith('dist/assets/')) {
+      const rootAssetRelPath = file.relPath.slice(5); // strip 'dist/' -> 'assets/...'
+      const assetHeader = createTarHeader(rootAssetRelPath, size, 0o644, '0');
+      tarBuffers.push(assetHeader);
+      tarBuffers.push(content);
+      if (padding > 0) {
+        tarBuffers.push(Buffer.alloc(padding));
+      }
     }
   }
 }
