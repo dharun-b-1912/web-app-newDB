@@ -484,8 +484,9 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
       }, 1200);
 
       // 1. Send trigger to local gateway daemon
+      const gwBase = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ? 'http://127.0.0.1:11108' : '/api/connector';
       try {
-        await fetch('http://127.0.0.1:11108/enroll-session', {
+        await fetch(`${gwBase}/enroll-session`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -505,7 +506,8 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
       if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
       pollingTimerRef.current = setInterval(async () => {
         try {
-          const res = await fetch(`http://127.0.0.1:11108/enroll-status?sessionId=${session.id}`);
+          const gwBase = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ? 'http://127.0.0.1:11108' : '/api/connector';
+          const res = await fetch(`${gwBase}/enroll-status?sessionId=${session.id}`);
           if (res.ok) {
             const data = await res.json();
             if (data.session) {
@@ -645,8 +647,9 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
 
       // Inform gateway daemon of confirmed enrollment
       try {
+        const gwBase = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ? 'http://127.0.0.1:11108' : '/api/connector';
         const devIp = device.ip_address || (device as any).ip || '192.168.1.201';
-        await fetch('http://127.0.0.1:11108/confirm-enrollment', {
+        await fetch(`${gwBase}/confirm-enrollment`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -692,10 +695,11 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
 
     try {
       // Send test punch to local gateway daemon
+      const gwBase = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ? 'http://127.0.0.1:11108' : '/api/connector';
       const devIp = device.ip_address || (device as any).ip || '192.168.1.201';
       const cleanPin = String(machineUserId).trim();
 
-      await fetch('http://127.0.0.1:11108/test-punch', {
+      await fetch(`${gwBase}/test-punch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

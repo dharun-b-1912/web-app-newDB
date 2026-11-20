@@ -187,9 +187,10 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
     // Fast-poll the live hardware receiver every 1,000ms for zero-lag detection
     const pollLivePunches = async () => {
       try {
+        const gwBase = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ? 'http://127.0.0.1:11108' : '/api/connector';
         const ctrl = new AbortController();
         const tid = setTimeout(() => ctrl.abort(), 600);
-        const resp = await fetch('http://127.0.0.1:11108/punches', { signal: ctrl.signal });
+        const resp = await fetch(`${gwBase}/punches`, { signal: ctrl.signal });
         clearTimeout(tid);
         if (!resp.ok) return;
         const data = await resp.json();
@@ -433,7 +434,8 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
     try {
       let punches: any[] = [];
       try {
-        const resp = await fetch('http://127.0.0.1:11108/punches');
+        const gwBase = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ? 'http://127.0.0.1:11108' : '/api/connector';
+        const resp = await fetch(`${gwBase}/punches`);
         if (resp.ok) {
           const data = await resp.json();
           punches = Array.isArray(data.punches) ? data.punches : [];

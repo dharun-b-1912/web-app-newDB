@@ -151,10 +151,14 @@ export const FaceRecognitionChannelView: React.FC<FaceRecognitionChannelViewProp
         try { ctrl2.abort(); } catch (_) {}
       }, 700);
 
+      const gwBase = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+        ? 'http://127.0.0.1:11108'
+        : '/api/connector';
+
       const [emps, uRes, pRes] = await Promise.all([
         api.getEmployees().catch(() => []),
-        fetch('http://127.0.0.1:11108/api/device-users', { signal: ctrl1.signal }).catch(() => null),
-        fetch('http://127.0.0.1:11108/punches', { signal: ctrl2.signal }).catch(() => null),
+        fetch(`${gwBase}/api/device-users`, { signal: ctrl1.signal }).catch(() => null),
+        fetch(`${gwBase}/punches`, { signal: ctrl2.signal }).catch(() => null),
       ]);
       clearTimeout(tid);
 
@@ -399,14 +403,18 @@ export const FaceRecognitionChannelView: React.FC<FaceRecognitionChannelViewProp
         try { ctrl.abort(); } catch (_) {}
       }, 1000);
 
-      const res = await fetch('http://127.0.0.1:11108/sync-device-now', {
+      const gwBase = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+        ? 'http://127.0.0.1:11108'
+        : '/api/connector';
+
+      const res = await fetch(`${gwBase}/sync-device-now`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ip: '192.168.1.201', port: 4370 }),
         signal: ctrl.signal,
       }).catch(() => null);
 
-      await fetch('http://127.0.0.1:11108/sync-time', {
+      await fetch(`${gwBase}/sync-time`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ip: '192.168.1.201', port: 4370 }),

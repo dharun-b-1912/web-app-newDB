@@ -648,31 +648,29 @@ class BiometricGatewayService {
 
     try {
       let resp: Response | null = null;
-      const candidateUrls = [
-        `http://127.0.0.1:${this.activeGatewayPort}/health`,
-        `/api/connector/health`,
-        `http://localhost:${this.activeGatewayPort}/health`,
-      ];
-      // Fast primary check on loopback (400ms)
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 400);
-      resp = await fetch(candidateUrls[0], { signal: ctrl.signal }).catch(() => null);
-      clearTimeout(tid);
+      const isLocalHost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      const candidateUrls = isLocalHost
+        ? [
+            `http://127.0.0.1:${this.activeGatewayPort}/health`,
+            `/api/connector/health`,
+            `http://localhost:${this.activeGatewayPort}/health`,
+          ]
+        : [
+            `/api/connector/health`,
+          ];
 
-      if (!resp || !resp.ok) {
-        // Parallel fallback probes with 400ms timeout
-        const fallbacks = candidateUrls.slice(1).map(async (url) => {
-          try {
-            const c = new AbortController();
-            const t = setTimeout(() => c.abort(), 400);
-            const r = await fetch(url, { signal: c.signal }).catch(() => null);
-            clearTimeout(t);
-            if (r && (r.ok || r.status < 500)) return r;
-          } catch (_) {}
-          return null;
-        });
-        const results = await Promise.all(fallbacks);
-        resp = results.find(r => r && (r.ok || r.status < 500)) || null;
+      for (const url of candidateUrls) {
+        try {
+          const ctrl = new AbortController();
+          const tid = setTimeout(() => ctrl.abort(), 800);
+          const r = await fetch(url, { signal: ctrl.signal }).catch(() => null);
+          clearTimeout(tid);
+          const isJson = r?.headers?.get('content-type')?.includes('application/json');
+          if (r && r.ok && isJson) {
+            resp = r;
+            break;
+          }
+        } catch (_) {}
       }
 
       if (resp && resp.ok) {
@@ -692,7 +690,7 @@ class BiometricGatewayService {
           pending_queue_count: Number(data.pending_queue_count) || 0,
           devices_count: this.getBiometricDevices().length,
           version: data.agent_version || data.version || '2.5.0-enterprise',
-          machine_name: data.platform || data.machine_name || 'LOCAL-DAEMON',
+          machine_name: data.platform || data.machine_name || 'CLOUD-ADMS',
           last_probe_at: new Date().toISOString(),
         };
         this.resetGatewayOfflineStatus();
@@ -948,11 +946,16 @@ class BiometricGatewayService {
         timeoutMs = 1200;
       }
 
-      const candidateUrls = [
-        `http://127.0.0.1:${this.activeGatewayPort}${cleanEndpoint}`,
-        `/api/connector${cleanEndpoint}`,
-        `http://localhost:${this.activeGatewayPort}${cleanEndpoint}`,
-      ];
+      const isLocalHost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      const candidateUrls = isLocalHost
+        ? [
+            `http://127.0.0.1:${this.activeGatewayPort}${cleanEndpoint}`,
+            `/api/connector${cleanEndpoint}`,
+            `http://localhost:${this.activeGatewayPort}${cleanEndpoint}`,
+          ]
+        : [
+            `/api/connector${cleanEndpoint}`,
+          ];
 
       for (const targetUrl of candidateUrls) {
         try {
@@ -960,7 +963,8 @@ class BiometricGatewayService {
           const tid = setTimeout(() => ctrl.abort(), timeoutMs);
           const resp = await fetch(targetUrl, { ...options, signal: ctrl.signal }).catch(() => null);
           clearTimeout(tid);
-          if (resp && resp.ok) {
+          const isJson = resp?.headers?.get('content-type')?.includes('application/json');
+          if (resp && resp.ok && isJson) {
             this._gwOpenUntil = 0;
             this._gwFailureCount = 0;
             this._connectorStatus = 'online';
