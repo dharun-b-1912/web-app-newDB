@@ -118,6 +118,19 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
     status: 'HEALTHY' as 'HEALTHY' | 'WARNING' | 'CRITICAL',
   });
 
+  const handleRefreshLedger = async () => {
+    setIsLoading(true);
+    try {
+      await biometricGatewayService.syncPunchesFromSupabase(500);
+      loadLedgerEvents();
+      showToast('✓ Biometric terminal ledger synchronized with live hardware.');
+    } catch (err: any) {
+      showToast(err.message || 'Could not refresh ledger', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const loadLedgerEvents = () => {
     setIsLoading(true);
     try {
@@ -125,6 +138,17 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
       const gatewayPunches = (biometricGatewayService.getRawPunches(1000) || []).filter(isHardwareBiometricPunch);
       // 2. Pull audit events from attendanceDecisionEngine
       const decisionEvents = attendanceDecisionEngine.getRawEvents(1000) || [];
+
+      // 3. Group punches by employee to determine first (CHECK-IN) vs last (CHECK-OUT) of the day
+      const punchesByEmp = new Map<string, RawBiometricPunch[]>();
+      for (const gp of gatewayPunches) {
+        const key = gp.employee_id || gp.biometric_pin || 'unknown';
+        if (!punchesByEmp.has(key)) punchesByEmp.set(key, []);
+        punchesByEmp.get(key)!.push(gp);
+      }
+      for (const list of punchesByEmp.values()) {
+        list.sort((a, b) => new Date(a.punch_time).getTime() - new Date(b.punch_time).getTime());
+      }
 
       // Map into authoritative unified terminal event ledger
       const mapped: UnifiedTerminalEvent[] = gatewayPunches.map((gp, idx) => {
@@ -149,8 +173,12 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
         const pTimeUtc = gp.punch_time || new Date().toISOString();
         const pMins = attendanceTimeService.getMinutesFromMidnight(pTimeUtc, 'Asia/Kolkata');
         const isExplicitOut = gp.punch_direction === 'OUT' || correlatedDecision?.decision_code === 'ACCEPTED_CHECK_OUT';
-        const isEndOfShift = pMins >= 1065; // >= 17:45 PM
-        const isMidday = pMins >= 660 && pMins < 1065; // 11:00 AM - 17:45 PM
+        const isEndOfShift = pMins >= 1020; // >= 17:00 PM
+
+        const empKey = empId || pin || 'unknown';
+        const empPunches = punchesByEmp.get(empKey) || [];
+        const isFirstPunch = empPunches.length <= 1 || empPunches[0].id === gp.id || empPunches[0].punch_time === gp.punch_time;
+        const isLastPunch = empPunches.length > 1 && (empPunches[empPunches.length - 1].id === gp.id || empPunches[empPunches.length - 1].punch_time === gp.punch_time);
 
         let decision: UnifiedTerminalEvent['attendance_decision'] = 'CHECK-IN';
         let decisionReason = 'First valid biometric event for active session.';
@@ -173,14 +201,18 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
           }
         } else {
           // Autonomous business logic
-          if (isMidday && !isExplicitOut) {
-            decision = 'NO CHANGE';
-            decisionCode = 'ACCEPTED_IN_SESSION';
-            decisionReason = 'Attendance session already active; event retained in terminal log.';
-          } else if (isExplicitOut || isEndOfShift) {
+          if (isFirstPunch) {
+            decision = 'CHECK-IN';
+            decisionCode = 'ACCEPTED_CHECK_IN';
+            decisionReason = 'Shift commencement check-in accepted.';
+          } else if (isExplicitOut || (isLastPunch && isEndOfShift)) {
             decision = 'CHECK-OUT';
             decisionCode = 'ACCEPTED_CHECK_OUT';
             decisionReason = 'Shift departure checkout accepted.';
+          } else {
+            decision = 'NO CHANGE';
+            decisionCode = 'ACCEPTED_IN_SESSION';
+            decisionReason = 'Mid-shift floor movement logged.';
           }
         }
 
@@ -193,7 +225,7 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
             ? 'FACE'
             : rawMethod.includes('CARD') || rawMethod.includes('RFID')
             ? 'RFID'
-            : 'FINGERPRINT';
+            : 'FACE';
 
         const deviceTimeRaw =
           (gp as any).raw_payload?.device_timestamp_raw ||
@@ -211,10 +243,10 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
           employee_name: empName,
           employee_code: empCode,
           biometric_pin: pin,
-          device_id: gp.device_id || 'dev-essl-01',
-          device_name: gp.device_name || 'eSSL AI-FACE MAGNUM',
-          device_serial: gp.device_serial || 'TDBD253600550',
-          location: 'Main Entrance Turnstile',
+          device_id: gp.device_id || 'b0e1d1a6-0c6f-4782-950f-eb4d80dc006e',
+          device_name: gp.device_name || 'eSSL MB160 — Plant Main Gate (4G FDLTE)',
+          device_serial: gp.device_serial || 'JNP2263200782',
+          location: 'Plant Main Gate Entrance',
           event_type: 'BIOMETRIC_VERIFICATION',
           verification_method: method,
           attendance_decision: decision,
