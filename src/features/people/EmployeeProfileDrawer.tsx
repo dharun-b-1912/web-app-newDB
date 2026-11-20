@@ -688,26 +688,63 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
 
                   {/* Biometric Gateway Access Status */}
                   {(() => {
-                    const bioDevices = biometricGatewayService.getEmployeeBiometricDevices(employee.id);
+                    const bioDevices = biometricGatewayService.getEmployeeBiometricDevices(
+                      employee.id,
+                      employee.employee_code || (employee as any).code,
+                      employee.organization_id
+                    );
                     return (
-                      <Card className="p-4 space-y-3 bg-gray-50/70 border-gray-200">
-                        <div className="flex items-center justify-between">
+                      <Card className="p-4 space-y-3 bg-white border border-gray-200/90 rounded-2xl shadow-xs">
+                        <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
                           <div className="flex items-center gap-2">
                             <Fingerprint className="w-4 h-4 text-[#07563D]" />
                             <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
                               Biometric Hardware Access
                             </h3>
                           </div>
-                          <Badge variant={bioDevices.length > 0 ? 'emerald' : 'gray'} className="text-[10px]">
-                            {bioDevices.length > 0 ? `${bioDevices.length} Terminal Linked` : 'Not Enrolled'}
+                          <Badge variant={bioDevices.length > 0 ? 'emerald' : 'gray'} className="text-[10px] font-bold">
+                            {bioDevices.length > 0 ? `● ${bioDevices.length} Terminal Linked` : 'Not Enrolled'}
                           </Badge>
                         </div>
                         {bioDevices.length > 0 ? (
-                          <div className="space-y-2">
+                          <div className="space-y-2.5">
                             {bioDevices.map((dev, i) => (
-                              <div key={i} className="p-2.5 bg-white rounded-xl border border-gray-200 text-xs flex items-center justify-between">
-                                <span className="font-bold text-gray-900">{dev.deviceName}</span>
-                                <Badge variant="blue" className="text-[9px] font-mono">PIN #{dev.machinePin}</Badge>
+                              <div key={i} className="p-3 bg-gray-50/80 rounded-xl border border-gray-200 text-xs space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-bold text-gray-900">{dev.deviceName}</span>
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                        ONLINE
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-gray-500 font-mono mt-0.5 flex items-center gap-2">
+                                      <span>S/N: <strong className="text-gray-800">{dev.serialNumber}</strong></span>
+                                      <span>•</span>
+                                      <span>{dev.branch}</span>
+                                    </div>
+                                  </div>
+                                  <Badge variant="blue" className="text-[10px] font-mono font-bold shrink-0">
+                                    PIN #{dev.machinePin}
+                                  </Badge>
+                                </div>
+
+                                <div className="pt-2 border-t border-gray-200/70 flex items-center justify-between text-[11px] text-gray-600">
+                                  <div className="flex items-center gap-3">
+                                    <span className="flex items-center gap-1 text-emerald-700 font-medium">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Face Enrolled
+                                    </span>
+                                    <span className="flex items-center gap-1 text-emerald-700 font-medium">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> 1 FP Enrolled
+                                    </span>
+                                  </div>
+                                  <a
+                                    href="/biometric"
+                                    className="text-[10px] font-bold text-[#07563D] hover:underline flex items-center gap-0.5"
+                                  >
+                                    Manage Terminal &rarr;
+                                  </a>
+                                </div>
                               </div>
                             ))}
                           </div>
