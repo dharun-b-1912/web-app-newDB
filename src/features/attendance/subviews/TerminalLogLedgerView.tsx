@@ -246,6 +246,12 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
 
   useEffect(() => {
     loadLedgerEvents();
+    biometricGatewayService.syncPunchesFromSupabase(100).then(() => loadLedgerEvents()).catch(() => {});
+
+    // Live polling every 4 seconds for real-time terminal audit stream
+    const pollInterval = setInterval(() => {
+      biometricGatewayService.syncPunchesFromSupabase(100).then(() => loadLedgerEvents()).catch(() => {});
+    }, 4000);
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const debouncedLoad = () => {
@@ -259,6 +265,7 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
     const unsubAttendance = hrEventBus.subscribe('attendance.*', debouncedLoad);
 
     return () => {
+      clearInterval(pollInterval);
       if (debounceTimer) clearTimeout(debounceTimer);
       unsubBiometric();
       unsubAttendance();

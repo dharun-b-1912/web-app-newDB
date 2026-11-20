@@ -5947,19 +5947,75 @@ class BiometricGatewayService {
    * Populates the in-memory cache with cloud punches without using browser localStorage
    */
   async syncPunchesFromSupabase(limit = 100): Promise<RawBiometricPunch[]> {
-    if (!isSupabaseEnabled || !supabase) {
-      return this.getRawPunches(limit);
-    }
     try {
-      // Kick session heal in the background — don't block punch fetch.
-      // Supabase anon key allows SELECT on attendance_punches via RLS.
-      ensureSupabaseSession().catch(() => {});
       const orgId = getActiveOrgId();
+
+      // 1. First attempt: fetch from Cloud Connector API (fastest, authoritative, bypasses client RLS)
+      try {
+        const resp = await this.fetchGateway(`/punches?organizationId=${orgId}`);
+        if (resp && resp.ok) {
+          const json = await resp.json();
+          if (json && json.success && Array.isArray(json.punches) && json.punches.length > 0) {
+            const mappedPunches: RawBiometricPunch[] = json.punches.map((p: any) => ({
+              id: p.id,
+              device_id: p.device_id,
+              device_serial: p.device_serial || 'JNP2263200782',
+              device_name: p.device_name || 'eSSL MB160 — Plant Main Gate (4G FDLTE)',
+              biometric_pin: String(p.biometric_pin || '1'),
+              employee_id: p.employee_id,
+              employee_name: p.employee_name || 'Employee',
+              employee_code: p.employee_code,
+              punch_time: p.punch_time,
+              verification_mode: (p.verification_mode || 'Face') as any,
+              punch_direction: (p.punch_direction || 'IN') as any,
+              source_type: 'ADMS_PUSH_LIVE',
+              dedup_hash: `${p.device_serial || 'MB160'}_${p.biometric_pin}_${Math.floor(new Date(p.punch_time).getTime() / 60000)}`,
+              processed_status: 'PROCESSED' as const,
+              created_at: p.created_at || p.punch_time,
+            }));
+
+            const sorted = mappedPunches.sort((a, b) => new Date(b.punch_time || 0).getTime() - new Date(a.punch_time || 0).getTime());
+            setStore(STORAGE_KEYS.PUNCHES, sorted.slice(0, 500));
+            JoyRedis.setLivePunchesCache(sorted.slice(0, 100)).catch(() => {});
+
+            // Update matching device's last_punch_at and last_attendance_sync_at
+            const devs = this.getBiometricDevices();
+            let devsUpdated = false;
+            for (const d of devs) {
+              const matchingP = sorted.find(p => p.device_id === d.id || p.device_serial === d.serial_number);
+              if (matchingP) {
+                d.last_punch_at = matchingP.punch_time;
+                d.last_attendance_sync_at = new Date().toISOString();
+                d.last_sync = new Date().toISOString();
+                devsUpdated = true;
+              } else if (sorted[0] && (d.organization_id === orgId || !d.organization_id)) {
+                d.last_punch_at = sorted[0].punch_time;
+                d.last_attendance_sync_at = new Date().toISOString();
+                d.last_sync = new Date().toISOString();
+                devsUpdated = true;
+              }
+            }
+            if (devsUpdated) {
+              setStore(STORAGE_KEYS.DEVICES, devs);
+            }
+
+            hrEventBus.emit('biometric.punch_ingested', { punches: sorted.slice(0, limit) });
+            return sorted.slice(0, limit);
+          }
+        }
+      } catch (connErr) {
+        console.warn('[BiometricGatewayService] fetchGateway punches fallback notice:', connErr);
+      }
+
+      if (!isSupabaseEnabled || !supabase) {
+        return this.getRawPunches(limit);
+      }
+
+      // 2. Direct Supabase fallback
+      ensureSupabaseSession().catch(() => {});
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), 10000);
 
-      // Only fetch punches from the last 48 hours (today + yesterday in IST)
-      // This prevents the Live Stream from showing stale week-old data
       const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
       let { data, error } = await supabase
@@ -5973,26 +6029,12 @@ class BiometricGatewayService {
         .abortSignal(ctrl.signal);
       clearTimeout(tid);
 
-      if ((!data || data.length === 0) && orgId !== '0c621892-e938-4707-9957-13534ea32c19') {
-        const fallbackRes = await supabase
-          .from('attendance_punches')
-          .select('*, employees(id, display_name, first_name, last_name, employee_code)')
-          .eq('organization_id', '0c621892-e938-4707-9957-13534ea32c19')
-          .eq('punch_source', 'BIOMETRIC')
-          .gte('punch_time', cutoff)
-          .order('punch_time', { ascending: false })
-          .limit(limit);
-        if (fallbackRes.data && fallbackRes.data.length > 0) {
-          data = fallbackRes.data;
-        }
-      }
-
       if (!error && Array.isArray(data) && data.length > 0) {
-        const devName = 'eSSL AI-FACE MAGNUM Terminal — Main Entrance';
-        const devSerial = 'TDBD253600550';
-        const devId = '40576a24-8c22-43ee-95b8-b74ab380c968';
+        const isElectra = orgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
+        const devName = isElectra ? 'eSSL MB160 — Plant Main Gate (4G FDLTE)' : 'eSSL AI-FACE MAGNUM Terminal — Main Entrance';
+        const devSerial = isElectra ? 'JNP2263200782' : 'TDBD253600550';
+        const devId = isElectra ? 'b0e1d1a6-0c6f-4782-950f-eb4d80dc006e' : 'c7286b0d-d9d5-4cc2-9045-578d1d4cc464';
 
-        // Filter: Absolutely NO mobile, web, GPS, geofence, or manual punches may enter the biometric feed
         const biometricRows = data.filter((row: any) => {
           const psource = String(row.punch_source || '').toUpperCase();
           const vmode = String(row.verification_mode || '').toUpperCase();
@@ -6035,29 +6077,29 @@ class BiometricGatewayService {
             punch_time: pTime,
             verification_mode: mappedMode as any,
             punch_direction: (row.punch_type === 'OUT' || row.punch_type === 'CHECK_OUT' ? 'OUT' : 'IN') as any,
-            source_type: 'LAN_AGENT',
+            source_type: 'ADMS_PUSH_LIVE',
             dedup_hash: `${devSerial}_${pin}_${minuteBucket}`,
             processed_status: 'PROCESSED' as const,
             created_at: row.created_at || pTime,
           };
         });
 
-        // Authoritative cloud data: sort by punch_time descending
         const sorted = mappedPunches.sort((a, b) => new Date(b.punch_time || 0).getTime() - new Date(a.punch_time || 0).getTime());
         setStore(STORAGE_KEYS.PUNCHES, sorted.slice(0, 500));
         JoyRedis.setLivePunchesCache(sorted.slice(0, 100)).catch(() => {});
 
-        // Keep registered device last_punch_at up to date with the latest punch
         const devs = this.getBiometricDevices();
-        if (devs.length > 0 && sorted.length > 0) {
-          devs[0] = {
-            ...devs[0],
-            id: devId,
-            device_name: devName,
-            serial_number: devSerial,
-            last_punch_at: sorted[0].punch_time,
-            last_sync: new Date().toISOString(),
-          };
+        let devsUpdated = false;
+        for (const d of devs) {
+          const matchingP = sorted.find(p => p.device_id === d.id || p.device_serial === d.serial_number);
+          if (matchingP) {
+            d.last_punch_at = matchingP.punch_time;
+            d.last_attendance_sync_at = new Date().toISOString();
+            d.last_sync = new Date().toISOString();
+            devsUpdated = true;
+          }
+        }
+        if (devsUpdated) {
           setStore(STORAGE_KEYS.DEVICES, devs);
         }
 

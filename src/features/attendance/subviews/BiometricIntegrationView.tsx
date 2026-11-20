@@ -154,7 +154,13 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   useEffect(() => {
     isLiveStreamPausedRef.current = isLiveStreamPaused;
   }, [isLiveStreamPaused]);
-  const [showTerminalLog, setShowTerminalLog] = useState(false);
+  const [showTerminalLog, setShowTerminalLog] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      return sp.get('subTab') === 'terminal-logs' || sp.get('tab') === 'terminal-logs' || currentTab === 'terminal-logs' || currentTab === 'device-logs' || currentTab === 'raw-logs';
+    }
+    return false;
+  });
 
   // Modals & Flows
   const [isAddWizardOpen, setIsAddWizardOpen] = useState(false);
