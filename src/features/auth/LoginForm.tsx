@@ -247,7 +247,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         if (res.success && res.user) {
           showToast(`Welcome back, ${res.user.name}`, 'success');
           if (onSuccessRoute) {
-            onSuccessRoute(authContext === 'platform' ? '/platform-admin' : '/vendor-portal');
+            const destination =
+              res.destinationRoute ||
+              (authContext === 'platform'
+                ? '/platform-admin'
+                : authContext === 'vendor'
+                ? '/vendor-portal'
+                : '/dashboard');
+            onSuccessRoute(destination);
           }
         } else {
           setAuthError(res.errorMessage || 'Authentication failed.');
