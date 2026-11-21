@@ -498,30 +498,6 @@ connectorRouter.get('/punches', async (req, res) => {
     return res.status(200).json({ success: true, count: 0, punches: [] });
   }
 });
-        device_serial: devSerial,
-        device_name: devName,
-        biometric_pin: pin,
-        employee_id: p.employee_id,
-        employee_name: empName,
-        employee_code: emp?.employee_code,
-        punch_time: p.punch_time,
-        punch_direction: (p.punch_type === 'OUT' || p.punch_type === 'CHECK_OUT' ? 'OUT' : 'IN'),
-        verification_mode: (p.verification_mode || 'Face'),
-        source_type: 'ADMS_PUSH_LIVE',
-        processed_status: 'PROCESSED',
-        created_at: p.created_at
-      };
-    });
-
-    return res.status(200).json({
-      success: true,
-      count: enriched.length,
-      punches: enriched
-    });
-  } catch (err) {
-    return res.status(200).json({ success: true, count: 0, punches: [] });
-  }
-});
 
 connectorRouter.use((req, res) => {
   return res.status(200).json({
