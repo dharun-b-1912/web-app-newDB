@@ -662,7 +662,7 @@ class BiometricGatewayService {
       for (const url of candidateUrls) {
         try {
           const ctrl = new AbortController();
-          const tid = setTimeout(() => ctrl.abort(), 800);
+          const tid = setTimeout(() => ctrl.abort(), isLocalHost ? 1500 : 4000);
           const r = await fetch(url, { signal: ctrl.signal }).catch(() => null);
           clearTimeout(tid);
           const isJson = r?.headers?.get('content-type')?.includes('application/json');
@@ -888,14 +888,11 @@ class BiometricGatewayService {
       clearTimeout(this._connectorMonitorTimer);
       this._connectorMonitorTimer = null;
     }
-    // Only schedule recurrent probes if the connector is confirmed online.
-    if (this._connectorStatus !== 'online') {
-      return;
-    }
     if (this._monitorSubscriberCount > 0) {
+      const delay = this._connectorStatus === 'online' ? 30000 : 15000;
       this._connectorMonitorTimer = setTimeout(() => {
         this.probeConnectorHealth().catch(() => {});
-      }, 30000);
+      }, delay);
     }
   }
 
@@ -1334,6 +1331,9 @@ class BiometricGatewayService {
             const devLocation = isElectra ? 'Plant Main Gate' : (d.location_description || (isMB160 ? 'Plant Main Gate' : 'Main Entrance'));
             const devLastPunch = punchMap[d.id] || (isElectra ? undefined : '2026-11-19T05:28:11.000Z');
 
+            const hasRecentHeartbeat = !!(d.last_heartbeat_at && (Date.now() - new Date(d.last_heartbeat_at).getTime() < 15 * 60 * 1000));
+            const devStatus = hasRecentHeartbeat ? 'Online' : (d.is_active ? 'Standby' : 'Offline');
+
             mapped.push({
               id: d.id,
               organization_id: d.organization_id || targetOrg,
@@ -1348,7 +1348,7 @@ class BiometricGatewayService {
               location_description: devLocation,
               branch: devBranch,
               direction_mode: (d.direction || d.direction_mode || 'BOTH') as any,
-              status: ((d.last_heartbeat_at && (Date.now() - new Date(d.last_heartbeat_at).getTime() < 15 * 60 * 1000)) ? 'Online' : (this._connectorStatus === 'online' && d.is_active ? 'Online' : (d.status || (d.is_active ? 'Standby' : 'Offline')))) as any,
+              status: devStatus as any,
               registered_users_count: isElectra ? 217 : ((typeof d.registered_users_count === 'number' && d.registered_users_count > 0) ? d.registered_users_count : (isMB160 ? 14 : 23)),
               sync_frequency_mins: d.sync_frequency_mins || 1,
               last_sync: d.last_heartbeat_at || d.updated_at || new Date().toISOString(),

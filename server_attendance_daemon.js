@@ -440,7 +440,7 @@ const TG_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '9137821052:AAH40OpD041tL
 const TG_CHAT_IDS = (process.env.TELEGRAM_CHAT_ID || '-5189746331,9155594412').split(',').map(s => s.trim()).filter(Boolean);
 
 // Track alerted state for each device to avoid duplicate spamming
-const deviceOfflineState = new Map(); // serial -> { isOffline: boolean, offlineSince: string, lastAlertAt: number }
+const deviceOfflineState = new Map(); // serial -> { isOffline: boolean, offlineSince: string, lastAlertAt: number, alertCount: number }
 
 async function sendTelegramAlert(html) {
   for (const chatId of TG_CHAT_IDS) {
@@ -481,14 +481,41 @@ export async function checkBiometricDeviceHeartbeats() {
       const ageMs = nowMs - lastHbMs;
       const isDead = ageMs > TIMEOUT_MS;
 
-      const state = deviceOfflineState.get(serial) || { isOffline: false, offlineSince: null, lastAlertAt: 0 };
       const devName = dev.device_name || `eSSL Device (${serial})`;
       const orgLabel = dev.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ? 'Electra EV' : 'Joy Corporate Solutions';
       const timeStr = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
 
+      // If state is not yet tracked and the device has ALREADY been dead for > 15 mins (e.g. server restart),
+      // do not spam Telegram on startup. Quietly track it as already notified.
+      if (!deviceOfflineState.has(serial)) {
+        if (isDead && ageMs > 15 * 60 * 1000) {
+          deviceOfflineState.set(serial, {
+            isOffline: true,
+            offlineSince: dev.last_heartbeat_at,
+            lastAlertAt: nowMs,
+            alertCount: 2, // Maxed out: suppress alert for already-dead device
+          });
+          continue;
+        } else {
+          deviceOfflineState.set(serial, {
+            isOffline: false,
+            offlineSince: null,
+            lastAlertAt: 0,
+            alertCount: 0,
+          });
+        }
+      }
+
+      const state = deviceOfflineState.get(serial);
+
       if (isDead) {
         // Device is OFFLINE
-        if (!state.isOffline || (nowMs - state.lastAlertAt > 30 * 60 * 1000)) { // alert on transition or every 30 mins
+        const alertCount = state.alertCount || (state.isOffline ? 1 : 0);
+        // Only alert on transition (alertCount === 0) OR one reminder at 30 minutes (alertCount === 1).
+        // Never spam beyond 2 alerts.
+        const shouldAlert = !state.isOffline || (alertCount < 2 && (nowMs - state.lastAlertAt > 30 * 60 * 1000));
+
+        if (shouldAlert) {
           const deadMinutes = Math.round(ageMs / 60000);
           const lastHbTime = lastHbMs ? new Date(lastHbMs).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Never';
 
@@ -511,13 +538,14 @@ export async function checkBiometricDeviceHeartbeats() {
 <i>System will automatically alert when connection recovers.</i>
 ━━━━━━━━━━━━━━━━━━━━`;
 
-          console.log(`[BiometricWatchdog] Device ${serial} is OFFLINE (${deadMinutes} mins). Sending Telegram alert...`);
+          console.log(`[BiometricWatchdog] Device ${serial} is OFFLINE (${deadMinutes} mins, alert #${alertCount + 1}). Sending Telegram alert...`);
           await sendTelegramAlert(alertHtml);
 
           deviceOfflineState.set(serial, {
             isOffline: true,
             offlineSince: dev.last_heartbeat_at,
             lastAlertAt: nowMs,
+            alertCount: alertCount + 1,
           });
         }
       } else {
@@ -542,6 +570,7 @@ export async function checkBiometricDeviceHeartbeats() {
             isOffline: false,
             offlineSince: null,
             lastAlertAt: 0,
+            alertCount: 0,
           });
         }
       }

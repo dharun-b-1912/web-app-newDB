@@ -400,7 +400,14 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
       }
     }).catch(() => {});
 
-    // STEP 3: Start background non-blocking connector heartbeat
+    // STEP 3: Start background non-blocking connector heartbeat & probe immediately
+    biometricGatewayService.probeConnectorHealth(true).then((res) => {
+      if (!destroyed) {
+        setConnectorStatus(res.status);
+        setConnectorTelemetry(res.telemetry);
+        loadData();
+      }
+    }).catch(() => {});
     biometricGatewayService.startConnectorMonitoring(30000);
 
     // STEP 4: Background Supabase synchronization for multi-browser and multi-tenant persistence
@@ -554,12 +561,10 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   // KPI Calculations (Memoized to avoid overhead during mouse interaction)
   const isConnectorOnline = connectorStatus === 'online';
   const isDeviceOnline = React.useCallback((d: BiometricDevice) => {
-    if (d.status === 'Online') return true;
-    if (isConnectorOnline && (d as any).is_active !== false) return true;
     if (d.last_heartbeat_at && (Date.now() - new Date(d.last_heartbeat_at).getTime() < 15 * 60 * 1000)) return true;
-    if (d.last_sync && (Date.now() - new Date(d.last_sync).getTime() < 15 * 60 * 1000)) return true;
+    if (d.status === 'Online' && d.last_sync && (Date.now() - new Date(d.last_sync).getTime() < 15 * 60 * 1000)) return true;
     return false;
-  }, [isConnectorOnline]);
+  }, []);
 
   const onlineDevicesCount = React.useMemo(() => {
     return devices.filter(isDeviceOnline).length;
@@ -891,8 +896,8 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
                 {isRetryingConnector
                   ? 'Probing Connector...'
                   : connectorStatus === 'online'
-                  ? 'Cloud ADMS ● Online'
-                  : 'Cloud ADMS ● Check'}
+                  ? 'Cloud ADMS ● Active'
+                  : 'Cloud ADMS ● Standby'}
               </span>
             </div>
 
@@ -1127,7 +1132,9 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span className="font-semibold">
-              ✓ All {devices.length} biometric terminal(s) operating normally — Realtime stream active.
+              {onlineDevicesCount > 0
+                ? `✓ All ${onlineDevicesCount} active biometric terminal(s) operating normally — Realtime stream active.`
+                : `✓ Cloud ADMS Gateway Active — ${devices.length} terminal(s) registered in fleet.`}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -1235,9 +1242,9 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{getActiveOrgId() === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ? 'ADMS Cloud Push' : 'JOY Connector'}</p>
-              <p className="text-xl font-black text-gray-900 mt-1">{onlineDevicesCount > 0 || isConnectorOnline ? 'Online' : 'Offline'}</p>
+              <p className="text-xl font-black text-gray-900 mt-1">{isConnectorOnline ? 'Online' : (onlineDevicesCount > 0 ? 'Online' : 'Standby')}</p>
               <p className="text-[11px] text-gray-500 font-semibold mt-0.5">
-                {onlineDevicesCount > 0 ? (getActiveOrgId() === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ? '4G Cellular stream active' : 'Heartbeat active') : 'Service offline'}
+                {isConnectorOnline ? 'Cloud ADMS stream active' : (onlineDevicesCount > 0 ? 'Heartbeat active' : 'Standby mode')}
               </p>
             </div>
             <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center">
