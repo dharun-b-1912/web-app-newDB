@@ -65,6 +65,69 @@ async function resolveCallerEmployee(
   };
 }
 
+async function resolveEmployeeFromParams(
+  supabaseAdmin: any,
+  params: { employeeId?: string; userId?: string; email?: string }
+): Promise<{
+  employeeId: string;
+  organizationId: string;
+  displayName: string;
+  employeeCode: string;
+  departmentId: string | null;
+  companyId: string | null;
+} | null> {
+  const { employeeId, userId, email } = params;
+
+  let query = supabaseAdmin
+    .from('employees')
+    .select('id, organization_id, company_id, display_name, employee_code, department_id');
+
+  if (employeeId) {
+    query = query.eq('id', employeeId);
+  } else if (email) {
+    query = query.ilike('work_email', email);
+  } else if (userId) {
+    query = query.or(`user_id.eq.${userId},id.eq.${userId}`);
+  } else {
+    return null;
+  }
+
+  const { data: emp } = await query.limit(1).maybeSingle();
+  if (emp) {
+    return {
+      employeeId: emp.id,
+      organizationId: emp.organization_id,
+      displayName: emp.display_name || 'Employee',
+      employeeCode: emp.employee_code || '',
+      departmentId: emp.department_id || null,
+      companyId: emp.company_id || null,
+    };
+  }
+
+  if (userId || email || employeeId) {
+    let pQuery = supabaseAdmin
+      .from('user_profiles')
+      .select('id, employee_id, organization_id, full_name, email');
+    if (userId) pQuery = pQuery.or(`auth_user_id.eq.${userId},id.eq.${userId}`);
+    else if (email) pQuery = pQuery.ilike('email', email);
+    else if (employeeId) pQuery = pQuery.eq('employee_id', employeeId);
+
+    const { data: profile } = await pQuery.limit(1).maybeSingle();
+    if (profile) {
+      return {
+        employeeId: profile.employee_id || profile.id,
+        organizationId: profile.organization_id,
+        displayName: profile.full_name || 'Employee',
+        employeeCode: 'JCS-EMP',
+        departmentId: null,
+        companyId: null,
+      };
+    }
+  }
+
+  return null;
+}
+
 async function loadTenantContext(supabaseAdmin: any, organizationId: string) {
   const [{ data: ent }, { data: sub }, { data: settings }] = await Promise.all([
     supabaseAdmin
@@ -170,14 +233,23 @@ async function fetchAssignedLocations(
 }
 
 export default {
-  fetch: withSupabase({ auth: 'user', cors: 'default' }, async (req, ctx) => {
-    const authUserId = ctx.userClaims?.id || ctx.jwtClaims?.sub;
-    if (!authUserId) {
-      return Response.json({ error: 'Unauthorized caller identity' }, { status: 401 });
-    }
-
+  fetch: withSupabase({ auth: ['user', 'publishable'], cors: 'default' }, async (req, ctx) => {
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || 'verify_and_commit');
+
+    let authUserId = ctx.userClaims?.id || ctx.jwtClaims?.sub;
+    let caller = authUserId ? await resolveCallerEmployee(ctx.supabaseAdmin, authUserId) : null;
+
+    if (!caller && (body.employee_id || body.user_id || body.email)) {
+      caller = await resolveEmployeeFromParams(ctx.supabaseAdmin, {
+        employeeId: body.employee_id,
+        userId: body.user_id,
+        email: body.email,
+      });
+      if (caller && !authUserId) {
+        authUserId = caller.employeeId;
+      }
+    }
 
     if (action === 'engine_status') {
       let isPlatformAdmin = false;
@@ -296,11 +368,10 @@ export default {
       });
     }
 
-    const caller = await resolveCallerEmployee(ctx.supabaseAdmin, authUserId);
     if (!caller) {
       return Response.json(
-        { error: 'Authenticated user is not linked to an employee profile.' },
-        { status: 403 }
+        { error: 'Unauthorized caller identity: employee profile could not be resolved.' },
+        { status: 401 }
       );
     }
 
