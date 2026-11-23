@@ -630,32 +630,53 @@ class SmartShiftResolutionService {
     const scheduledEndMins = this.extractMinutesFromTimeStr(shift.end_time || '18:00:00');
     const isOvernight = Boolean(shift.is_overnight);
 
-    // Calculate absolute minute difference between punch and scheduled start
-    let diffMins = Math.abs(firstPunchMinutes - scheduledStartMins);
-    if (diffMins > 720) {
-      diffMins = 1440 - diffMins; // Wrap around midnight
-    }
+    // Directional difference from scheduled start:
+    // positive = punch is BEFORE shift start (worker checked in early for upcoming shift)
+    // negative = punch is AFTER shift start (worker arrived after shift start)
+    let signedDiff = scheduledStartMins - firstPunchMinutes;
+    if (signedDiff < -720) signedDiff += 1440;
+    if (signedDiff > 720) signedDiff -= 1440;
 
-    // Permitted early window: up to 90 mins early
+    let diffMins = Math.abs(signedDiff);
+
+    // Permitted early window: up to 120 mins early for upcoming shift
     // Permitted late grace: up to 60 mins late
-    const isEarlyEligible = firstPunchMinutes >= (scheduledStartMins - 90) && firstPunchMinutes <= scheduledStartMins;
-    const isLateEligible = firstPunchMinutes > scheduledStartMins && firstPunchMinutes <= (scheduledStartMins + 60);
+    const isEarlyEligible = signedDiff >= 0 && signedDiff <= 120;
+    const isLateEligible = signedDiff < 0 && Math.abs(signedDiff) <= 60;
     const inAttendanceWindow = isEarlyEligible || isLateEligible;
 
     // Start-time Score (Max 70 points)
+    // Highly rewards forward-looking early arrival (15-60m before upcoming shift)
+    // and heavily penalizes attempting to match a past shift that started hours ago!
     let startScore = 0;
-    if (diffMins <= 15) {
-      startScore = 70; // Exact or within grace entry
-    } else if (diffMins <= 30) {
-      startScore = 65;
-    } else if (diffMins <= 60) {
-      startScore = 60; // Up to 1h early/late (standard arrival window)
-    } else if (diffMins <= 90) {
-      startScore = 50; // Up to 1.5h early/late
-    } else if (diffMins <= 120) {
-      startScore = 35;
+    if (signedDiff >= 0) {
+      // Early arrival for upcoming shift
+      if (signedDiff <= 15) {
+        startScore = 70; // On-time early arrival (0-15m before start)
+      } else if (signedDiff <= 45) {
+        startScore = 68; // Standard factory early arrival window (15-45m)
+      } else if (signedDiff <= 90) {
+        startScore = 62; // 45-90m early check-in
+      } else if (signedDiff <= 120) {
+        startScore = 55; // Up to 2h early
+      } else {
+        startScore = Math.max(0, 35 - Math.floor((signedDiff - 120) / 30));
+      }
     } else {
-      startScore = Math.max(0, 20 - Math.floor((diffMins - 120) / 30));
+      // Late arrival after shift start
+      const lateMins = Math.abs(signedDiff);
+      if (lateMins <= 15) {
+        startScore = 65; // Within on-time grace period
+      } else if (lateMins <= 30) {
+        startScore = 55; // Minor late
+      } else if (lateMins <= 60) {
+        startScore = 40; // Moderate late
+      } else if (lateMins <= 90) {
+        startScore = 25; // Significant late
+      } else {
+        // Shift started > 90m ago; worker belongs to next upcoming shift, not this past shift
+        startScore = Math.max(0, 10 - Math.floor((lateMins - 90) / 30));
+      }
     }
 
     // Checkout Compatibility Score (Max 30 points)
