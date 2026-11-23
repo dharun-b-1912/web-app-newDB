@@ -299,7 +299,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
         const now = new Date();
         const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const isPastDate = selectedDate < todayStr;
-        const isMissing = record.status === 'Missing Punch' || (Boolean(record.first_check_in) && !record.last_check_out && isPastDate);
+        const isMissing = !record.last_check_out && (record.status === 'Missing Punch' || (Boolean(record.first_check_in) && isPastDate));
 
         if (record.status === 'On Leave') {
           onLeave++;

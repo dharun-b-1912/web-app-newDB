@@ -531,7 +531,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
             statusCode = 'OD';
             statusLabel = 'On Duty';
             totalPresent++;
-          } else if (normStatus === 'MISSING_PUNCH' || normStatus === 'MISSING PUNCH' || normStatus === 'MP' || (!d.isToday && hasCheckIn && !hasCheckOut)) {
+          } else if (((normStatus === 'MISSING_PUNCH' || normStatus === 'MISSING PUNCH' || normStatus === 'MP') && !hasCheckOut) || (!d.isToday && hasCheckIn && !hasCheckOut)) {
             statusCode = 'MP';
             statusLabel = 'Missing Punch';
             totalMissingPunch++;

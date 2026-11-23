@@ -463,7 +463,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.employee_code, selectedDate),
       ];
 
-      const gatewayPunches: ClassifiedPunchEvent[] = (biometricGatewayService.getRawPunches(500) || [])
+      const gatewayPunches: ClassifiedPunchEvent[] = (biometricGatewayService.getRawPunches(5000, emp.organization_id || activeComp?.id) || [])
         .filter((p) => {
           const pTime = p.punch_time || '';
           const pDate = pTime ? attendanceTimeService.getAttendanceDate(pTime, 'Asia/Kolkata') : '';
@@ -625,8 +625,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           // Must have been at work for at least 2.5 hours (150 min) to qualify as checkout
           if (diffFromIn < 150 && !isExplicitOut) return false;
 
-          // Near or after scheduled shift end (within 60m of end time or after 6 hours on site)
-          const isNearOrAfterEnd = pMins >= (shiftEndMins - 60) || diffFromIn >= 360;
+          // Near or after scheduled shift end (within 75m of end time or after 4.0 hours on site)
+          const isNearOrAfterEnd = pMins >= (shiftEndMins - 75) || diffFromIn >= 240;
           return isExplicitOut || isNearOrAfterEnd;
         });
 
@@ -634,13 +634,26 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           const validOutPunch = candidateOutPunches[candidateOutPunches.length - 1];
           lastOut = validOutPunch.event_time_str;
           checkOutSrc = validOutPunch.source || 'BIOMETRIC';
+        } else if (resolvedRecord?.last_check_out) {
+          lastOut = resolvedRecord.last_check_out;
+          checkOutSrc = resolvedRecord.check_out_source || 'BIOMETRIC';
         } else {
           // Employee has intermediate biometric reads but has not clocked out yet -> actively working
           lastOut = undefined;
           checkOutSrc = undefined;
         }
-      } else if (debouncedPunches.length <= 1) {
-        // Single punch: Check-in only, employee is actively in shift
+      } else if (resolvedRecord?.last_check_out) {
+        // Authoritative checkout from database record preserved even if local punch buffer is incomplete
+        lastOut = resolvedRecord.last_check_out;
+        checkOutSrc = resolvedRecord.check_out_source || 'BIOMETRIC';
+      } else {
+        // Single punch or no punches: Check-in only, employee is actively in shift
+        lastOut = undefined;
+        checkOutSrc = undefined;
+      }
+
+      // Guard: lastOut cannot be identical to firstIn
+      if (lastOut && firstIn && timeStringToMinutes(lastOut) === timeStringToMinutes(firstIn)) {
         lastOut = undefined;
         checkOutSrc = undefined;
       }
@@ -666,17 +679,27 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       );
 
       const isShiftEnded = checkIsShiftEnded(shift.start_time, shift.end_time, isShiftCrossMidnight, selectedDate);
+      const hasBothPunches = Boolean(firstIn && lastOut);
       const isMissingPunch = Boolean(
-        calc.status === 'Missing Punch' ||
-        resolvedRecord?.status === 'Missing Punch' ||
-        (firstIn && !lastOut && (isPastDate || isShiftEnded)) ||
-        (!firstIn && lastOut)
+        !hasBothPunches && (
+          calc.status === 'Missing Punch' ||
+          resolvedRecord?.status === 'Missing Punch' ||
+          (firstIn && !lastOut && (isPastDate || isShiftEnded)) ||
+          (!firstIn && lastOut)
+        )
       );
 
       const isWorking = Boolean(firstIn && !lastOut && !isMissingPunch);
 
       let effectiveStatus = calc.status;
-      if (isMissingPunch) {
+      if (hasBothPunches) {
+        // When both check-in and check-out are present, status is authoritative Present (or Half Day / Late)
+        if (calc.status === 'Missing Punch' || resolvedRecord?.status === 'Missing Punch') {
+          effectiveStatus = (calc.netMinutes >= 240 || (calc.grossMinutes || 0) >= 240) ? 'Present' : 'Half Day';
+        } else {
+          effectiveStatus = calc.status;
+        }
+      } else if (isMissingPunch) {
         effectiveStatus = 'Missing Punch';
       } else if (isWorking) {
         effectiveStatus = 'Present';

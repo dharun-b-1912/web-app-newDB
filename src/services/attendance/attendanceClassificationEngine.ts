@@ -622,7 +622,7 @@ class AttendanceClassificationEngine {
       const existing = this.getExistingDailyRecord(calc.employee_id, calc.attendance_date);
 
       const firstInTimeStr = calc.first_in ? calc.first_in.event_time_str : (existing?.first_check_in || undefined);
-      const lastOutTimeStr = calc.last_out ? calc.last_out.event_time_str : undefined;
+      const lastOutTimeStr = calc.last_out ? calc.last_out.event_time_str : (existing?.last_check_out || undefined);
 
       const inSource = calc.first_in?.source || existing?.check_in_source || existing?.source || 'BIOMETRIC';
       const outSource = calc.last_out?.source || undefined;
