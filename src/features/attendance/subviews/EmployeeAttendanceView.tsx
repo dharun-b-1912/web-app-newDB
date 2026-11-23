@@ -253,6 +253,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       attendanceRosterService.fetchShiftAssignmentsFromDb(effectiveTenantId),
       attendanceRosterService.fetchRostersFromDb(selectedDate, selectedDate, effectiveTenantId),
       attendanceApi.getDailyAttendanceAsync(selectedDate),
+      biometricGatewayService.syncPunchesFromSupabase(1000),
     ]).then(([empRes, deptRes, shiftRes, _assignRes, _rosterRes, dailyRes]) => {
       if (empRes.status === 'fulfilled' && empRes.value) {
         const realEmps = empRes.value;
@@ -413,8 +414,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         const rDate = r.date || (r as any).attendance_date;
         const normRDate = normalizeDateStr(rDate);
         if (normRDate === normSelectedDate) return true;
-        // Also accept active overnight session carrying over into selectedDate
-        if ((r as any).is_overnight_active || (r as any).is_overnight) {
+        // Also accept active overnight session carrying over into selectedDate ONLY IF it is still open (actively working)
+        if ((r as any).is_overnight_active && !(r as any).last_check_out) {
           return true;
         }
         return false;
@@ -422,7 +423,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
       const isElectraEvEmp = emp.company_id === 'c0bbfb28-1500-4ebb-aba8-453b3681f342' ||
         emp.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ||
-        String(emp.company_name || '').toLowerCase().includes('electra');
+        emp.organization_id === 'org-electra-01' ||
+        activeComp?.id === 'c0bbfb28-1500-4ebb-aba8-453b3681f342' ||
+        activeComp?.id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ||
+        activeComp?.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ||
+        String(emp.company_name || '').toLowerCase().includes('electra') ||
+        String(activeComp?.name || '').toLowerCase().includes('electra');
 
       const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate, undefined, emp);
       // Daily roster override has absolute authoritative precedence

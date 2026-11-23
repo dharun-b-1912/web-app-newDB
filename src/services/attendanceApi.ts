@@ -208,6 +208,30 @@ export const attendanceApi = {
         const dailyEmpIds = new Set(dailyRows.map((d: any) => d.employee_id));
         const targetDateStr = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
+        // Enrich existing daily rows with latest verified punches from punchMap (e.g. real-time check-outs)
+        for (const row of dailyRows) {
+          const pInfo = punchMap.get(row.employee_id);
+          if (pInfo) {
+            if (!row.first_check_in && pInfo.firstInIso) {
+              row.first_check_in = pInfo.firstInIso;
+            }
+            if (pInfo.lastOutIso) {
+              if (!row.last_check_out || new Date(pInfo.lastOutIso).getTime() > new Date(row.last_check_out).getTime()) {
+                row.last_check_out = pInfo.lastOutIso;
+                if (row.current_work_state === 'WORKING') {
+                  row.current_work_state = 'CHECKED_OUT';
+                }
+              }
+            }
+            if (pInfo.checkInSource && !row.check_in_source) {
+              row.check_in_source = pInfo.checkInSource;
+            }
+            if (pInfo.checkOutSource) {
+              row.check_out_source = pInfo.checkOutSource;
+            }
+          }
+        }
+
         // Synthesize daily row for any employee who has punches in attendance_punches today but no attendance_daily row yet
         for (const [empId, pInfo] of punchMap.entries()) {
           if (!dailyEmpIds.has(empId) && pInfo.firstInIso) {

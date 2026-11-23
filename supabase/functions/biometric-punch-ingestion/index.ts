@@ -237,22 +237,49 @@ serve(async (req: Request) => {
           shiftResolutionSource = r.is_override ? 'EMERGENCY_REASSIGNMENT' : 'APPROVED_ROSTER_ROTATION';
           shiftConfidence = 100;
         } else {
-          // Candidate Shifts: GEN-10 (09:30), GEN-01 (08:30), GEN-09 (09:00), NGT-01 (20:00)
+          // Candidate Shifts:
+          const isElectraEv = organizationId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' || organizationId === 'org-electra-01';
           const punchMinutesFromMidnight = Math.round(istHoursDecimal * 60);
-          const candidates = [
-            { code: 'GEN-10', name: 'General Day Shift (Corporate)', start: 570, end: 1110 },
-            { code: 'GEN-01', name: 'Morning Operations Shift', start: 510, end: 1050 },
-            { code: 'GEN-09', name: 'Technical Support Shift', start: 540, end: 1080 },
-            { code: 'NGT-01', name: 'Overnight Production Shift', start: 1200, end: 300 },
-          ];
+
+          const candidates = isElectraEv
+            ? [
+                { code: 'SHIFT-1', name: 'Shift 1 (06:00 AM - 02:30 PM)', start: 360, end: 870 },
+                { code: 'GEN-01', name: 'General Shift (08:30 AM - 05:00 PM)', start: 510, end: 1020 },
+                { code: 'SHIFT-2', name: 'Shift 2 (02:30 PM - 11:00 PM)', start: 870, end: 1380 },
+                { code: 'SHIFT-3', name: 'Shift 3 (11:00 PM - 06:00 AM)', start: 1380, end: 360, isOvernight: true },
+              ]
+            : [
+                { code: 'GEN-10', name: 'General Day Shift (Corporate)', start: 570, end: 1110 },
+                { code: 'GEN-01', name: 'Morning Operations Shift', start: 510, end: 1050 },
+                { code: 'GEN-09', name: 'Technical Support Shift', start: 540, end: 1080 },
+                { code: 'NGT-01', name: 'Overnight Production Shift', start: 1200, end: 300, isOvernight: true },
+              ];
 
           let bestCand = candidates[0];
-          let minDiff = 9999;
+          let bestScore = -999;
           for (const cand of candidates) {
-            let diff = Math.abs(punchMinutesFromMidnight - cand.start);
-            if (diff > 720) diff = 1440 - diff;
-            if (diff < minDiff) {
-              minDiff = diff;
+            let signedDiff = cand.start - punchMinutesFromMidnight;
+            if (signedDiff < -720) signedDiff += 1440;
+            if (signedDiff > 720) signedDiff -= 1440;
+
+            let score = 0;
+            if (signedDiff >= 0) {
+              // Early check-in before shift start (up to 90 min before shift)
+              if (signedDiff <= 15) score = 70;
+              else if (signedDiff <= 45) score = 68;
+              else if (signedDiff <= 90) score = 62;
+              else score = Math.max(0, 50 - Math.floor((signedDiff - 90) / 30));
+            } else {
+              // Arrived after shift start
+              const late = Math.abs(signedDiff);
+              if (late <= 15) score = 65;
+              else if (late <= 30) score = 55;
+              else if (late <= 60) score = 40;
+              else score = Math.max(0, 10 - Math.floor((late - 60) / 30));
+            }
+
+            if (score > bestScore) {
+              bestScore = score;
               bestCand = cand;
             }
           }
@@ -260,7 +287,7 @@ serve(async (req: Request) => {
           resolvedShiftName = bestCand.name;
           shiftStartMinutes = bestCand.start;
           shiftEndMinutes = bestCand.end;
-          shiftConfidence = Math.max(70, 100 - minDiff);
+          shiftConfidence = Math.max(70, bestScore);
         }
 
         // C. Fetch existing attendance_daily row for this date

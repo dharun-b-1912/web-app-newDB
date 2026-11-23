@@ -1000,3 +1000,4 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
     </div>
   );
 };
+

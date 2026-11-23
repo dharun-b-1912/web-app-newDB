@@ -729,13 +729,30 @@ serve(async (req: Request) => {
 
         // =====================================================================
         // RULE 0: NIGHT SHIFT & MIDNIGHT EXTENDED CHECKOUT RECONCILER (00:00 to 11:00 IST)
-        // Shift: 7:30 PM (19:30) to next day 7:30 AM (07:30).
+        // Shift: 7:30 PM (19:30) to next day 7:30 AM (07:30) or 11:00 PM (23:00) to 06:00 AM.
         // If employee punches in the morning and yesterday has an unclosed evening check-in,
         // this is the completed CHECK-OUT of yesterday's night shift, NOT a new check-in!
         // =====================================================================
         if (eventIstHour < 11.0) {
           const yDateObj = new Date(punchDate.getTime() - 24 * 60 * 60 * 1000);
           const yesterdayDate = yDateObj.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+          // If a checkout for yesterday was already recorded near this timestamp, this punch is already handled!
+          const { data: existingYesterdayOut } = await supabase
+            .from('attendance_punches')
+            .select('id')
+            .eq('employee_id', emp.id)
+            .eq('attendance_date', yesterdayDate)
+            .eq('punch_type', 'CHECK_OUT')
+            .gte('punch_time', new Date(punchDate.getTime() - 300000).toISOString())
+            .lte('punch_time', new Date(punchDate.getTime() + 300000).toISOString())
+            .limit(1);
+
+          if (existingYesterdayOut && existingYesterdayOut.length > 0) {
+            console.log(`[ADMS-EDGE] 🌙 Night shift checkout already recorded for ${emp.first_name} on ${yesterdayDate}. Suppressing duplicate today check-in.`);
+            parsedCount++;
+            continue;
+          }
 
           const { data: yDailyRows } = await supabase
             .from('attendance_daily')
@@ -769,16 +786,26 @@ serve(async (req: Request) => {
                 })
                 .eq('id', yDaily.id);
 
-              await supabase.from('attendance_punches').insert({
-                employee_id: emp.id,
-                organization_id: organizationId,
-                device_id: device.id,
-                punch_time: eventUtcIso,
-                punch_type: 'CHECK_OUT',
-                punch_source: 'BIOMETRIC',
-                verification_mode: 'FACE',
-                attendance_date: yesterdayDate,
-              });
+              // Idempotently record CHECK_OUT punch for yesterday
+              const { data: yPunchCheck } = await supabase
+                .from('attendance_punches')
+                .select('id')
+                .eq('employee_id', emp.id)
+                .eq('punch_time', eventUtcIso)
+                .limit(1);
+
+              if (!yPunchCheck || yPunchCheck.length === 0) {
+                await supabase.from('attendance_punches').insert({
+                  employee_id: emp.id,
+                  organization_id: organizationId,
+                  device_id: device.id,
+                  punch_time: eventUtcIso,
+                  punch_type: 'CHECK_OUT',
+                  punch_source: 'BIOMETRIC',
+                  verification_mode: 'FACE',
+                  attendance_date: yesterdayDate,
+                });
+              }
 
               // Dispatch Airtel DLT Checkout SMS for night shift
               if (emp.phone && !smsSentTodayCache.has(yCheckOutKey) && yTotalMins >= 180) {
@@ -797,6 +824,20 @@ serve(async (req: Request) => {
               continue;
             }
           }
+        }
+
+        // Check if this punch already exists anywhere in attendance_punches to prevent any duplicate creation
+        const { data: generalPunchCheck } = await supabase
+          .from('attendance_punches')
+          .select('id')
+          .eq('employee_id', emp.id)
+          .eq('punch_time', eventUtcIso)
+          .limit(1);
+
+        if (generalPunchCheck && generalPunchCheck.length > 0) {
+          console.log(`[ADMS-EDGE] 🛡️ Punch at ${eventUtcIso} already exists for ${emp.first_name}. Skipping duplicate insert.`);
+          parsedCount++;
+          continue;
         }
 
         // =====================================================================
