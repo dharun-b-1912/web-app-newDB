@@ -112,6 +112,54 @@ export const DEFAULT_SHIFTS: Array<Partial<ShiftMaster> & { id: string; code: st
   },
 ];
 
+// Authoritative Electra EV Manufacturing & Plant Shifts
+export const ELECTRA_EV_SHIFTS: Array<Partial<ShiftMaster> & { id: string; code: string; name: string; start_time: string; end_time: string; grace_entry_minutes: number; grace_exit_minutes: number; is_overnight: boolean; attendance_date_cutoff?: string }> = [
+  {
+    id: '03af7148-163b-4263-b080-df44cd9f564d',
+    code: 'SHIFT-1',
+    name: 'Shift 1 (06:00 AM - 02:30 PM)',
+    start_time: '06:00:00',
+    end_time: '14:30:00',
+    grace_entry_minutes: 15,
+    grace_exit_minutes: 15,
+    is_overnight: false,
+    attendance_date_cutoff: '04:30:00',
+  },
+  {
+    id: '659ba299-eb9b-432b-ab42-e456fd630be0',
+    code: 'GEN-01',
+    name: 'General Shift (08:30 AM - 05:00 PM)',
+    start_time: '08:30:00',
+    end_time: '17:00:00',
+    grace_entry_minutes: 15,
+    grace_exit_minutes: 15,
+    is_overnight: false,
+    attendance_date_cutoff: '06:00:00',
+  },
+  {
+    id: '98c0f403-5523-4e52-b044-c55b1f112c21',
+    code: 'SHIFT-2',
+    name: 'Shift 2 (02:30 PM - 11:00 PM)',
+    start_time: '14:30:00',
+    end_time: '23:00:00',
+    grace_entry_minutes: 15,
+    grace_exit_minutes: 15,
+    is_overnight: false,
+    attendance_date_cutoff: '12:00:00',
+  },
+  {
+    id: 'b6775e9f-31da-4df1-a423-1af07e0965c5',
+    code: 'SHIFT-3',
+    name: 'Shift 3 (11:00 PM - 06:00 AM)',
+    start_time: '23:00:00',
+    end_time: '06:00:00',
+    grace_entry_minutes: 15,
+    grace_exit_minutes: 15,
+    is_overnight: true,
+    attendance_date_cutoff: '19:00:00',
+  },
+];
+
 class SmartShiftResolutionService {
   private activeShiftsCache: Map<string, any[]> = new Map();
   private cacheTimestamp: number = 0;
@@ -140,10 +188,14 @@ class SmartShiftResolutionService {
       }
     } catch (_) {}
 
+    if (organizationId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' || organizationId === 'electra-ev') {
+      return ELECTRA_EV_SHIFTS;
+    }
+
     if (organizationId === '0c621892-e938-4707-9957-13534ea32c19') {
       return DEFAULT_SHIFTS;
     }
-    return [];
+    return ELECTRA_EV_SHIFTS;
   }
 
   /**

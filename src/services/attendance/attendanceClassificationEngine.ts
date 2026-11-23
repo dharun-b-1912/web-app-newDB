@@ -295,8 +295,14 @@ class AttendanceClassificationEngine {
                               rawType === 'CHECK_OUT' ||
                               rawType === 'Check-Out' ||
                               rawType === 'OUT';
-        const isNearOrAfterShiftEnd = punchMinutes >= shiftEndMins - shift.early_checkout_grace_minutes;
-        const isAfter4pm = punchMinutes >= 16 * 60; // 16:00 (4:00 PM onwards)
+        const firstInEvent = validList[0];
+        const firstInMinutes = firstInEvent ? attendanceTimeService.getMinutesFromMidnight(firstInEvent.event_timestamp, 'Asia/Kolkata') : shiftStartMins;
+        let diffFromIn = punchMinutes - firstInMinutes;
+        if (shift.cross_midnight && diffFromIn < 0) diffFromIn += 1440;
+
+        const isReasonableWorkDuration = diffFromIn >= 150; // At least 2.5 hours since check-in
+        const isNearOrAfterShiftEnd = isReasonableWorkDuration && (punchMinutes >= shiftEndMins - shift.early_checkout_grace_minutes || diffFromIn >= 360);
+        const isAfter4pm = punchMinutes >= 16 * 60 && isReasonableWorkDuration; // 16:00 (4:00 PM onwards with >= 2.5h)
 
         if (isExplicitOut || isNearOrAfterShiftEnd || isAfter4pm) {
           classification = 'CHECK_OUT';
@@ -307,9 +313,9 @@ class AttendanceClassificationEngine {
             : `Explicit checkout punch recorded at ${p.event_time_str}.`;
           expectedNextDirection = 'IN';
         } else {
-          // Midday punch without checkout instruction -> biometric verification during active session (11:00-16:00)
+          // Midday punch without checkout instruction -> biometric verification during active session
           classification = 'IN_SESSION';
-          reason = `Midday buffer window (11:00-16:00): Biometric verification recorded at ${p.event_time_str}. Retained in event ledger.`;
+          reason = `Active session buffer: Biometric verification recorded at ${p.event_time_str}. Retained in event ledger.`;
         }
       }
 

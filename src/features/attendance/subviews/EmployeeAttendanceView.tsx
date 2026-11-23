@@ -41,7 +41,7 @@ import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
 import { formatMinutesToHoursStr, formatCleanTime, timeStringToMinutes, processAttendanceStatus, DEFAULT_ATTENDANCE_POLICY, formatDeviationDuration } from '../../../lib/attendance/attendanceEngine';
 import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
-import { smartShiftResolutionService, DEFAULT_SHIFTS } from '../../../services/attendance/smartShiftResolutionService';
+import { smartShiftResolutionService, DEFAULT_SHIFTS, ELECTRA_EV_SHIFTS } from '../../../services/attendance/smartShiftResolutionService';
 import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
 import { GlobalAttendanceFilterState } from '../AttendanceModuleMaster';
 import { cn } from '../../../lib/utils';
@@ -245,12 +245,13 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     isLoadingRef.current = true;
 
     const activeComp = api.getActiveCompany();
+    const effectiveTenantId = activeComp?.organization_id || activeComp?.id;
     Promise.allSettled([
       api.getEmployees(activeComp?.id),
       api.getDepartments(activeComp?.id),
-      attendanceRosterService.fetchShiftsFromDb(),
-      attendanceRosterService.fetchShiftAssignmentsFromDb(),
-      attendanceRosterService.fetchRostersFromDb(selectedDate, selectedDate),
+      attendanceRosterService.fetchShiftsFromDb(effectiveTenantId),
+      attendanceRosterService.fetchShiftAssignmentsFromDb(effectiveTenantId),
+      attendanceRosterService.fetchRostersFromDb(selectedDate, selectedDate, effectiveTenantId),
       attendanceApi.getDailyAttendanceAsync(selectedDate),
     ]).then(([empRes, deptRes, shiftRes, _assignRes, _rosterRes, dailyRes]) => {
       if (empRes.status === 'fulfilled' && empRes.value) {
@@ -419,6 +420,10 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         return false;
       });
 
+      const isElectraEvEmp = emp.company_id === 'c0bbfb28-1500-4ebb-aba8-453b3681f342' ||
+        emp.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ||
+        String(emp.company_name || '').toLowerCase().includes('electra');
+
       const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate, undefined, emp);
       // Daily roster override has absolute authoritative precedence
       const targetShiftId = roster?.is_override
@@ -427,14 +432,26 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       let shift = attendanceRosterService.getShiftById(targetShiftId);
       if (!shift) {
         const isNS01 = (record as any)?.shift_code === 'NS-01' || roster.shift_code === 'NS-01' || targetShiftId === '5f36464f-1920-45b4-b692-0d49294a76fa';
-        shift = {
-          shift_name: isNS01 ? 'Night Shift (7:30 PM - 7:30 AM)' : roster.shift_name,
-          shift_code: isNS01 ? 'NS-01' : (roster.shift_code || 'GEN-09'),
-          start_time: isNS01 ? '19:30' : '09:00',
-          end_time: isNS01 ? '07:30' : '18:00',
-          scheduled_duration_minutes: isNS01 ? 720 : 540,
-          cross_midnight: isNS01 || roster.shift_code.includes('NGT') || roster.shift_code.includes('NS'),
-        } as any;
+        if (isElectraEvEmp) {
+          shift = {
+            id: '659ba299-eb9b-432b-ab42-e456fd630be0',
+            shift_name: 'General Shift (08:30 AM - 05:00 PM)',
+            shift_code: 'GEN-01',
+            start_time: '08:30',
+            end_time: '17:00',
+            scheduled_duration_minutes: 510,
+            cross_midnight: false,
+          } as any;
+        } else {
+          shift = {
+            shift_name: isNS01 ? 'Night Shift (7:30 PM - 7:30 AM)' : roster.shift_name,
+            shift_code: isNS01 ? 'NS-01' : (roster.shift_code || 'GEN-09'),
+            start_time: isNS01 ? '19:30' : '09:00',
+            end_time: isNS01 ? '07:30' : '18:00',
+            scheduled_duration_minutes: isNS01 ? 720 : 540,
+            cross_midnight: isNS01 || roster.shift_code.includes('NGT') || roster.shift_code.includes('NS'),
+          } as any;
+        }
       }
 
       const isOff = roster.is_weekly_off;
@@ -495,79 +512,77 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       for (const p of [...rawClassificationPunches, ...gatewayPunches]) {
         allMatchingPunchesMap.set(p.event_time_str || p.event_timestamp, p);
       }
-      const matchingPunches = Array.from(allMatchingPunchesMap.values());
+      const rawMatchingPunches = Array.from(allMatchingPunchesMap.values());
+
+      // 1. Sort chronologically and deduplicate consecutive punches within 5 minutes
+      // (suppresses biometric bouncing / double taps at the gate terminal)
+      const sortedRawPunches = [...rawMatchingPunches].sort(
+        (a, b) => new Date(a.event_timestamp).getTime() - new Date(b.event_timestamp).getTime()
+      );
+
+      const debouncedPunches: ClassifiedPunchEvent[] = [];
+      for (const p of sortedRawPunches) {
+        const pTimeMs = new Date(p.event_timestamp).getTime();
+        const prev = debouncedPunches[debouncedPunches.length - 1];
+        if (prev) {
+          const prevTimeMs = new Date(prev.event_timestamp).getTime();
+          if (Math.abs(pTimeMs - prevTimeMs) < 5 * 60 * 1000) {
+            continue; // Duplicate punch within 5m rolling window suppressed
+          }
+        }
+        debouncedPunches.push(p);
+      }
 
       let firstIn = resolvedRecord?.first_check_in;
       let lastOut = resolvedRecord?.last_check_out;
       let inSrc: any = resolvedRecord?.check_in_source || (resolvedRecord?.source && resolvedRecord.source !== 'SYSTEM' ? resolvedRecord.source : undefined);
       let checkOutSrc: any = resolvedRecord?.check_out_source || (resolvedRecord?.is_regularized ? 'MANUAL' : undefined);
 
-      if (matchingPunches.length > 0 || (resolvedRecord && resolvedRecord.first_check_in)) {
-        const sortedPunches = [...matchingPunches].sort(
-          (a, b) => new Date(a.event_timestamp).getTime() - new Date(b.event_timestamp).getTime()
-        );
-        const inPunches = sortedPunches.filter(p => p.classification === 'CHECK_IN' || (p as any).punch_direction === 'IN' || (p as any).punch_type === 'IN' || (p as any).punch_type === 'CHECK_IN');
-        const firstInPunch = inPunches[0];
-
+      if (debouncedPunches.length > 0) {
+        const firstPunch = debouncedPunches[0];
         if (!firstIn) {
-          firstIn = firstInPunch?.event_time_str;
+          firstIn = firstPunch.event_time_str;
         }
-        if (firstIn && (firstIn.includes('03:02') || firstIn.includes('3:02')) && firstInPunch?.event_time_str && !firstInPunch.event_time_str.includes('03:02')) {
-          firstIn = firstInPunch.event_time_str;
+        if (firstIn && (firstIn.includes('03:02') || firstIn.includes('3:02')) && !firstPunch.event_time_str.includes('03:02')) {
+          firstIn = firstPunch.event_time_str;
         }
-        if (lastOut && (lastOut.includes('03:02') || lastOut.includes('3:02') || lastOut.includes('12:37'))) {
-          lastOut = undefined;
-        }
-
         if (!inSrc) {
-          inSrc = firstInPunch?.source ||
-            (resolvedRecord?.source && resolvedRecord.source !== 'MANUAL' ? resolvedRecord.source : undefined) ||
-            (String((resolvedRecord as any)?.check_in_source || (resolvedRecord as any)?.punch_source).toUpperCase().includes('MANUAL') ? 'MANUAL' : 'MOBILE');
-        }
-        if (inSrc === 'SYSTEM') inSrc = 'MOBILE';
-
-        const shiftEndMins = timeStringToMinutes(shift.end_time) || 1110;
-        const validOutPunch = sortedPunches.find((p) => {
-          const pMins = timeStringToMinutes(p.event_time_str);
-          const isExplicitOut = p.classification === 'CHECK_OUT' || (p as any).punch_direction === 'OUT' || (p as any).punch_type === 'OUT' || (p as any).punch_type === 'CHECK_OUT';
-          const isNearOrAfterShiftEnd = pMins >= shiftEndMins - 15;
-          return isExplicitOut || isNearOrAfterShiftEnd;
-        });
-
-        if (validOutPunch && firstIn) {
-          lastOut = validOutPunch.event_time_str;
-          checkOutSrc = validOutPunch.source || 'BIOMETRIC';
-        } else if (sortedPunches.length > 0) {
-          const hasOnlyInPunches = sortedPunches.every((p) => {
-            const cls = p.classification || (p as any).punch_type || (p as any).punch_direction;
-            return cls === 'CHECK_IN' || cls === 'IN';
-          });
-          if (hasOnlyInPunches) {
-            lastOut = undefined;
-            checkOutSrc = undefined;
-          }
+          inSrc = firstPunch.source || 'BIOMETRIC';
         }
       }
 
+      if (lastOut && (lastOut.includes('03:02') || lastOut.includes('3:02') || lastOut.includes('12:37'))) {
+        lastOut = undefined;
+      }
+      if (inSrc === 'SYSTEM') inSrc = 'MOBILE';
+
       // =========================================================================
-      // SMART ADAPTIVE SHIFT RESOLUTION FOR CHECKED-IN WORKFORCE
-      // Dynamically matches closest standard shift window (e.g. 08:30, 09:00, 09:30)
-      // to eliminate false late penalties for flexible corporate roles.
+      // 2. SMART ADAPTIVE SHIFT RESOLUTION (EVALUATED BEFORE CHECK-OUT DETERMINATION)
+      // Matches closest plant/manufacturing shift window based on arrival punch:
+      // - Shift 1: 06:00 AM - 02:30 PM (06:00 - 14:30)
+      // - General Shift: 08:30 AM - 05:00 PM (08:30 - 17:00)
+      // - Shift 2: 02:30 PM - 11:00 PM (14:30 - 23:00)
+      // - Shift 3: 11:00 PM - 06:00 AM (23:00 - 06:00, Overnight)
+      // Works adaptively across all 217 employees without locking statically to GEN-01.
       // =========================================================================
       let isAdaptiveInferred = false;
       let adaptiveReason = '';
-      if (firstIn && !roster?.is_override && !(shift as any)?.is_overnight && !shift?.cross_midnight) {
-        const activeShiftsList = shifts && shifts.length > 0 ? shifts : DEFAULT_SHIFTS;
+      const activeShiftsList = (isElectraEvEmp || activeComp?.id === 'c0bbfb28-1500-4ebb-aba8-453b3681f342')
+        ? ELECTRA_EV_SHIFTS
+        : (shifts && shifts.length > 0 ? shifts : DEFAULT_SHIFTS);
+
+      if (firstIn && !roster?.is_override) {
         const adaptiveRes = smartShiftResolutionService.resolveShiftDeterministic({
           assignedShift: shift,
           activeShifts: activeShiftsList,
           firstPunchTime: firstIn,
           lastPunchTime: lastOut,
-          mode: 'HYBRID_MODE',
+          mode: 'ADAPTIVE_SHIFT',
         });
 
-        if (adaptiveRes && adaptiveRes.source === 'ADAPTIVE_PUNCH_INFERENCE' && adaptiveRes.shiftId !== shift?.id) {
-          const matchedFromDb = attendanceRosterService.getShiftById(adaptiveRes.shiftId) || activeShiftsList.find(s => s.id === adaptiveRes.shiftId);
+        if (adaptiveRes) {
+          const matchedFromDb = attendanceRosterService.getShiftById(adaptiveRes.shiftId) ||
+            activeShiftsList.find(s => s.id === adaptiveRes.shiftId || (s as any).code === adaptiveRes.shiftCode || s.shift_code === adaptiveRes.shiftCode);
           isAdaptiveInferred = true;
           adaptiveReason = adaptiveRes.resolutionReason;
           shift = {
@@ -580,11 +595,54 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             grace_entry_minutes: adaptiveRes.graceEntryMinutes,
             grace_exit_minutes: adaptiveRes.graceExitMinutes,
             is_overnight: adaptiveRes.isOvernight,
+            cross_midnight: adaptiveRes.isOvernight,
             is_adaptive: true,
             adaptive_reason: adaptiveRes.resolutionReason,
             confidence_score: adaptiveRes.confidenceScore,
           } as any;
         }
+      }
+
+      // =========================================================================
+      // 3. DETERMINISTIC CHECK-IN & CHECK-OUT DISAMBIGUATION AT SHIFT HANDOVERS
+      // At handover windows (e.g. 02:30 PM, 11:00 PM, 06:00 AM):
+      // - Departing shift workers with morning check-in -> punch is Check-OUT
+      // - Arriving shift workers without prior check-in -> punch is Check-IN
+      // =========================================================================
+      if (debouncedPunches.length > 1 && firstIn) {
+        const firstInMins = timeStringToMinutes(firstIn);
+        const shiftEndMins = timeStringToMinutes(shift.end_time) || 1020;
+        const isOvernight = Boolean(shift.is_overnight || shift.cross_midnight);
+
+        // Find candidate checkout punches after firstIn
+        const candidateOutPunches = debouncedPunches.slice(1).filter((p) => {
+          const pMins = timeStringToMinutes(p.event_time_str);
+          const isExplicitOut = p.classification === 'CHECK_OUT' || (p as any).punch_direction === 'OUT' || (p as any).punch_type === 'OUT';
+
+          let diffFromIn = pMins - firstInMins;
+          if (isOvernight && diffFromIn < 0) diffFromIn += 1440;
+
+          // Must have been at work for at least 2.5 hours (150 min) to qualify as checkout
+          if (diffFromIn < 150 && !isExplicitOut) return false;
+
+          // Near or after scheduled shift end (within 60m of end time or after 6 hours on site)
+          const isNearOrAfterEnd = pMins >= (shiftEndMins - 60) || diffFromIn >= 360;
+          return isExplicitOut || isNearOrAfterEnd;
+        });
+
+        if (candidateOutPunches.length > 0) {
+          const validOutPunch = candidateOutPunches[candidateOutPunches.length - 1];
+          lastOut = validOutPunch.event_time_str;
+          checkOutSrc = validOutPunch.source || 'BIOMETRIC';
+        } else {
+          // Employee has intermediate biometric reads but has not clocked out yet -> actively working
+          lastOut = undefined;
+          checkOutSrc = undefined;
+        }
+      } else if (debouncedPunches.length <= 1) {
+        // Single punch: Check-in only, employee is actively in shift
+        lastOut = undefined;
+        checkOutSrc = undefined;
       }
 
       const inMins = timeStringToMinutes(firstIn);
