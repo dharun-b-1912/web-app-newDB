@@ -65,6 +65,7 @@ import { DeviceDiagnosticDetailsModal } from '../components/DeviceDiagnosticDeta
 import { BiometricDeviceWorkspace } from '../components/BiometricDeviceWorkspace';
 import { BiometricLiveTelemetryHUD } from '../components/BiometricLiveTelemetryHUD';
 import { TerminalLogLedgerView } from './TerminalLogLedgerView';
+import { BiometricEnrolmentDirectoryView } from './BiometricEnrolmentDirectoryView';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
@@ -157,10 +158,101 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   const [showTerminalLog, setShowTerminalLog] = useState(() => {
     if (typeof window !== 'undefined') {
       const sp = new URLSearchParams(window.location.search);
-      return sp.get('subTab') === 'terminal-logs' || sp.get('tab') === 'terminal-logs' || currentTab === 'terminal-logs' || currentTab === 'device-logs' || currentTab === 'raw-logs';
+      const sub = sp.get('subTab') || sp.get('tab');
+      return (
+        sub === 'terminal-logs' ||
+        sub === 'terminal-ledger' ||
+        sub === 'device-logs' ||
+        sub === 'raw-logs' ||
+        currentTab === 'terminal-logs' ||
+        currentTab === 'terminal-ledger' ||
+        currentTab === 'device-logs' ||
+        currentTab === 'raw-logs'
+      );
     }
     return false;
   });
+
+  const [showEnrolmentDirectory, setShowEnrolmentDirectory] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const sub = sp.get('subTab') || sp.get('tab');
+      return (
+        sub === 'enrolment' ||
+        sub === 'enrollment' ||
+        sub === 'enrolment-directory' ||
+        sub === 'biometric-enrolment' ||
+        currentTab === 'enrolment' ||
+        currentTab === 'enrollment' ||
+        currentTab === 'biometric-enrolment' ||
+        currentTab === 'enrolment-directory'
+      );
+    }
+    return false;
+  });
+
+  // Keep state and URL query slugs perfectly synchronized across browser reloads
+  const openTerminalLedger = useCallback((employeeId?: string) => {
+    setShowTerminalLog(true);
+    setShowEnrolmentDirectory(false);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', 'terminal-ledger');
+      if (employeeId) url.searchParams.set('emp', employeeId);
+      window.history.pushState(null, '', url.pathname + url.search);
+    }
+    if (onNavigateSubPath) onNavigateSubPath('terminal-ledger');
+  }, [onNavigateSubPath]);
+
+  const closeTerminalLedger = useCallback(() => {
+    setShowTerminalLog(false);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('tab');
+      url.searchParams.delete('subTab');
+      url.searchParams.delete('emp');
+      const searchStr = url.searchParams.toString();
+      window.history.pushState(null, '', url.pathname + (searchStr ? '?' + searchStr : ''));
+    }
+    if (onNavigateSubPath) onNavigateSubPath('biometric');
+  }, [onNavigateSubPath]);
+
+  const openEnrolmentDirectory = useCallback(() => {
+    setShowEnrolmentDirectory(true);
+    setShowTerminalLog(false);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', 'enrolment');
+      window.history.pushState(null, '', url.pathname + url.search);
+    }
+    if (onNavigateSubPath) onNavigateSubPath('enrolment');
+  }, [onNavigateSubPath]);
+
+  const closeEnrolmentDirectory = useCallback(() => {
+    setShowEnrolmentDirectory(false);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('tab');
+      url.searchParams.delete('subTab');
+      const searchStr = url.searchParams.toString();
+      window.history.pushState(null, '', url.pathname + (searchStr ? '?' + searchStr : ''));
+    }
+    if (onNavigateSubPath) onNavigateSubPath('biometric');
+  }, [onNavigateSubPath]);
+
+  // Handle browser back and forward navigation
+  useEffect(() => {
+    const handlePop = () => {
+      if (typeof window !== 'undefined') {
+        const sp = new URLSearchParams(window.location.search);
+        const sub = sp.get('subTab') || sp.get('tab');
+        setShowTerminalLog(sub === 'terminal-logs' || sub === 'terminal-ledger' || sub === 'device-logs' || sub === 'raw-logs');
+        setShowEnrolmentDirectory(sub === 'enrolment' || sub === 'enrollment' || sub === 'enrolment-directory' || sub === 'biometric-enrolment');
+      }
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
 
   // Modals & Flows
   const [isAddWizardOpen, setIsAddWizardOpen] = useState(false);
@@ -828,14 +920,21 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
     );
   }
 
+  // Dedicated Enrolment Directory View
+  if (showEnrolmentDirectory || currentTab === 'enrolment' || currentTab === 'enrollment' || currentTab === 'biometric-enrolment' || currentTab === 'enrolment-directory') {
+    return (
+      <BiometricEnrolmentDirectoryView
+        onBack={closeEnrolmentDirectory}
+        onNavigateToTerminalLogs={(empId) => openTerminalLedger(empId)}
+      />
+    );
+  }
+
   // Dedicated Authoritative Terminal Event Ledger View
-  if (showTerminalLog || currentTab === 'device-logs' || currentTab === 'terminal-logs' || currentTab === 'raw-logs') {
+  if (showTerminalLog || currentTab === 'device-logs' || currentTab === 'terminal-logs' || currentTab === 'terminal-ledger' || currentTab === 'raw-logs') {
     return (
       <TerminalLogLedgerView
-        onBack={() => {
-          setShowTerminalLog(false);
-          if (onNavigateSubPath) onNavigateSubPath('biometric');
-        }}
+        onBack={closeTerminalLedger}
       />
     );
   }
@@ -972,7 +1071,18 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
           <Button
             variant="outline"
             size="md"
-            onClick={() => setShowTerminalLog(true)}
+            onClick={openEnrolmentDirectory}
+            className="gap-2 rounded-xl text-xs font-bold text-[#07563D] bg-emerald-50/70 border-emerald-300 hover:bg-emerald-100 h-10 px-4 shadow-2xs"
+            title="Open tenant-isolated Biometric Enrolment Directory & Workforce Audit"
+          >
+            <Users className="w-4 h-4 text-[#07563D]" />
+            Enrolment Directory
+          </Button>
+
+          <Button
+            variant="outline"
+            size="md"
+            onClick={() => openTerminalLedger()}
             className="gap-2 rounded-xl text-xs font-bold text-gray-800 bg-emerald-50/70 border-emerald-200 hover:bg-emerald-100 h-10 px-4"
           >
             <Clock className="w-4 h-4 text-[#07563D]" />
@@ -1190,34 +1300,50 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
         </Card>
 
         {/* CARD 2: Punches Today */}
-        <Card className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-2xs">
+        <Card
+          onClick={() => openTerminalLedger()}
+          className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-2xs cursor-pointer hover:border-[#07563D] hover:shadow-sm transition-all group"
+          title="Click to view live Biometric Terminal Event Ledger"
+        >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Punches Today</p>
+              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider group-hover:text-[#07563D] transition-colors">Punches Today</p>
               <p className="text-xl font-black text-gray-900 mt-1">{punchesTodayCount}</p>
               <p className="text-[11px] text-gray-500 font-semibold mt-0.5">
                 Last: <span className="font-mono text-gray-800">{latestPunchTimeStr}</span>
               </p>
             </div>
-            <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center">
-              <Radio className={cn('w-4 h-4 text-blue-700', punchesTodayCount > 0 && 'animate-pulse')} />
+            <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center group-hover:bg-[#07563D] transition-colors">
+              <Radio className={cn('w-4 h-4 text-blue-700 group-hover:text-white transition-colors', punchesTodayCount > 0 && 'animate-pulse')} />
             </div>
+          </div>
+          <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] font-bold text-[#07563D]">
+            <span>View Terminal Ledger</span>
+            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
           </div>
         </Card>
 
-        {/* CARD 3: Unmapped Users */}
-        <Card className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-2xs">
+        {/* CARD 3: Enrolment Audit Directory */}
+        <Card
+          onClick={openEnrolmentDirectory}
+          className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-2xs cursor-pointer hover:border-[#07563D] hover:shadow-sm transition-all group"
+          title="Click to view full Biometric Enrolment Directory & Workforce Audit"
+        >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Unmapped Users</p>
-              <p className="text-xl font-black text-gray-900 mt-1">{totalUnmappedUsers}</p>
+              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider group-hover:text-[#07563D] transition-colors">Enrolment Audit</p>
+              <p className="text-xl font-black text-emerald-800 mt-1">Directory</p>
               <p className="text-[11px] font-semibold mt-0.5 text-emerald-700">
-                {totalUnmappedUsers === 0 ? '✓ All users mapped' : `⚠ ${totalUnmappedUsers} need review`}
+                {totalUnmappedUsers === 0 ? '✓ Audit Enrolment' : `⚠ ${totalUnmappedUsers} need review`}
               </p>
             </div>
-            <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center">
-              <Users className="w-4 h-4 text-amber-700" />
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center group-hover:bg-[#07563D] transition-colors">
+              <Users className="w-4 h-4 text-[#07563D] group-hover:text-white transition-colors" />
             </div>
+          </div>
+          <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] font-bold text-[#07563D]">
+            <span>Enrolment & Excel</span>
+            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
           </div>
         </Card>
 
@@ -1607,7 +1733,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setShowTerminalLog(true)}
+              onClick={() => openTerminalLedger()}
               className="text-xs font-bold rounded-xl h-8 px-3 gap-1"
             >
               <Clock className="w-3.5 h-3.5 text-[#07563D]" />
@@ -1747,7 +1873,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
               return (
                 <div
                   key={p.id}
-                  onClick={() => setShowTerminalLog(true)}
+                  onClick={() => openTerminalLedger()}
                   className="cursor-pointer p-3.5 rounded-2xl bg-gray-50/80 border border-gray-200/80 flex flex-col justify-between text-xs hover:bg-white hover:border-emerald-300 transition-colors duration-150 shadow-2xs space-y-2.5"
                 >
                   <div className="flex items-start justify-between gap-2.5">
@@ -1840,7 +1966,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
             <Button
               size="xs"
               variant="ghost"
-              onClick={() => setShowTerminalLog(true)}
+              onClick={() => openTerminalLedger()}
               className="text-xs font-bold text-[#07563D] hover:bg-emerald-50"
             >
               View all {punches.length} punches in Terminal Event Ledger &rarr;

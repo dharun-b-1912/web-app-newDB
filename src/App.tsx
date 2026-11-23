@@ -1087,6 +1087,14 @@ const AppContent: React.FC = () => {
       case 'device-sync':
       case 'punch-mapping':
       case 'device-logs':
+      case 'terminal-logs':
+      case 'terminal-ledger':
+      case 'biometric/terminal-logs':
+      case 'biometric/terminal-ledger':
+      case 'enrolment':
+      case 'enrollment':
+      case 'biometric/enrolment':
+      case 'biometric/enrollment':
       case 'face-attendance':
       case 'biometric/face':
       case 'face-enrollment':

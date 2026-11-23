@@ -18,6 +18,7 @@ import { ApprovalCenterView } from './subviews/ApprovalCenterView';
 import { AttendanceReportsView } from './subviews/AttendanceReportsView';
 import { ManualAttendanceView } from './subviews/ManualAttendanceView';
 import { TerminalLogLedgerView } from './subviews/TerminalLogLedgerView';
+import { BiometricEnrolmentDirectoryView } from './subviews/BiometricEnrolmentDirectoryView';
 import { FaceRecognitionChannelView } from './subviews/FaceRecognitionChannelView';
 import { GpsMobileChannelView } from './subviews/GpsMobileChannelView';
 import { ClockingDevicesChannelView } from './subviews/ClockingDevicesChannelView';
@@ -228,7 +229,43 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       subPath === 'device-sync' ||
       subPath === 'punch-mapping'
     ) {
+      if (typeof window !== 'undefined') {
+        const sp = new URLSearchParams(window.location.search);
+        const sub = sp.get('subTab') || sp.get('tab');
+        if (sub === 'terminal-logs' || sub === 'terminal-ledger' || sub === 'device-logs' || sub === 'raw-logs') {
+          return 'terminal-ledger';
+        }
+        if (sub === 'enrolment' || sub === 'enrollment' || sub === 'enrolment-directory') {
+          return 'enrolment';
+        }
+      }
       return 'biometric';
+    }
+    if (
+      subPath === 'terminal-logs' ||
+      subPath === '/terminal-logs' ||
+      subPath === 'terminal-ledger' ||
+      subPath === '/terminal-ledger' ||
+      subPath === 'biometric/terminal-logs' ||
+      subPath === '/biometric/terminal-logs' ||
+      subPath === 'biometric/terminal-ledger' ||
+      subPath === '/biometric/terminal-ledger' ||
+      subPath === 'device-logs' ||
+      subPath === 'raw-logs'
+    ) {
+      return 'terminal-ledger';
+    }
+    if (
+      subPath === 'enrolment' ||
+      subPath === '/enrolment' ||
+      subPath === 'enrollment' ||
+      subPath === '/enrollment' ||
+      subPath === 'biometric/enrolment' ||
+      subPath === '/biometric/enrolment' ||
+      subPath === 'biometric-enrolment' ||
+      subPath === 'enrolment-directory'
+    ) {
+      return 'enrolment';
     }
     if (
       subPath === 'gps' ||
@@ -400,8 +437,12 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         setLocalTab('biometric');
       } else if (urlPath.includes('/biometric/geofences') || urlPath.includes('/geofences')) {
         setLocalTab('geofences');
+      } else if (urlPath.includes('/biometric/terminal-ledger') || urlPath.includes('/biometric/terminal-logs')) {
+        setLocalTab('terminal-ledger');
+      } else if (urlPath.includes('/biometric/enrolment') || urlPath.includes('/biometric/enrollment')) {
+        setLocalTab('enrolment');
       } else if (urlPath.startsWith('/biometric')) {
-        setLocalTab('biometric');
+        setLocalTab(resolveTab('biometric'));
       }
     };
 
@@ -617,11 +658,48 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         );
       case 'terminal-logs':
       case 'terminal-log':
+      case 'terminal-ledger':
+      case 'biometric-ledger':
       case 'device-logs':
       case 'raw-logs':
         return (
           <TerminalLogLedgerView
-            onBack={() => handleSelectTab('biometric')}
+            onBack={() => {
+              if (typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('tab');
+                url.searchParams.delete('subTab');
+                url.searchParams.delete('emp');
+                window.history.pushState(null, '', url.pathname);
+              }
+              handleSelectTab('biometric');
+            }}
+          />
+        );
+      case 'enrolment':
+      case 'enrollment':
+      case 'biometric-enrolment':
+      case 'enrolment-directory':
+        return (
+          <BiometricEnrolmentDirectoryView
+            onBack={() => {
+              if (typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('tab');
+                url.searchParams.delete('subTab');
+                window.history.pushState(null, '', url.pathname);
+              }
+              handleSelectTab('biometric');
+            }}
+            onNavigateToTerminalLogs={(empId) => {
+              if (typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                url.searchParams.set('tab', 'terminal-ledger');
+                if (empId) url.searchParams.set('emp', empId);
+                window.history.pushState(null, '', url.pathname + url.search);
+              }
+              handleSelectTab('terminal-ledger');
+            }}
           />
         );
       case 'face-attendance':
@@ -751,7 +829,13 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     'device-sync',
     'punch-mapping',
     'terminal-logs',
+    'terminal-ledger',
     'device-logs',
+    'raw-logs',
+    'enrolment',
+    'enrollment',
+    'biometric-enrolment',
+    'enrolment-directory',
     'attendance-rules',
     'rules',
     'biometric-rules',

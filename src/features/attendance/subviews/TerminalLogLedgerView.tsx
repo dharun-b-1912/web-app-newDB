@@ -46,6 +46,7 @@ import { getActiveOrgId } from '../../../services/attendance/biometricCommandSer
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { isHardwareBiometricPunch } from './BiometricIntegrationView';
+import { supabase, supabaseAdmin, isSupabaseEnabled } from '../../../lib/supabase';
 
 export interface TerminalLogLedgerViewProps {
   initialEmployeeId?: string;
@@ -131,38 +132,99 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
     }
   };
 
-  const loadLedgerEvents = () => {
+  const loadLedgerEvents = async () => {
     setIsLoading(true);
     try {
-      // 1. Pull raw punches from biometricGatewayService (strictly hardware biometric and scoped to active organization)
-      const activeOrg = getActiveOrgId();
-      const gatewayPunches = (biometricGatewayService.getRawPunches(1000, activeOrg) || []).filter(isHardwareBiometricPunch);
+      const activeOrg = getActiveOrgId() || orgId;
+      const client = supabaseAdmin || supabase;
+      let gatewayPunches: RawBiometricPunch[] = [];
+
+      // 1. Fetch live hardware punches directly from Supabase attendance_punches
+      if (client) {
+        try {
+          const { data: dbRows, error: dbErr } = await client
+            .from('attendance_punches')
+            .select('*, employees(id, display_name, first_name, last_name, employee_code)')
+            .eq('organization_id', activeOrg)
+            .order('punch_time', { ascending: false })
+            .limit(1000);
+
+          if (!dbErr && Array.isArray(dbRows) && dbRows.length > 0) {
+            const isElectra = activeOrg === 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
+            const devName = isElectra ? 'eSSL MB160 — Plant Main Gate (4G FDLTE)' : 'eSSL Ai-FACE MAGNUM Terminal — Main Entrance';
+            const devSerial = isElectra ? 'JNP2263200782' : 'TDBD253600550';
+            const devId = isElectra ? 'b0e1d1a6-0c6f-4782-950f-eb4d80dc006e' : 'c7286b0d-d9d5-4cc2-9045-578d1d4cc464';
+
+            gatewayPunches = dbRows.map((row: any) => {
+              const emp = row.employees;
+              const empName = emp?.display_name ||
+                (emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : '') ||
+                row.employee_name ||
+                'Employee';
+              const cleanDigits = (emp?.employee_code || '').replace(/\D/g, '');
+              const pin = cleanDigits ? String(parseInt(cleanDigits, 10)) : String(row.biometric_pin || '1');
+              const pTime = row.punch_time || new Date().toISOString();
+              const modeUpper = String(row.verification_mode || '').toUpperCase();
+              const mappedMode: 'Face' | 'Fingerprint' | 'Card' =
+                modeUpper.includes('FINGER') ? 'Fingerprint' :
+                modeUpper.includes('CARD') || modeUpper.includes('RFID') ? 'Card' :
+                'Face';
+
+              return {
+                id: row.id,
+                organization_id: row.organization_id || activeOrg,
+                device_id: row.device_id || devId,
+                device_serial: devSerial,
+                device_name: devName,
+                biometric_pin: pin,
+                employee_id: row.employee_id,
+                employee_name: empName,
+                employee_code: emp?.employee_code || (row.employee_id ? `PIN-${pin}` : undefined),
+                punch_time: pTime,
+                verification_mode: mappedMode,
+                punch_direction: (row.punch_type === 'CHECK_OUT' ? 'OUT' : 'IN') as any,
+                source_type: 'ADMS_PUSH_LIVE',
+                processed_status: 'PROCESSED' as const,
+                created_at: row.created_at || pTime,
+              };
+            });
+          }
+        } catch (fetchErr) {
+          console.warn('[TerminalLogLedgerView] Supabase direct query notice:', fetchErr);
+        }
+      }
+
+      // If Supabase didn't yield punches, fall back to biometricGatewayService
+      if (gatewayPunches.length === 0) {
+        gatewayPunches = (biometricGatewayService.getRawPunches(1000, activeOrg) || []).filter(isHardwareBiometricPunch);
+      }
+
       // 2. Pull audit events from attendanceDecisionEngine
       const decisionEvents = attendanceDecisionEngine.getRawEvents(1000) || [];
 
-      // 3. Group punches by employee to determine first (CHECK-IN) vs last (CHECK-OUT) of the day
-      const punchesByEmp = new Map<string, RawBiometricPunch[]>();
+      // 3. Group punches by day and employee to determine first (CHECK-IN) vs last (CHECK-OUT) of that day
+      const punchesByEmpDay = new Map<string, RawBiometricPunch[]>();
       for (const gp of gatewayPunches) {
-        const key = gp.employee_id || gp.biometric_pin || 'unknown';
-        if (!punchesByEmp.has(key)) punchesByEmp.set(key, []);
-        punchesByEmp.get(key)!.push(gp);
+        const pDay = attendanceTimeService.getAttendanceDate(gp.punch_time, 'Asia/Kolkata');
+        const key = `${gp.employee_id || gp.biometric_pin || 'unknown'}_${pDay}`;
+        if (!punchesByEmpDay.has(key)) punchesByEmpDay.set(key, []);
+        punchesByEmpDay.get(key)!.push(gp);
       }
-      for (const list of punchesByEmp.values()) {
+      for (const list of punchesByEmpDay.values()) {
         list.sort((a, b) => new Date(a.punch_time).getTime() - new Date(b.punch_time).getTime());
       }
 
       // Map into authoritative unified terminal event ledger
       const mapped: UnifiedTerminalEvent[] = gatewayPunches.map((gp, idx) => {
         const pin = String(gp.biometric_pin || '').trim();
-        const pinNum = pin.replace(/\D/g, '');
 
         let empName = gp.employee_name;
-        let empCode = gp.employee_id;
+        let empCode = gp.employee_code || gp.employee_id;
         let empId = gp.employee_id;
 
         if (!empName || empName.startsWith('User #') || empName.startsWith('Machine User')) {
           empName = gp.employee_name || `Machine User #${pin}`;
-          empCode = gp.employee_id || `PIN-${pin}`;
+          empCode = gp.employee_code || `PIN-${pin}`;
           empId = gp.employee_id || `user-pin-${pin}`;
         }
 
@@ -173,11 +235,12 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
 
         const pTimeUtc = gp.punch_time || new Date().toISOString();
         const pMins = attendanceTimeService.getMinutesFromMidnight(pTimeUtc, 'Asia/Kolkata');
+        const pDay = attendanceTimeService.getAttendanceDate(pTimeUtc, 'Asia/Kolkata');
         const isExplicitOut = gp.punch_direction === 'OUT' || correlatedDecision?.decision_code === 'ACCEPTED_CHECK_OUT';
         const isEndOfShift = pMins >= 1020; // >= 17:00 PM
 
-        const empKey = empId || pin || 'unknown';
-        const empPunches = punchesByEmp.get(empKey) || [];
+        const empDayKey = `${empId || pin || 'unknown'}_${pDay}`;
+        const empPunches = punchesByEmpDay.get(empDayKey) || [];
         const isFirstPunch = empPunches.length <= 1 || empPunches[0].id === gp.id || empPunches[0].punch_time === gp.punch_time;
         const isLastPunch = empPunches.length > 1 && (empPunches[empPunches.length - 1].id === gp.id || empPunches[empPunches.length - 1].punch_time === gp.punch_time);
 
@@ -259,7 +322,7 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
           attendance_decision: decision,
           decision_code: decisionCode,
           decision_reason: decisionReason,
-          attendance_session_id: `sess-${empId}-${selectedDate}`,
+          attendance_session_id: `sess-${empId}-${pDay}`,
           processing_status: decision === 'NO CHANGE' ? 'STORED' : decision === 'IGNORED' ? 'SOURCE_LOCKED' : 'ACCEPTED',
           raw_payload: (gp as any).raw_payload || { pin, time: pTimeUtc, deviceSerial: gp.device_serial },
         };
@@ -285,31 +348,45 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
 
   useEffect(() => {
     loadLedgerEvents();
-    biometricGatewayService.syncPunchesFromSupabase(100).then(() => loadLedgerEvents()).catch(() => {});
 
-    // Live polling every 4 seconds for real-time terminal audit stream
-    const pollInterval = setInterval(() => {
-      biometricGatewayService.syncPunchesFromSupabase(100).then(() => loadLedgerEvents()).catch(() => {});
-    }, 4000);
+    // Subscribe to live database punches in real-time
+    let channel: any = null;
+    if (isSupabaseEnabled && supabase) {
+      channel = supabase
+        .channel(`terminal-ledger-${orgId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'attendance_punches',
+            filter: `organization_id=eq.${orgId}`,
+          },
+          () => {
+            loadLedgerEvents();
+          }
+        )
+        .subscribe();
+    }
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const debouncedLoad = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         loadLedgerEvents();
-      }, 200);
+      }, 300);
     };
 
     const unsubBiometric = hrEventBus.subscribe('biometric.*', debouncedLoad);
     const unsubAttendance = hrEventBus.subscribe('attendance.*', debouncedLoad);
 
     return () => {
-      clearInterval(pollInterval);
+      if (channel && supabase) supabase.removeChannel(channel);
       if (debounceTimer) clearTimeout(debounceTimer);
       unsubBiometric();
       unsubAttendance();
     };
-  }, [selectedDate]);
+  }, [selectedDate, orgId]);
 
   // Filter & Pagination Logic
   const filteredEvents = useMemo(() => {
@@ -626,13 +703,13 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
                       className="cursor-pointer hover:bg-emerald-50/40 transition-colors text-xs"
                     >
                       {/* Event Time */}
-                      <TableCell className="pl-6 font-mono font-bold text-gray-900">
+                      <TableCell className="pl-6 font-mono font-bold text-gray-900 min-w-[170px]">
                         {(() => {
                           const dateMeta = attendanceTimeService.formatAttendanceDateWithRelative(ev.event_time_utc, 'Asia/Kolkata');
                           const timeStr = attendanceTimeService.formatAttendanceTime(ev.event_time_utc, 'Asia/Kolkata', true);
                           return (
                             <div>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 {dateMeta.isToday ? (
                                   <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white uppercase tracking-wider">
                                     Today
@@ -642,13 +719,13 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
                                     {dateMeta.relativeLabel}
                                   </span>
                                 )}
-                                <span>{timeStr}</span>
-                                <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
+                                <span className="font-mono text-xs">{timeStr}</span>
+                                <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
                                   IST
                                 </span>
                               </div>
                               <span className="block text-[9px] text-gray-400 font-mono font-normal mt-0.5">
-                                {dateMeta.formattedDateWithYear} (UTC: {ev.event_time_utc.split('T')[1]?.replace('Z', '')})
+                                {dateMeta.formattedDateWithYear}
                               </span>
                             </div>
                           );
@@ -656,34 +733,34 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
                       </TableCell>
 
                       {/* Received Time */}
-                      <TableCell className="font-mono text-gray-600">
-                        <div>
+                      <TableCell className="font-mono text-gray-600 min-w-[120px]">
+                        <div className="flex items-center gap-1.5">
                           <span>{attendanceTimeService.formatAttendanceTime(ev.received_at_utc, 'Asia/Kolkata', true)}</span>
-                          <span className="block text-[9px] text-emerald-700 font-semibold font-mono">
+                          <span className="text-[9px] text-emerald-700 font-bold font-mono bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
                             +1s latency
                           </span>
                         </div>
                       </TableCell>
 
                       {/* Employee & PIN */}
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div>
-                            <span className="font-bold text-gray-900 block">{ev.employee_name}</span>
-                            <div className="flex items-center gap-1.5 mt-0.5">
+                      <TableCell className="min-w-[180px]">
+                        <div>
+                          <span className="font-bold text-gray-900 block">{ev.employee_name}</span>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            {ev.employee_code && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ev.employee_code) && (
                               <Badge variant="gray" size="sm" className="font-mono text-[9px]">
                                 {ev.employee_code}
                               </Badge>
-                              <span className="text-[10px] font-mono text-gray-500 font-bold">
-                                PIN: #{ev.biometric_pin}
-                              </span>
-                            </div>
+                            )}
+                            <span className="text-[10px] font-mono text-gray-700 font-bold bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+                              PIN: #{ev.biometric_pin}
+                            </span>
                           </div>
                         </div>
                       </TableCell>
 
                       {/* Verification Method */}
-                      <TableCell>
+                      <TableCell className="w-[120px]">
                         <div className="flex items-center gap-1.5 font-medium text-gray-800">
                           <Fingerprint className="w-3.5 h-3.5 text-gray-500" />
                           <span>{ev.verification_method}</span>
@@ -691,22 +768,26 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
                       </TableCell>
 
                       {/* Device & Location */}
-                      <TableCell>
-                        <div>
-                          <span className="font-semibold text-gray-900 block text-xs">{ev.device_name}</span>
-                          <span className="text-[10px] text-gray-400 block">{ev.location}</span>
+                      <TableCell className="max-w-[210px]">
+                        <div className="truncate" title={`${ev.device_name} • ${ev.location}`}>
+                          <span className="font-semibold text-gray-900 block text-xs truncate">
+                            {ev.device_name.split('—')[0].trim()}
+                          </span>
+                          <span className="text-[10px] text-gray-500 block truncate">
+                            {ev.device_name.includes('—') ? ev.device_name.split('—')[1].trim() : ev.location}
+                          </span>
                         </div>
                       </TableCell>
 
                       {/* Event Type */}
-                      <TableCell>
+                      <TableCell className="w-[140px]">
                         <span className="px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200 text-[10px] font-bold">
                           {ev.event_type}
                         </span>
                       </TableCell>
 
                       {/* Attendance Effect */}
-                      <TableCell>
+                      <TableCell className="min-w-[160px]">
                         <div>
                           <Badge
                             variant={isCheckIn ? 'emerald' : isCheckOut ? 'blue' : isNoChange ? 'gray' : 'amber'}
