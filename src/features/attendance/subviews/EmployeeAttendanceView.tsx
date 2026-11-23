@@ -380,6 +380,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
   // Scoped and filtered employees & attendance records (strictly real UUID employees from DB only)
   const filteredData = useMemo(() => {
+    const activeComp = api.getActiveCompany();
     const isUuid = (val: any) =>
       typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
     const combinedEmployees = employees.filter(
@@ -618,7 +619,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       if (debouncedPunches.length > 1 && firstIn) {
         const firstInMins = timeStringToMinutes(firstIn);
         const shiftEndMins = timeStringToMinutes(shift.end_time) || 1020;
-        const isOvernight = Boolean(shift.is_overnight || shift.cross_midnight);
+        const isOvernight = Boolean((shift as any)?.is_overnight || (shift as any)?.cross_midnight);
 
         // Find candidate checkout punches after firstIn
         const candidateOutPunches = debouncedPunches.slice(1).filter((p) => {

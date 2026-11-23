@@ -174,7 +174,7 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
       // 2. Always load punches matching device identifiers and scoped strictly to this organization
       const rawAllPunches = biometricGatewayService.getRawPunches(500, targetOrg) || [];
       const devPunches = rawAllPunches.filter(p => {
-        if (p.organization_id && p.organization_id !== targetOrg) return false;
+        if ((p as any).organization_id && (p as any).organization_id !== targetOrg) return false;
         return (
           p.device_id === device.id ||
           (device.serial_number && p.device_serial === device.serial_number) ||

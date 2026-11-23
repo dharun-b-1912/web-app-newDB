@@ -137,7 +137,7 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
     try {
       const activeOrg = getActiveOrgId() || orgId;
       const client = supabaseAdmin || supabase;
-      let gatewayPunches: RawBiometricPunch[] = [];
+      let gatewayPunches: any[] = [];
 
       // 1. Fetch live hardware punches directly from Supabase attendance_punches
       if (client) {

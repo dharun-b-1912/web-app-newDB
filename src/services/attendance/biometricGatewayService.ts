@@ -4090,7 +4090,7 @@ class BiometricGatewayService {
         deviceName: dev.device_name || 'eSSL MB160 — Plant Main Gate (4G FDLTE)',
         serialNumber: dev.serial_number || 'JNP2263200782',
         ipAddress: dev.ip_address || '100.109.56.254:4370',
-        branch: dev.branch || dev.location || 'Electra EV Plant Main Gate',
+        branch: dev.branch || (dev as any).location || 'Electra EV Plant Main Gate',
         machinePin: pin,
         mappedAt: emp?.created_at || new Date().toISOString(),
         status: dev.status || 'Online',
@@ -5317,7 +5317,7 @@ class BiometricGatewayService {
     return (list || [])
       .filter(p => {
         // Enforce strict tenant isolation: punch must belong to targetOrg
-        if (p.organization_id && p.organization_id !== targetOrg) return false;
+        if ((p as any).organization_id && (p as any).organization_id !== targetOrg) return false;
         // Punch must belong to this tenant's devices
         if (p.device_id && validDeviceIds.size > 0 && !validDeviceIds.has(p.device_id) && !validSerials.has(p.device_serial || '')) {
           return false;
@@ -6122,7 +6122,7 @@ class BiometricGatewayService {
           return psource === 'BIOMETRIC' || ['FACE', 'FINGERPRINT', 'CARD', 'PALM', 'IRIS', 'BIOMETRIC'].includes(vmode);
         });
 
-        const mappedPunches: RawBiometricPunch[] = biometricRows.map((row: any) => {
+        const mappedPunches: any[] = biometricRows.map((row: any) => {
           const emp = row.employees;
           const empName = emp?.display_name ||
             (emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : '') ||

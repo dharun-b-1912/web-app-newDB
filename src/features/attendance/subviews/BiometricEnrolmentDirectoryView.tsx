@@ -31,7 +31,8 @@ import { Card } from '../../../components/ui/Card';
 import { Badge } from '../../../components/ui/Badge';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '../../../components/ui/Table';
 import { useToast } from '../../../components/ui/Toast';
-import { api, Employee } from '../../../services/api';
+import { api } from '../../../services/api';
+import type { Employee } from '../../../types';
 import { supabase, supabaseAdmin, isSupabaseEnabled } from '../../../lib/supabase';
 import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
@@ -206,13 +207,13 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
 
         // Format dates in IST
         const firstPunchFormatted = firstPunchAt
-          ? attendanceTimeService.formatAttendanceDate(firstPunchAt, 'Asia/Kolkata') +
+          ? new Date(firstPunchAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) +
             ' ' +
             attendanceTimeService.formatAttendanceTime(firstPunchAt, 'Asia/Kolkata', true)
           : '—';
 
         const latestPunchFormatted = latestPunchAt
-          ? attendanceTimeService.formatAttendanceDate(latestPunchAt, 'Asia/Kolkata') +
+          ? new Date(latestPunchAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) +
             ' ' +
             attendanceTimeService.formatAttendanceTime(latestPunchAt, 'Asia/Kolkata', true)
           : '—';
