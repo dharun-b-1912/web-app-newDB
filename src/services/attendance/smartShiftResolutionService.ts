@@ -555,24 +555,35 @@ class SmartShiftResolutionService {
         );
       }
 
-      // If best candidate is strong (>= 70) and clearly outperforms assigned shift (or no assigned shift):
-      if (bestCandidate && bestCandidate.totalScore >= 70) {
+      // In ADAPTIVE_SHIFT or HYBRID_MODE:
+      // If best candidate is strong (>= 50) and clearly outperforms other shifts:
+      if (bestCandidate && (bestCandidate.totalScore >= 50 || !secondCandidate || bestCandidate.totalScore >= secondCandidate.totalScore + 10)) {
         // If assigned shift exists, ensure best candidate is at least 15 points better:
-        if (!assignedShift || !assignedScore || bestCandidate.totalScore >= (assignedScore.totalScore + 15)) {
-          const matchedShift = activeShifts.find((s) => s.id === bestCandidate.shiftId) || assignedShift || activeShifts[0];
-          const isAdapted = assignedShift && assignedShift.id !== matchedShift.id;
+        if (mode !== 'ADAPTIVE_SHIFT' && assignedShift && assignedScore && (bestCandidate.totalScore - assignedScore.totalScore < 15)) {
           return this.buildResult(
-            matchedShift,
-            'ADAPTIVE_PUNCH_INFERENCE',
-            bestCandidate.totalScore,
+            assignedShift,
+            'APPROVED_EMPLOYEE_ASSIGNMENT',
+            assignedScore.totalScore,
             false,
             false,
             candidateScores,
-            isAdapted
-              ? `Auto-adapted from ${assignedShift.code || assignedShift.shift_code} (${(assignedShift.start_time || '').substring(0, 5)}) to ${bestCandidate.shiftCode} (${bestCandidate.scheduledStart} - ${bestCandidate.scheduledEnd}) based on ${this.formatMinutesToTime(punchMinutes)} check-in.`
-              : `Adaptive shift matched ${bestCandidate.shiftCode} based on ${this.formatMinutesToTime(punchMinutes)} check-in (${bestCandidate.totalScore}% match).`
+            `Assigned shift retained (${assignedShift.code || assignedShift.shift_code}); adaptive difference < 15 points`
           );
         }
+
+        const matchedShift = activeShifts.find((s) => s.id === bestCandidate.shiftId) || activeShifts[0];
+        const isAdapted = assignedShift && (assignedShift.id !== matchedShift.id || (assignedShift.code || assignedShift.shift_code) !== (matchedShift.code || matchedShift.shift_code));
+        return this.buildResult(
+          matchedShift,
+          'ADAPTIVE_PUNCH_INFERENCE',
+          bestCandidate.totalScore,
+          false,
+          false,
+          candidateScores,
+          isAdapted
+            ? `Auto-adapted from ${assignedShift?.code || assignedShift?.shift_code || 'Default'} (${(assignedShift?.start_time || '').substring(0, 5)}) to ${bestCandidate.shiftCode} (${bestCandidate.scheduledStart} - ${bestCandidate.scheduledEnd}) based on ${this.formatMinutesToTime(punchMinutes)} check-in.`
+            : `Adaptive shift matched ${bestCandidate.shiftCode} based on ${this.formatMinutesToTime(punchMinutes)} check-in (${bestCandidate.totalScore}% match).`
+        );
       }
 
       // If ambiguous between top two candidates (score difference <= 5 and both > 60)
@@ -636,15 +647,15 @@ class SmartShiftResolutionService {
     if (diffMins <= 15) {
       startScore = 70; // Exact or within grace entry
     } else if (diffMins <= 30) {
-      startScore = 60;
+      startScore = 65;
     } else if (diffMins <= 60) {
-      startScore = 45;
+      startScore = 60; // Up to 1h early/late (standard arrival window)
     } else if (diffMins <= 90) {
-      startScore = 30;
+      startScore = 50; // Up to 1.5h early/late
     } else if (diffMins <= 120) {
-      startScore = 15;
+      startScore = 35;
     } else {
-      startScore = Math.max(0, 10 - Math.floor((diffMins - 120) / 30));
+      startScore = Math.max(0, 20 - Math.floor((diffMins - 120) / 30));
     }
 
     // Checkout Compatibility Score (Max 30 points)
@@ -723,31 +734,11 @@ class SmartShiftResolutionService {
    */
   private extractMinutesFromPunch(punch: string): number | null {
     if (!punch) return null;
-
-    // If ISO timestamp: e.g. "2026-10-29T03:59:10+00:00"
-    if (punch.includes('T')) {
-      try {
-        const d = new Date(punch);
-        const istStr = new Intl.DateTimeFormat('en-GB', {
-          timeZone: 'Asia/Kolkata',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        }).format(d);
-        const [h, m] = istStr.split(':').map(Number);
-        if (!isNaN(h) && !isNaN(m)) return h * 60 + m;
-      } catch (_) {}
-    }
-
-    // If time string e.g. "09:30" or "09:30:00"
-    return this.extractMinutesFromTimeStr(punch);
+    return timeStringToMinutes(punch);
   }
 
   private extractMinutesFromTimeStr(timeStr: string): number {
-    const parts = timeStr.split(':');
-    const h = parseInt(parts[0], 10) || 0;
-    const m = parseInt(parts[1], 10) || 0;
-    return h * 60 + m;
+    return timeStringToMinutes(timeStr) || 0;
   }
 
   private formatMinutesToTime(mins: number): string {
