@@ -582,6 +582,107 @@ export async function checkBiometricDeviceHeartbeats() {
   }
 }
 
+// ── Web App Uptime & 403 / 500 Telegram Sentinel Watchdog ───────────────────
+let webAppState = { isDown: false, lastStatus: 200, downSince: null, alertCount: 0, lastAlertAt: 0 };
+let isWebWatchdogRunning = false;
+
+export async function checkWebAppHealth() {
+  if (isWebWatchdogRunning) return;
+  isWebWatchdogRunning = true;
+
+  try {
+    const url = 'https://app.joypeoplehr.com';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    const startTime = Date.now();
+    let res = null;
+    let text = '';
+    let fetchError = null;
+
+    try {
+      res = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'JoySentinel-Watchdog/2.0' } });
+      text = await res.text();
+    } catch (e) {
+      fetchError = e;
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const latencyMs = Date.now() - startTime;
+    const timeStr = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+    const isHttpError = !res || !res.ok || res.status === 403 || res.status >= 500;
+    const isBlankOrForbidden = text.includes('403 Forbidden') || text.includes('Access to this resource on the server is denied');
+    const isHealthy = !fetchError && !isHttpError && !isBlankOrForbidden && (text.includes('<!doctype html') || text.includes('<html'));
+
+    if (!isHealthy) {
+      const statusCode = res ? res.status : 0;
+      const statusText = res ? res.statusText : (fetchError ? fetchError.message : 'Unreachable');
+
+      // Only alert on transition or 30-min reminder
+      const nowMs = Date.now();
+      const shouldAlert = !webAppState.isDown || (webAppState.alertCount < 2 && (nowMs - webAppState.lastAlertAt > 30 * 60 * 1000));
+
+      if (shouldAlert) {
+        const errorHtml = `🚨 <b>[PRODUCTION WEB APP INCIDENT] JOY SENTINEL</b>
+━━━━━━━━━━━━━━━━━━━━
+<b>Domain</b>: <code>app.joypeoplehr.com</code>
+<b>HTTP Status</b>: <b>${statusCode || 'DOWN'} ${statusText}</b>
+<b>Latency</b>: <code>${latencyMs}ms</code>
+🕒 <b>Incident Time</b>: ${timeStr}
+
+⚠️ <b>Impact</b>: Production users unable to access HRMS portal!
+<b>Diagnosis</b>: ${isBlankOrForbidden ? 'Directory Index or 403 Forbidden access denial detected.' : 'Web server unavailable or responding with error code.'}
+
+<i>Sentinel Watchdog will notify immediately upon recovery.</i>
+━━━━━━━━━━━━━━━━━━━━`;
+
+        console.log(`[WebAppWatchdog] 🚨 Production App DOWN (${statusCode} ${statusText}). Sending Telegram alert...`);
+        await sendTelegramAlert(errorHtml);
+
+        webAppState = {
+          isDown: true,
+          lastStatus: statusCode,
+          downSince: webAppState.downSince || new Date().toISOString(),
+          lastAlertAt: nowMs,
+          alertCount: (webAppState.alertCount || 0) + 1,
+        };
+      }
+    } else {
+      // System is Healthy!
+      if (webAppState.isDown) {
+        // Transitioned from DOWN -> RESTORED!
+        const restoredHtml = `🟢 <b>[PRODUCTION WEB APP RESTORED] JOY SENTINEL</b>
+━━━━━━━━━━━━━━━━━━━━
+<b>Domain</b>: <code>app.joypeoplehr.com</code>
+<b>HTTP Status</b>: <b>200 OK</b>
+<b>Latency</b>: <code>${latencyMs}ms</code>
+🕒 <b>Restored At</b>: ${timeStr}
+
+✓ <b>Status</b>: <b>FULL PORTAL ACCESS RESTORED & HEALTHY</b>
+<i>SPA index.html & client bundles responding normally.</i>
+━━━━━━━━━━━━━━━━━━━━`;
+
+        console.log(`[WebAppWatchdog] 🟢 Production App RESTORED (200 OK, ${latencyMs}ms). Sending Telegram restore alert...`);
+        await sendTelegramAlert(restoredHtml);
+
+        webAppState = {
+          isDown: false,
+          lastStatus: 200,
+          downSince: null,
+          lastAlertAt: 0,
+          alertCount: 0,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[WebAppWatchdog] Probe error:', err.message);
+  } finally {
+    isWebWatchdogRunning = false;
+  }
+}
+
 /**
  * Start the 24/7 attendance notification daemon
  */
@@ -611,4 +712,9 @@ export function startAttendanceRealtimeDaemon() {
   setTimeout(checkBiometricDeviceHeartbeats, 5000);
   setInterval(checkBiometricDeviceHeartbeats, 60000);
   console.log('[AttendanceDaemon] ✓ 24/7 Biometric Device Telegram Watchdog active (60s interval)');
+
+  // 24/7 Web Application Uptime & 403/500 Telegram Sentinel Watchdog (checks every 60 seconds)
+  setTimeout(checkWebAppHealth, 3000);
+  setInterval(checkWebAppHealth, 60000);
+  console.log('[AttendanceDaemon] ✓ 24/7 Web App Uptime Telegram Watchdog active (60s interval)');
 }
