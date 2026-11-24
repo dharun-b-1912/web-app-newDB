@@ -729,9 +729,10 @@ serve(async (req: Request) => {
 
         // =====================================================================
         // RULE 0: NIGHT SHIFT & MIDNIGHT EXTENDED CHECKOUT RECONCILER (00:00 to 11:00 IST)
-        // Shift: 7:30 PM (19:30) to next day 7:30 AM (07:30) or 11:00 PM (23:00) to 06:00 AM.
-        // If employee punches in the morning and yesterday has an unclosed evening check-in,
-        // this is the completed CHECK-OUT of yesterday's night shift, NOT a new check-in!
+        // Shift 2 (14:30 to 23:00) with overtime up to 04:30 AM next day
+        // Shift 3 (23:00 to 06:00) with checkout up to 08:30 AM next day
+        // If employee punches in early morning and yesterday has an unclosed check-in,
+        // this is the completed CHECK-OUT of yesterday's shift, NOT a new check-in!
         // =====================================================================
         if (eventIstHour < 11.0) {
           const yDateObj = new Date(punchDate.getTime() - 24 * 60 * 60 * 1000);
@@ -749,7 +750,7 @@ serve(async (req: Request) => {
             .limit(1);
 
           if (existingYesterdayOut && existingYesterdayOut.length > 0) {
-            console.log(`[ADMS-EDGE] 🌙 Night shift checkout already recorded for ${emp.first_name} on ${yesterdayDate}. Suppressing duplicate today check-in.`);
+            console.log(`[ADMS-EDGE] 🌙 Shift checkout already recorded for ${emp.first_name} on ${yesterdayDate}. Suppressing duplicate today check-in.`);
             parsedCount++;
             continue;
           }
@@ -767,14 +768,13 @@ serve(async (req: Request) => {
             const yInIstHour = (new Date(yDaily.first_check_in).getUTCHours() + 5.5 + new Date(yDaily.first_check_in).getUTCMinutes() / 60) % 24;
             const yTotalMins = Math.max(0, Math.floor((currentPunchMs - yInMs) / 60000));
 
-            // Only reconcile as yesterday's night shift checkout if:
-            // 1. Check-in was genuinely at night (>= 20:00 IST / 8 PM) OR midnight early hours (< 05:00 IST)
-            // 2. AND current checkout punch is in the early morning (<= 08:30 IST)
-            // 3. AND duration is realistic for a shift (<= 14 hours / 840 mins)
-            // If check-in was daytime/afternoon (e.g. 15:19 IST), an arrival next morning at 09:47 IST is TODAY'S check-in!
-            const isGenuineNightShift = (yInIstHour >= 20.0 || yInIstHour < 5.0) && eventIstHour <= 8.5 && yTotalMins <= 840;
+            // Genuine Shift 2 Overtime Checkout: Checked in afternoon (12:00-18:00 IST), punched out 00:00-05:00 IST next morning
+            const isShift2Overtime = yInIstHour >= 12.0 && yInIstHour < 18.0 && eventIstHour <= 5.0 && yTotalMins >= 300 && yTotalMins <= 960;
 
-            if (isGenuineNightShift) {
+            // Genuine Shift 3 Night Checkout: Checked in night/early morning (>= 18:00 or < 05:00), punched out morning <= 08:30 IST
+            const isShift3Night = (yInIstHour >= 18.0 || yInIstHour < 5.0) && eventIstHour <= 8.5 && yTotalMins >= 180 && yTotalMins <= 840;
+
+            if (isShift2Overtime || isShift3Night) {
               const yOvertimeMins = Math.max(0, yTotalMins - 480);
               const yHours = Math.floor(yTotalMins / 60);
               const yMins = yTotalMins % 60;
@@ -813,11 +813,11 @@ serve(async (req: Request) => {
                 });
               }
 
-              // Dispatch Airtel DLT Checkout SMS for night shift
+              // Dispatch Airtel DLT Checkout SMS for shift completion
               if (emp.phone && !smsSentTodayCache.has(yCheckOutKey) && yTotalMins >= 180) {
                 const totalDurationFormatted = `${yHours} hrs ${yMins} mins`;
                 const msg = `Dear ${empName}, your check-out has been recorded at ${timeFormatted} today. Your total logged time is ${totalDurationFormatted}. Status: Present. - Joy PeopleHR.`;
-                console.log(`[ADMS-EDGE] 🌙 Dispatching Airtel checkout SMS for night shift to ${empName} (${emp.phone})`);
+                console.log(`[ADMS-EDGE] 🌙 Dispatching Airtel checkout SMS for shift completion to ${empName} (${emp.phone})`);
                 await dispatchAndLogAirtelSms(supabase, emp, organizationId, msg, DLT_CHECKOUT_TEMPLATE_ID, 'SMS_CHECK_OUT');
                 smsSentTodayCache.add(yCheckOutKey);
               }
@@ -825,7 +825,7 @@ serve(async (req: Request) => {
               // Dispatch instant push & in-app alert to reporting manager
               await notifyReportingManager(supabase, emp, 'CHECK_OUT', timeFormatted, organizationId);
 
-              console.log(`[ADMS-EDGE] 🌙 Night Shift checkout reconciled for ${emp.first_name} on shift ${yesterdayDate} at ${timeFormatted} (${yHours}h ${yMins}m worked, ${Math.floor(yOvertimeMins / 60)}h ${yOvertimeMins % 60}m OT).`);
+              console.log(`[ADMS-EDGE] 🌙 Shift checkout reconciled for ${emp.first_name} on shift ${yesterdayDate} at ${timeFormatted} (${yHours}h ${yMins}m worked, ${Math.floor(yOvertimeMins / 60)}h ${yOvertimeMins % 60}m OT).`);
               parsedCount++;
               continue;
             }
@@ -870,6 +870,39 @@ serve(async (req: Request) => {
             }
           } else {
             // Case 1C: First arrival of the day!
+            // Smart Adaptive Shift Resolution for Electra EV:
+            // - 04:30 AM to 06:45 AM: SHIFT-1 (06:00 - 14:30)
+            // - 06:45 AM to 11:30 AM: GEN-01 (08:30 - 17:00)
+            // - 11:30 AM to 18:00 PM: SHIFT-2 (14:30 - 23:00)
+            // - 18:00 PM to 04:30 AM: SHIFT-3 (23:00 - 06:00, Overnight)
+            let adaptiveShiftId = '03af7148-163b-4263-b080-df44cd9f564d';
+            let adaptiveShiftCode = 'SHIFT-1';
+            let adaptiveShiftStartHour = 6.0;
+            const adaptiveGraceMins = 15;
+
+            if (eventIstHour >= 4.5 && eventIstHour < 6.75) {
+              adaptiveShiftId = '03af7148-163b-4263-b080-df44cd9f564d';
+              adaptiveShiftCode = 'SHIFT-1';
+              adaptiveShiftStartHour = 6.0;
+            } else if (eventIstHour >= 6.75 && eventIstHour < 11.5) {
+              adaptiveShiftId = '659ba299-eb9b-432b-ab42-e456fd630be0';
+              adaptiveShiftCode = 'GEN-01';
+              adaptiveShiftStartHour = 8.5;
+            } else if (eventIstHour >= 11.5 && eventIstHour < 18.0) {
+              adaptiveShiftId = '98c0f403-5523-4e52-b044-c55b1f112c21';
+              adaptiveShiftCode = 'SHIFT-2';
+              adaptiveShiftStartHour = 14.5;
+            } else {
+              adaptiveShiftId = 'b6775e9f-31da-4df1-a423-1af07e0965c5';
+              adaptiveShiftCode = 'SHIFT-3';
+              adaptiveShiftStartHour = 23.0;
+            }
+
+            let adaptiveLateMins = 0;
+            if (eventIstHour > (adaptiveShiftStartHour + adaptiveGraceMins / 60.0)) {
+              adaptiveLateMins = Math.round((eventIstHour - adaptiveShiftStartHour) * 60);
+            }
+
             await supabase.from('attendance_punches').insert({
               employee_id: emp.id,
               organization_id: organizationId,
@@ -885,11 +918,16 @@ serve(async (req: Request) => {
               employee_id: emp.id,
               organization_id: organizationId,
               attendance_date: todayDate,
+              shift_id: adaptiveShiftId,
               first_check_in: eventUtcIso,
               last_check_out: null,
-              status: 'PRESENT',
+              status: adaptiveLateMins > 0 ? 'LATE' : 'PRESENT',
               payable_status: 1.0,
+              late_entry_minutes: adaptiveLateMins,
+              current_work_state: 'WORKING',
             }, { onConflict: 'employee_id,attendance_date' });
+
+            console.log(`[ADMS-EDGE] 🟢 Check-in accepted for ${emp.first_name} at ${timeFormatted} -> Adapted to ${adaptiveShiftCode} (Late: ${adaptiveLateMins}m).`);
 
             if (emp.phone && !smsSentTodayCache.has(checkInKey)) {
               const msg = `Dear ${empName}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
@@ -908,6 +946,22 @@ serve(async (req: Request) => {
         // RULE 2: LATE AFTERNOON FIRST ARRIVAL (Shift started after 13:00 IST)
         // =====================================================================
         if (!hasFirstCheckIn) {
+          let adaptiveShiftId = '98c0f403-5523-4e52-b044-c55b1f112c21'; // SHIFT-2
+          let adaptiveShiftCode = 'SHIFT-2';
+          let adaptiveShiftStartHour = 14.5;
+          const adaptiveGraceMins = 15;
+
+          if (eventIstHour >= 18.0) {
+            adaptiveShiftId = 'b6775e9f-31da-4df1-a423-1af07e0965c5';
+            adaptiveShiftCode = 'SHIFT-3';
+            adaptiveShiftStartHour = 23.0;
+          }
+
+          let adaptiveLateMins = 0;
+          if (adaptiveShiftCode === 'SHIFT-2' && eventIstHour > (adaptiveShiftStartHour + adaptiveGraceMins / 60.0)) {
+            adaptiveLateMins = Math.round((eventIstHour - adaptiveShiftStartHour) * 60);
+          }
+
           await supabase.from('attendance_punches').insert({
             employee_id: emp.id,
             organization_id: organizationId,
@@ -923,11 +977,16 @@ serve(async (req: Request) => {
             employee_id: emp.id,
             organization_id: organizationId,
             attendance_date: todayDate,
+            shift_id: adaptiveShiftId,
             first_check_in: eventUtcIso,
             last_check_out: null,
-            status: 'PRESENT',
+            status: adaptiveLateMins > 0 ? 'LATE' : 'PRESENT',
             payable_status: 1.0,
+            late_entry_minutes: adaptiveLateMins,
+            current_work_state: 'WORKING',
           }, { onConflict: 'employee_id,attendance_date' });
+
+          console.log(`[ADMS-EDGE] 🟢 Afternoon check-in accepted for ${emp.first_name} at ${timeFormatted} -> Adapted to ${adaptiveShiftCode} (Late: ${adaptiveLateMins}m).`);
 
           if (emp.phone && !smsSentTodayCache.has(checkInKey)) {
             const msg = `Dear ${empName}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;

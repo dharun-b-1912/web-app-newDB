@@ -658,9 +658,10 @@ class SmartShiftResolutionService {
       } else if (signedDiff <= 90) {
         startScore = 62; // 45-90m early check-in
       } else if (signedDiff <= 120) {
-        startScore = 55; // Up to 2h early
+        startScore = 55; // Up to 2h early (permitted factory gate opening)
       } else {
-        startScore = Math.max(0, 35 - Math.floor((signedDiff - 120) / 30));
+        // More than 2 hours early: steep penalty so arrivals do not erroneously latch to shifts starting half a day later
+        startScore = Math.max(0, 15 - Math.floor((signedDiff - 120) / 20));
       }
     } else {
       // Late arrival after shift start
