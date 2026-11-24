@@ -6097,11 +6097,24 @@ class BiometricGatewayService {
         .from('attendance_punches')
         .select('*, employees(id, display_name, first_name, last_name, employee_code)')
         .eq('organization_id', orgId)
-        .eq('punch_source', 'BIOMETRIC')
         .gte('punch_time', cutoff)
         .order('punch_time', { ascending: false })
         .limit(limit)
         .abortSignal(ctrl.signal);
+
+      if (error || !data || data.length === 0) {
+        const fb = await supabase
+          .from('attendance_punches')
+          .select('*')
+          .eq('organization_id', orgId)
+          .gte('punch_time', cutoff)
+          .order('punch_time', { ascending: false })
+          .limit(limit);
+        if (!fb.error && Array.isArray(fb.data) && fb.data.length > 0) {
+          data = fb.data;
+          error = null;
+        }
+      }
       clearTimeout(tid);
 
       if (!error && Array.isArray(data) && data.length > 0) {
@@ -6119,7 +6132,7 @@ class BiometricGatewayService {
           if (vmode.includes('GPS') || vmode.includes('MANUAL') || vmode.includes('GEO') || vmode.includes('WEB')) {
             return false;
           }
-          return psource === 'BIOMETRIC' || ['FACE', 'FINGERPRINT', 'CARD', 'PALM', 'IRIS', 'BIOMETRIC'].includes(vmode);
+          return psource === 'BIOMETRIC' || psource === 'ADMS' || ['FACE', 'FINGERPRINT', 'CARD', 'PALM', 'IRIS', 'BIOMETRIC'].includes(vmode);
         });
 
         const mappedPunches: any[] = biometricRows.map((row: any) => {
@@ -6181,8 +6194,6 @@ class BiometricGatewayService {
 
         hrEventBus.emit('biometric.punch_ingested', { punches: sorted.slice(0, limit) });
         return sorted.slice(0, limit);
-      } else if (!error && Array.isArray(data) && data.length === 0) {
-        setStore(STORAGE_KEYS.PUNCHES, [], orgId);
       }
     } catch (err) {
       console.warn('[BiometricGatewayService] syncPunchesFromSupabase notice:', err);

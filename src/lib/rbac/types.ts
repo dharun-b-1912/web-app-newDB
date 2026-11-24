@@ -112,6 +112,13 @@ export type ModuleId =
   | 'device-sync'
   | 'punch-mapping'
   | 'device-logs'
+  | 'terminal-logs'
+  | 'terminal-ledger'
+  | 'biometric-ledger'
+  | 'enrolment'
+  | 'enrollment'
+  | 'enrolment-directory'
+  | 'biometric-enrolment'
   // Face Recognition Channel
   | 'face-attendance'
   | 'face-enrollment'

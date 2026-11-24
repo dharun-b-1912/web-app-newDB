@@ -87,6 +87,13 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'device-sync',
   'punch-mapping',
   'device-logs',
+  'terminal-logs',
+  'terminal-ledger',
+  'biometric-ledger',
+  'enrolment',
+  'enrollment',
+  'enrolment-directory',
+  'biometric-enrolment',
   // Face Recognition Channel
   'face-attendance',
   'face-enrollment',
@@ -826,7 +833,24 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
     module === 'exceptions' ||
     module === 'ledger' ||
     module === 'history' ||
-    module === 'policies'
+    module === 'policies' ||
+    module === 'terminal-ledger' ||
+    module === 'terminal-logs' ||
+    module === 'terminal-log' ||
+    module === 'biometric-ledger' ||
+    module === 'device-logs' ||
+    module === 'raw-logs' ||
+    module === 'device-enrollment' ||
+    module === 'device-sync' ||
+    module === 'punch-mapping' ||
+    module.startsWith('terminal-') ||
+    module.startsWith('device-') ||
+    module === 'enrolment' ||
+    module === 'enrollment' ||
+    module === 'enrolment-directory' ||
+    module === 'biometric-enrolment' ||
+    module.startsWith('enrol') ||
+    module.startsWith('enroll')
   ) {
     if (profile.hierarchyLevel <= 2 || profile.allowedModules.includes('attendance' as ModuleId) || profile.allowedModules.includes('biometric' as ModuleId) || profile.allowedModules.includes('shifts' as ModuleId)) {
       return true;
