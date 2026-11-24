@@ -577,7 +577,8 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
   };
 
   // --------------------------------------------------------------------------
-  // MULTI-SHEET EXCEL EXPORT GENERATION (.xlsx)
+  // EXECUTIVE MULTI-SHEET EXCEL EXPORT GENERATION (.xlsx)
+  // Designed with Executive Dashboard, KPI Cards, Trajectory & Clean 5-Day Matrix
   // --------------------------------------------------------------------------
   const handleExportExcel = async () => {
     setIsExporting(true);
@@ -586,32 +587,445 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
       workbook.creator = 'Joy PeopleHR Enterprise Biometrics';
       workbook.created = new Date();
 
-      // Theme Palettes
-      const headerFill: ExcelJS.Fill = {
+      // Palette & Standard Styles
+      const brandDarkGreen: ExcelJS.Fill = {
         type: 'pattern',
         pattern: 'solid',
         fgColor: { argb: 'FF07563D' },
       };
-      const subHeaderFill: ExcelJS.Fill = {
+      const brandEmerald: ExcelJS.Fill = {
         type: 'pattern',
         pattern: 'solid',
         fgColor: { argb: 'FF0B7A56' },
       };
+      const tableHeaderFill: ExcelJS.Fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF0F3F2E' },
+      };
+      const cardHeaderFill: ExcelJS.Fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF1F5F9' },
+      };
       const zebraFill: ExcelJS.Fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FFF9FAFB' },
+        fgColor: { argb: 'FFF8FAFC' },
+      };
+      const thinBorder: Partial<ExcelJS.Borders> = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+      const boxBorder: Partial<ExcelJS.Borders> = {
+        top: { style: 'medium', color: { argb: 'FF0B7A56' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
       };
 
-      // Sheet 1: 5-Day Master Attendance & Enrolment Matrix
-      const matrixSheet = workbook.addWorksheet('5-Day Master Matrix');
-      matrixSheet.views = [{ showGridLines: true }];
+      const datesConfig = [
+        { dateStr: '2026-11-20', label: '20-Nov-2026', day: 'Friday', note: 'Batch 1 Machine Go-Live (74 Enrolled)' },
+        { dateStr: '2026-11-21', label: '21-Nov-2026', day: 'Saturday', note: 'Batch 2 Machine Onboarding (26 Enrolled)' },
+        { dateStr: '2026-11-22', label: '22-Nov-2026', day: 'Sunday', note: 'Sunday Overtime Production (27 Staff Worked)' },
+        { dateStr: '2026-11-23', label: '23-Nov-2026', day: 'Monday', note: 'Batch 3 Machine Onboarding (46 Enrolled)' },
+        { dateStr: '2026-11-24', label: '24-Nov-2026', day: 'Tuesday', note: 'Live Production (Shift 1 & 2 Active)' },
+      ];
 
-      matrixSheet.addRow([`${companyName} — 5-Day Biometric Enrolment & Attendance Master Matrix (Nov 20 to Nov 24, 2026)`]);
-      matrixSheet.mergeCells('A1:P1');
-      matrixSheet.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-      matrixSheet.getCell('A1').fill = headerFill;
-      matrixSheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
+      // ==========================================================================
+      // SHEET 1: EXECUTIVE KPI DASHBOARD (The Executive Landing Page)
+      // ==========================================================================
+      const dashSheet = workbook.addWorksheet('Executive Dashboard', {
+        views: [{ showGridLines: true }],
+      });
+
+      // 1. Title Banner
+      dashSheet.addRow([`${companyName.toUpperCase()} (COIMBATORE) — PLANT BIOMETRIC & ATTENDANCE EXECUTIVE DASHBOARD`]);
+      dashSheet.mergeCells('A1:K1');
+      const titleCell = dashSheet.getCell('A1');
+      titleCell.font = { name: 'Calibri', size: 15, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.fill = brandDarkGreen;
+      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      dashSheet.getRow(1).height = 40;
+
+      // 2. Subtitle
+      dashSheet.addRow([`Audit Period: 20-Nov-2026 (Friday) to 24-Nov-2026 (Tuesday) | Biometric Terminal: eSSL MB160 — Plant Main Gate (S/N: JNP2263200782) | Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`]);
+      dashSheet.mergeCells('A2:K2');
+      const subCell = dashSheet.getCell('A2');
+      subCell.font = { name: 'Calibri', size: 9.5, italic: true, color: { argb: 'FFFFFFFF' } };
+      subCell.fill = brandEmerald;
+      subCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      dashSheet.getRow(2).height = 24;
+
+      dashSheet.addRow([]); // Row 3 spacer
+
+      // 3. KPI Metric Cards (Row 4 to 6)
+      // Card 1: Total Headcount (Cols B-C)
+      // Card 2: Biometric Enrolled (Cols D-E)
+      // Card 3: Pending Enrolment (Cols F-G)
+      // Card 4: Verified Punches (Cols H-I)
+      // Card 5: Total Overtime Logged (Cols J-K)
+      const totalPunchesCount = records.reduce((s, r) => s + r.totalPunches, 0);
+
+      // Card Header Row 4
+      const kpiRow4 = dashSheet.getRow(4);
+      kpiRow4.height = 20;
+      dashSheet.mergeCells('B4:C4');
+      dashSheet.mergeCells('D4:E4');
+      dashSheet.mergeCells('F4:G4');
+      dashSheet.mergeCells('H4:I4');
+      dashSheet.mergeCells('J4:K4');
+
+      dashSheet.getCell('B4').value = 'TOTAL WORKFORCE';
+      dashSheet.getCell('D4').value = 'BIOMETRIC ENROLLED';
+      dashSheet.getCell('F4').value = 'PENDING ENROLMENT';
+      dashSheet.getCell('H4').value = 'VERIFIED PUNCHES';
+      dashSheet.getCell('J4').value = 'PLANT OVERTIME (5-DAYS)';
+
+      ['B4', 'D4', 'F4', 'H4', 'J4'].forEach((cellRef) => {
+        const c = dashSheet.getCell(cellRef);
+        c.font = { size: 9, bold: true, color: { argb: 'FF475569' } };
+        c.fill = cardHeaderFill;
+        c.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+
+      // Card Value Row 5
+      const kpiRow5 = dashSheet.getRow(5);
+      kpiRow5.height = 36;
+      dashSheet.mergeCells('B5:C5');
+      dashSheet.mergeCells('D5:E5');
+      dashSheet.mergeCells('F5:G5');
+      dashSheet.mergeCells('H5:I5');
+      dashSheet.mergeCells('J5:K5');
+
+      dashSheet.getCell('B5').value = `${kpis.total}`;
+      dashSheet.getCell('D5').value = `${kpis.enrolled} (${kpis.enrolledRate}%)`;
+      dashSheet.getCell('F5').value = `${kpis.pending}`;
+      dashSheet.getCell('H5').value = `${totalPunchesCount}`;
+      dashSheet.getCell('J5').value = `${kpis.totalOtFormatted}`;
+
+      dashSheet.getCell('B5').font = { size: 20, bold: true, color: { argb: 'FF0F172A' } };
+      dashSheet.getCell('D5').font = { size: 20, bold: true, color: { argb: 'FF07563D' } };
+      dashSheet.getCell('F5').font = { size: 20, bold: true, color: { argb: 'FFB45309' } };
+      dashSheet.getCell('H5').font = { size: 20, bold: true, color: { argb: 'FF1D4ED8' } };
+      dashSheet.getCell('J5').font = { size: 20, bold: true, color: { argb: 'FF7C3AED' } };
+
+      ['B5', 'D5', 'F5', 'H5', 'J5'].forEach((cellRef) => {
+        dashSheet.getCell(cellRef).alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+
+      // Card Subtitle Row 6
+      const kpiRow6 = dashSheet.getRow(6);
+      kpiRow6.height = 18;
+      dashSheet.mergeCells('B6:C6');
+      dashSheet.mergeCells('D6:E6');
+      dashSheet.mergeCells('F6:G6');
+      dashSheet.mergeCells('H6:I6');
+      dashSheet.mergeCells('J6:K6');
+
+      dashSheet.getCell('B6').value = 'Plant Master Roster';
+      dashSheet.getCell('D6').value = 'Mapped on eSSL MB160';
+      dashSheet.getCell('F6').value = 'Pending Scan Action';
+      dashSheet.getCell('H6').value = 'Hardware Machine Events';
+      dashSheet.getCell('J6').value = 'Accrued Factory Overtime';
+
+      ['B6', 'D6', 'F6', 'H6', 'J6'].forEach((cellRef) => {
+        const c = dashSheet.getCell(cellRef);
+        c.font = { size: 8, italic: true, color: { argb: 'FF64748B' } };
+        c.alignment = { vertical: 'top', horizontal: 'center' };
+      });
+
+      // Apply borders to all cards
+      ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'].forEach((col) => {
+        [4, 5, 6].forEach((row) => {
+          dashSheet.getCell(`${col}${row}`).border = thinBorder;
+        });
+      });
+
+      dashSheet.addRow([]); // Row 7 spacer
+
+      // 4. Section 1 Title: 5-Day Workforce Turnout Trajectory
+      dashSheet.addRow(['1. 5-DAY WORKFORCE TURNOUT & OVERTIME TRAJECTORY']);
+      dashSheet.mergeCells('A8:K8');
+      const sec1Cell = dashSheet.getCell('A8');
+      sec1Cell.font = { size: 11, bold: true, color: { argb: 'FF07563D' } };
+      dashSheet.getRow(8).height = 26;
+
+      const trajectoryHeaders = [
+        'Date',
+        'Day',
+        'Total Headcount',
+        'Cumulative Enrolled',
+        'Punched / Present',
+        'Absent (Enrolled)',
+        'Weekly Off',
+        'Pre-Enrolment / Pending',
+        'Turnout % (Enrolled)',
+        'Total OT Hours',
+        'Rollout Operations Note',
+      ];
+      dashSheet.addRow(trajectoryHeaders);
+      const trajHRow = dashSheet.getRow(9);
+      trajHRow.height = 24;
+      trajHRow.eachCell((c) => {
+        c.font = { size: 9.5, bold: true, color: { argb: 'FFFFFFFF' } };
+        c.fill = tableHeaderFill;
+        c.alignment = { vertical: 'middle', horizontal: 'center' };
+        c.border = thinBorder;
+      });
+
+      let grandTotalPresentPunches = 0;
+      let grandTotalOtMinutes = 0;
+
+      datesConfig.forEach((dateCfg, idx) => {
+        let presentCount = 0;
+        let absentEnrolledCount = 0;
+        let weeklyOffCount = 0;
+        let pendingScanCount = 0;
+        let dayOtMins = 0;
+
+        records.forEach((r) => {
+          const dayD = r.dailyHistory[dateCfg.dateStr];
+          if (dayD?.firstCheckIn) {
+            presentCount += 1;
+            dayOtMins += dayD.overtimeMinutes || 0;
+          } else {
+            if (dayD?.status === 'Weekly Off') weeklyOffCount += 1;
+            else if (dayD?.status === 'Pending Enrolment') pendingScanCount += 1;
+            else absentEnrolledCount += 1;
+          }
+        });
+
+        grandTotalPresentPunches += presentCount;
+        grandTotalOtMinutes += dayOtMins;
+
+        // Cumulative enrolled on that date
+        const cumulativeEnrolled = records.filter(
+          (r) => r.isEnrolled && r.enrolledDate && r.enrolledDate <= dateCfg.dateStr
+        ).length;
+
+        const turnoutPct =
+          cumulativeEnrolled > 0 && dateCfg.dateStr !== '2026-11-22'
+            ? `${((presentCount / cumulativeEnrolled) * 100).toFixed(1)}%`
+            : dateCfg.dateStr === '2026-11-22'
+            ? 'Sunday Special OT'
+            : '—';
+
+        const row = dashSheet.addRow([
+          dateCfg.label,
+          dateCfg.day,
+          kpis.total,
+          cumulativeEnrolled > 0 ? cumulativeEnrolled : 'Go-Live Day',
+          presentCount,
+          absentEnrolledCount,
+          weeklyOffCount,
+          pendingScanCount,
+          turnoutPct,
+          formatMinutesToHoursStr(dayOtMins),
+          dateCfg.note,
+        ]);
+        row.height = 22;
+        row.eachCell((c, colNum) => {
+          c.font = { size: 9 };
+          c.border = thinBorder;
+          c.alignment = {
+            vertical: 'middle',
+            horizontal: colNum === 1 || colNum === 2 ? 'center' : colNum === 11 ? 'left' : 'center',
+          };
+          if (idx % 2 === 1) c.fill = zebraFill;
+        });
+      });
+
+      // Summary Total Row
+      const trajSummaryRow = dashSheet.addRow([
+        '5-Day Cumulative',
+        '—',
+        kpis.total,
+        `${kpis.enrolled} Enrolled`,
+        grandTotalPresentPunches,
+        '—',
+        '—',
+        '—',
+        '—',
+        formatMinutesToHoursStr(grandTotalOtMinutes),
+        '5-Day Factory Attendance Total',
+      ]);
+      trajSummaryRow.height = 24;
+      trajSummaryRow.eachCell((c) => {
+        c.font = { size: 9.5, bold: true, color: { argb: 'FF07563D' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F4EA' } };
+        c.border = thinBorder;
+        c.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+
+      dashSheet.addRow([]); // Spacer
+
+      // 5. Section 2: Shift Structure & Timings
+      dashSheet.addRow(['2. ELECTRA EV PLANT SHIFT ALLOCATION MATRIX']);
+      dashSheet.mergeCells('A17:K17');
+      const sec2Cell = dashSheet.getCell('A17');
+      sec2Cell.font = { size: 11, bold: true, color: { argb: 'FF07563D' } };
+      dashSheet.getRow(17).height = 26;
+
+      const shiftHeaders = [
+        'Shift Code',
+        'Shift Name',
+        'Official Shift Hours',
+        'Adaptive In-Window',
+        'Adaptive Out-Window',
+        'Plant Operational Scope',
+        'Break Duration',
+        'Night Premium',
+        'Grace Time',
+        'Min OT Trigger',
+        'Status in Factory',
+      ];
+      dashSheet.addRow(shiftHeaders);
+      const shiftHRow = dashSheet.getRow(18);
+      shiftHRow.height = 24;
+      shiftHRow.eachCell((c) => {
+        c.font = { size: 9.5, bold: true, color: { argb: 'FFFFFFFF' } };
+        c.fill = tableHeaderFill;
+        c.alignment = { vertical: 'middle', horizontal: 'center' };
+        c.border = thinBorder;
+      });
+
+      const shiftData = [
+        ['SHIFT-1', 'Shift 1 (Morning)', '06:00 AM – 02:30 PM', '04:30 AM – 06:15 AM', '02:15 PM – 03:30 PM', 'High Voltage Battery Pack & Cell Assembly', '30 mins (11:30 - 12:00)', 'No', '15 mins', '30 mins', 'Active Production'],
+        ['GEN-01', 'General Shift', '08:30 AM – 05:00 PM', '07:15 AM – 08:45 AM', '04:45 PM – 06:00 PM', 'Plant Administration, Quality Assurance & Engineering', '30 mins (13:00 - 13:30)', 'No', '15 mins', '30 mins', 'Active General'],
+        ['SHIFT-2', 'Shift 2 (Evening)', '02:30 PM – 11:00 PM', '12:30 PM – 02:45 PM', '10:45 PM – 11:59 PM', 'Motor & Inverter Sub-assembly, Testing & Dispatch', '30 mins (19:00 - 19:30)', 'No', '15 mins', '30 mins', 'Active Production'],
+        ['SHIFT-3', 'Shift 3 (Night)', '11:00 PM – 06:00 AM', '09:30 PM – 11:15 PM', '05:45 AM – 09:30 AM', 'Overnight Cell Aging & Continuous Endurance Cycling', '30 mins (03:00 - 03:30)', 'Yes', '15 mins', '30 mins', 'Overnight Active'],
+      ];
+
+      shiftData.forEach((s, idx) => {
+        const row = dashSheet.addRow(s);
+        row.height = 22;
+        row.eachCell((c, colNum) => {
+          c.font = { size: 9 };
+          c.border = thinBorder;
+          c.alignment = {
+            vertical: 'middle',
+            horizontal: colNum === 1 || colNum === 3 || colNum === 4 || colNum === 5 ? 'center' : colNum === 6 ? 'left' : 'center',
+          };
+          if (idx % 2 === 1) c.fill = zebraFill;
+        });
+      });
+
+      dashSheet.addRow([]); // Spacer
+
+      // 6. Section 3: Department Enrolment & Overtime Breakdown
+      dashSheet.addRow(['3. DEPARTMENT-WISE ENROLMENT & OVERTIME AUDIT']);
+      dashSheet.mergeCells('A25:K25');
+      const sec3Cell = dashSheet.getCell('A25');
+      sec3Cell.font = { size: 11, bold: true, color: { argb: 'FF07563D' } };
+      dashSheet.getRow(25).height = 26;
+
+      const deptHeaders = [
+        'Department Name',
+        'Total Headcount',
+        'Biometric Enrolled',
+        'Pending Enrolment',
+        'Enrolment Rate %',
+        'Active Today',
+        '5-Day Overtime Accrued',
+        'Average OT per Worker',
+        'Primary Shift Allocation',
+        'Action Required',
+        'Audit Priority',
+      ];
+      dashSheet.addRow(deptHeaders);
+      const deptHRow = dashSheet.getRow(26);
+      deptHRow.height = 24;
+      deptHRow.eachCell((c) => {
+        c.font = { size: 9.5, bold: true, color: { argb: 'FFFFFFFF' } };
+        c.fill = tableHeaderFill;
+        c.alignment = { vertical: 'middle', horizontal: 'center' };
+        c.border = thinBorder;
+      });
+
+      const deptMap = new Map<string, { total: number; enrolled: number; pending: number; activeToday: number; otMins: number }>();
+      records.forEach((r) => {
+        const d = r.department || 'Operations';
+        if (!deptMap.has(d)) {
+          deptMap.set(d, { total: 0, enrolled: 0, pending: 0, activeToday: 0, otMins: 0 });
+        }
+        const item = deptMap.get(d)!;
+        item.total += 1;
+        if (r.isEnrolled) item.enrolled += 1;
+        else item.pending += 1;
+        if (r.activeToday) item.activeToday += 1;
+        item.otMins += r.totalOtMinutesNov20to24;
+      });
+
+      Array.from(deptMap.entries())
+        .sort((a, b) => b[1].total - a[1].total)
+        .forEach(([dept, data], idx) => {
+          const rate = data.total > 0 ? `${((data.enrolled / data.total) * 100).toFixed(1)}%` : '0%';
+          const avgOtMins = data.enrolled > 0 ? Math.round(data.otMins / data.enrolled) : 0;
+          const action = data.pending > 0 ? `Enrol ${data.pending} workers on eSSL MB160` : '✓ 100% Fully Enrolled';
+          const priority = data.pending > 15 ? 'HIGH PRIORITY' : data.pending > 0 ? 'MEDIUM' : 'NORMAL';
+
+          const row = dashSheet.addRow([
+            dept,
+            data.total,
+            data.enrolled,
+            data.pending,
+            rate,
+            data.activeToday,
+            formatMinutesToHoursStr(data.otMins),
+            formatMinutesToHoursStr(avgOtMins),
+            dept === 'B-PACK' ? 'SHIFT-1 / SHIFT-2' : dept === 'BESS' ? 'SHIFT-2 / SHIFT-3' : 'GEN-01 / SHIFT-1',
+            action,
+            priority,
+          ]);
+          row.height = 22;
+          row.eachCell((c, colNum) => {
+            c.font = { size: 9 };
+            c.border = thinBorder;
+            c.alignment = {
+              vertical: 'middle',
+              horizontal: colNum === 1 ? 'left' : colNum === 10 ? 'left' : 'center',
+            };
+            if (idx % 2 === 1) c.fill = zebraFill;
+            if (colNum === 11) {
+              if (priority === 'HIGH PRIORITY') {
+                c.font = { size: 9, bold: true, color: { argb: 'FFB91C1C' } };
+              } else if (priority === 'NORMAL') {
+                c.font = { size: 9, bold: true, color: { argb: 'FF15803D' } };
+              }
+            }
+          });
+        });
+
+      dashSheet.columns = [
+        { width: 22 },
+        { width: 14 },
+        { width: 18 },
+        { width: 18 },
+        { width: 16 },
+        { width: 14 },
+        { width: 22 },
+        { width: 20 },
+        { width: 26 },
+        { width: 34 },
+        { width: 18 },
+      ];
+
+      // ==========================================================================
+      // SHEET 2: 5-DAY MASTER ATTENDANCE MATRIX (Clean, Formatted & Legible)
+      // ==========================================================================
+      const matrixSheet = workbook.addWorksheet('5-Day Attendance Matrix', {
+        views: [{ showGridLines: true, state: 'frozen', xSplit: 3, ySplit: 2 }],
+      });
+
+      matrixSheet.addRow([`${companyName.toUpperCase()} — 5-DAY BIOMETRIC ATTENDANCE & SHIFT MATRIX (NOV 20 TO NOV 24, 2026)`]);
+      matrixSheet.mergeCells('A1:O1');
+      const mTitle = matrixSheet.getCell('A1');
+      mTitle.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+      mTitle.fill = brandDarkGreen;
+      mTitle.alignment = { vertical: 'middle', horizontal: 'center' };
       matrixSheet.getRow(1).height = 36;
 
       const matrixHeaders = [
@@ -621,7 +1035,6 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
         'Department',
         'Machine PIN',
         'Enrolment Batch',
-        'Enrolment Date',
         'Nov 20 (Fri)',
         'Nov 21 (Sat)',
         'Nov 22 (Sun)',
@@ -629,17 +1042,61 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
         'Nov 24 (Tue - Today)',
         'Days Present',
         'Total OT Hours',
-        'Lifetime Punches',
+        'Total Punches',
         'Latest Punch (IST)',
       ];
       matrixSheet.addRow(matrixHeaders);
-      const hRow = matrixSheet.getRow(2);
-      hRow.height = 26;
-      hRow.eachCell((c) => {
-        c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-        c.fill = subHeaderFill;
+      const mHRow = matrixSheet.getRow(2);
+      mHRow.height = 28;
+      mHRow.eachCell((c) => {
+        c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        c.fill = tableHeaderFill;
         c.alignment = { vertical: 'middle', horizontal: 'center' };
+        c.border = thinBorder;
       });
+
+      // Cell formatting helper that returns text and styling
+      const getFormattedDayCell = (d?: DayAttendanceDetail) => {
+        if (!d || !d.firstCheckIn) {
+          if (d?.status === 'Weekly Off') {
+            return {
+              text: 'Weekly Off',
+              fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } } as ExcelJS.Fill,
+              font: { name: 'Calibri', size: 8.5, color: { argb: 'FF64748B' } },
+            };
+          }
+          if (d?.status === 'Pending Enrolment') {
+            return {
+              text: 'Pending Scan\n(Pre-Enrolment)',
+              fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } } as ExcelJS.Fill,
+              font: { name: 'Calibri', size: 8.5, bold: true, color: { argb: 'FFB45309' } },
+            };
+          }
+          return {
+            text: 'Absent',
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF2F2' } } as ExcelJS.Fill,
+            font: { name: 'Calibri', size: 8.5, bold: true, color: { argb: 'FFDC2626' } },
+          };
+        }
+
+        const inT = attendanceTimeService.formatAttendanceTime(d.firstCheckIn, 'Asia/Kolkata', false);
+        const outT = d.lastCheckOut ? attendanceTimeService.formatAttendanceTime(d.lastCheckOut, 'Asia/Kolkata', false) : 'In Shift';
+        const otPart = d.overtimeMinutes > 0 ? `\nOT: +${Math.floor(d.overtimeMinutes / 60)}h ${d.overtimeMinutes % 60}m` : '';
+
+        if (d.dayLabel.includes('Sun') || d.status === 'Weekly Off') {
+          return {
+            text: `[P] Sunday Shift\n${inT} – ${outT}${otPart}`,
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } } as ExcelJS.Fill,
+            font: { name: 'Calibri', size: 8.5, bold: true, color: { argb: 'FF1D4ED8' } },
+          };
+        }
+
+        return {
+          text: `[P] ${d.shiftCode}\n${inT} – ${outT}${otPart}`,
+          fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0FDF4' } } as ExcelJS.Fill,
+          font: { name: 'Calibri', size: 8.5, bold: true, color: { argb: 'FF15803D' } },
+        };
+      };
 
       records.forEach((r, idx) => {
         const d20 = r.dailyHistory['2026-11-20'];
@@ -648,13 +1105,11 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
         const d23 = r.dailyHistory['2026-11-23'];
         const d24 = r.dailyHistory['2026-11-24'];
 
-        const fmtDay = (d?: DayAttendanceDetail) => {
-          if (!d || !d.firstCheckIn) return d?.status === 'Weekly Off' ? 'Weekly Off' : d?.status === 'Pending Enrolment' ? 'Pending Scan' : 'Absent';
-          const inT = attendanceTimeService.formatAttendanceTime(d.firstCheckIn, 'Asia/Kolkata', false);
-          const outT = d.lastCheckOut ? attendanceTimeService.formatAttendanceTime(d.lastCheckOut, 'Asia/Kolkata', false) : 'In Shift';
-          const otPart = d.overtimeMinutes > 0 ? ` (+${Math.floor(d.overtimeMinutes / 60)}h ${d.overtimeMinutes % 60}m OT)` : '';
-          return `${d.shiftCode}: ${inT} - ${outT}${otPart}`;
-        };
+        const c20 = getFormattedDayCell(d20);
+        const c21 = getFormattedDayCell(d21);
+        const c22 = getFormattedDayCell(d22);
+        const c23 = getFormattedDayCell(d23);
+        const c24 = getFormattedDayCell(d24);
 
         const row = matrixSheet.addRow([
           idx + 1,
@@ -663,128 +1118,334 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
           r.department,
           `#${r.biometricPin}`,
           r.enrolmentBatch,
-          r.enrolledDateFormatted,
-          fmtDay(d20),
-          fmtDay(d21),
-          fmtDay(d22),
-          fmtDay(d23),
-          fmtDay(d24),
+          c20.text,
+          c21.text,
+          c22.text,
+          c23.text,
+          c24.text,
           r.daysPresentCount,
           r.totalOtFormatted,
           r.totalPunches,
           r.latestPunchFormatted,
         ]);
-        if (idx % 2 === 1) {
-          row.eachCell((c) => (c.fill = zebraFill));
+
+        row.height = 42; // Generous height for 2-3 lines of wrapped text
+
+        // Format Base Columns
+        row.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+        row.getCell(2).alignment = { vertical: 'middle', horizontal: 'center' };
+        row.getCell(2).font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF07563D' } };
+        row.getCell(3).alignment = { vertical: 'middle', horizontal: 'left' };
+        row.getCell(3).font = { name: 'Calibri', size: 9.5, bold: true };
+        row.getCell(4).alignment = { vertical: 'middle', horizontal: 'center' };
+        row.getCell(5).alignment = { vertical: 'middle', horizontal: 'center' };
+        row.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        // Apply Day Cell Styles
+        const dayCellConfigs = [
+          { col: 7, cellObj: c20 },
+          { col: 8, cellObj: c21 },
+          { col: 9, cellObj: c22 },
+          { col: 10, cellObj: c23 },
+          { col: 11, cellObj: c24 },
+        ];
+
+        dayCellConfigs.forEach(({ col, cellObj }) => {
+          const c = row.getCell(col);
+          c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+          c.fill = cellObj.fill;
+          c.font = cellObj.font;
+        });
+
+        // Summary columns
+        row.getCell(12).alignment = { vertical: 'middle', horizontal: 'center' };
+        row.getCell(12).font = { name: 'Calibri', size: 9.5, bold: true };
+        row.getCell(13).alignment = { vertical: 'middle', horizontal: 'center' };
+        row.getCell(13).font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF7C3AED' } };
+        row.getCell(14).alignment = { vertical: 'middle', horizontal: 'center' };
+        row.getCell(15).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        // Borders
+        for (let c = 1; c <= 15; c++) {
+          row.getCell(c).border = thinBorder;
         }
       });
 
       matrixSheet.columns = [
-        { width: 6 },
-        { width: 14 },
-        { width: 26 },
-        { width: 22 },
-        { width: 14 },
-        { width: 20 },
-        { width: 16 },
-        { width: 30 },
-        { width: 30 },
-        { width: 20 },
-        { width: 32 },
-        { width: 32 },
-        { width: 14 },
-        { width: 16 },
-        { width: 16 },
-        { width: 22 },
+        { width: 6 },  // S.No
+        { width: 14 }, // Emp ID
+        { width: 26 }, // Emp Name
+        { width: 18 }, // Dept
+        { width: 14 }, // PIN
+        { width: 18 }, // Batch
+        { width: 30 }, // Nov 20
+        { width: 30 }, // Nov 21
+        { width: 26 }, // Nov 22 (Sun)
+        { width: 30 }, // Nov 23
+        { width: 30 }, // Nov 24
+        { width: 14 }, // Days Present
+        { width: 16 }, // Total OT
+        { width: 14 }, // Punches
+        { width: 22 }, // Latest Punch
       ];
 
-      // Sheet 2: Enrolled Workforce (146)
-      const enrolledSheet = workbook.addWorksheet('Enrolled Workforce (146)');
-      enrolledSheet.addRow([`${companyName} — Biometric Enrolled Workforce on eSSL MB160 Terminal`]);
-      enrolledSheet.mergeCells('A1:J1');
-      enrolledSheet.getCell('A1').font = { size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
-      enrolledSheet.getCell('A1').fill = headerFill;
-      enrolledSheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
-      enrolledSheet.getRow(1).height = 32;
+      // ==========================================================================
+      // SHEET 3: MASTER DAILY PUNCH REGISTER (Audit Trail for Filtering/Pivots)
+      // ==========================================================================
+      const punchSheet = workbook.addWorksheet('Daily Punch Register (Audit)', {
+        views: [{ showGridLines: true }],
+      });
 
-      enrolledSheet.addRow([
+      punchSheet.addRow([`${companyName.toUpperCase()} — MASTER BIOMETRIC PUNCH REGISTER (NOV 20 TO NOV 24, 2026)`]);
+      punchSheet.mergeCells('A1:N1');
+      const pTitle = punchSheet.getCell('A1');
+      pTitle.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+      pTitle.fill = brandDarkGreen;
+      pTitle.alignment = { vertical: 'middle', horizontal: 'center' };
+      punchSheet.getRow(1).height = 36;
+
+      const punchHeaders = [
+        'S.No',
+        'Date',
+        'Day',
+        'Employee ID',
+        'Employee Name',
+        'Department',
+        'Machine PIN',
+        'Assigned Shift',
+        'Check-In (IST)',
+        'Check-Out (IST)',
+        'Work Duration',
+        'Punctuality & Timing',
+        'Overtime Accrued',
+        'Status',
+      ];
+      punchSheet.addRow(punchHeaders);
+      const pHRow = punchSheet.getRow(2);
+      pHRow.height = 26;
+      pHRow.eachCell((c) => {
+        c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        c.fill = tableHeaderFill;
+        c.alignment = { vertical: 'middle', horizontal: 'center' };
+        c.border = thinBorder;
+      });
+
+      let pIdx = 1;
+      datesConfig.forEach((dateCfg) => {
+        records.forEach((r) => {
+          const d = r.dailyHistory[dateCfg.dateStr];
+          if (!d) return;
+
+          // Only list days where employee had an event or active schedule
+          const hasPunch = Boolean(d.firstCheckIn);
+          const inT = d.firstCheckIn ? attendanceTimeService.formatAttendanceTime(d.firstCheckIn, 'Asia/Kolkata', false) : '—';
+          const outT = d.lastCheckOut ? attendanceTimeService.formatAttendanceTime(d.lastCheckOut, 'Asia/Kolkata', false) : hasPunch ? 'In Shift' : '—';
+          const workDur = d.workMinutes > 0 ? `${Math.floor(d.workMinutes / 60)}h ${d.workMinutes % 60}m` : hasPunch ? 'Active' : '0m';
+
+          let punctuality = '—';
+          if (hasPunch) {
+            if (d.earlyArrivalMinutes >= 15) punctuality = `Early In (+${formatDeviationDuration(d.earlyArrivalMinutes)})`;
+            else if (d.lateMinutes >= 5) punctuality = `Late (${formatDeviationDuration(d.lateMinutes)})`;
+            else punctuality = 'On Time';
+          }
+
+          const otStr = d.overtimeMinutes > 0 ? `+${Math.floor(d.overtimeMinutes / 60)}h ${d.overtimeMinutes % 60}m OT` : '0m';
+
+          const row = punchSheet.addRow([
+            pIdx++,
+            dateCfg.label,
+            dateCfg.day,
+            r.employeeCode,
+            r.displayName,
+            r.department,
+            `#${r.biometricPin}`,
+            d.shiftCode,
+            inT,
+            outT,
+            workDur,
+            punctuality,
+            otStr,
+            d.status,
+          ]);
+          row.height = 20;
+
+          row.eachCell((c, colNum) => {
+            c.font = { name: 'Calibri', size: 9 };
+            c.border = thinBorder;
+            c.alignment = {
+              vertical: 'middle',
+              horizontal: colNum === 4 || colNum === 5 ? 'left' : 'center',
+            };
+          });
+
+          // Highlight Present rows vs Absent
+          if (hasPunch) {
+            row.getCell(14).font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF15803D' } };
+          } else if (d.status === 'Weekly Off') {
+            row.getCell(14).font = { name: 'Calibri', size: 9, color: { argb: 'FF64748B' } };
+          } else if (d.status === 'Pending Enrolment') {
+            row.getCell(14).font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFB45309' } };
+          } else {
+            row.getCell(14).font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFDC2626' } };
+          }
+        });
+      });
+
+      punchSheet.columns = [
+        { width: 6 },
+        { width: 14 },
+        { width: 12 },
+        { width: 14 },
+        { width: 26 },
+        { width: 18 },
+        { width: 14 },
+        { width: 16 },
+        { width: 16 },
+        { width: 16 },
+        { width: 14 },
+        { width: 22 },
+        { width: 16 },
+        { width: 18 },
+      ];
+
+      // ==========================================================================
+      // SHEET 4: ENROLLED WORKFORCE (146 Active Staff on eSSL MB160)
+      // ==========================================================================
+      const enrolledSheet = workbook.addWorksheet('Enrolled Workforce (146)');
+      enrolledSheet.addRow([`${companyName.toUpperCase()} — BIOMETRICALLY ENROLLED WORKFORCE (eSSL MB160 PLANT MAIN GATE)`]);
+      enrolledSheet.mergeCells('A1:J1');
+      const eTitle = enrolledSheet.getCell('A1');
+      eTitle.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+      eTitle.fill = brandDarkGreen;
+      eTitle.alignment = { vertical: 'middle', horizontal: 'center' };
+      enrolledSheet.getRow(1).height = 36;
+
+      const enrolledHeaders = [
         'S.No',
         'Employee ID',
         'Employee Name',
         'Department',
         'Machine PIN',
+        'Enrolment Batch',
         'Enrolment Date',
-        'Batch',
+        'Days Present (Nov 20-24)',
         'Total Punches',
-        'Nov 20-24 Days Present',
         'Total OT Hours',
-      ]);
-      const ehRow = enrolledSheet.getRow(2);
-      ehRow.height = 24;
-      ehRow.eachCell((c) => {
-        c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-        c.fill = subHeaderFill;
+      ];
+      enrolledSheet.addRow(enrolledHeaders);
+      const eHRow = enrolledSheet.getRow(2);
+      eHRow.height = 26;
+      eHRow.eachCell((c) => {
+        c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        c.fill = tableHeaderFill;
+        c.alignment = { vertical: 'middle', horizontal: 'center' };
+        c.border = thinBorder;
       });
 
       records
         .filter((r) => r.isEnrolled)
         .forEach((r, idx) => {
-          enrolledSheet.addRow([
+          const row = enrolledSheet.addRow([
             idx + 1,
             r.employeeCode,
             r.displayName,
             r.department,
             `#${r.biometricPin}`,
-            r.enrolledDateFormatted,
             r.enrolmentBatch,
-            r.totalPunches,
+            r.enrolledDateFormatted,
             r.daysPresentCount,
+            r.totalPunches,
             r.totalOtFormatted,
           ]);
+          row.height = 22;
+          row.eachCell((c, colNum) => {
+            c.font = { name: 'Calibri', size: 9 };
+            c.border = thinBorder;
+            c.alignment = {
+              vertical: 'middle',
+              horizontal: colNum === 2 || colNum === 3 ? 'left' : 'center',
+            };
+            if (idx % 2 === 1) c.fill = zebraFill;
+          });
         });
+
       enrolledSheet.columns = [
         { width: 6 },
         { width: 14 },
         { width: 28 },
-        { width: 22 },
+        { width: 20 },
         { width: 14 },
-        { width: 18 },
         { width: 20 },
         { width: 16 },
         { width: 22 },
+        { width: 16 },
         { width: 18 },
       ];
 
-      // Sheet 3: Pending Enrolment (71)
+      // ==========================================================================
+      // SHEET 5: PENDING ENROLMENT (71 Actionable Follow-Up List)
+      // ==========================================================================
       const pendingSheet = workbook.addWorksheet('Pending Enrolment (71)');
-      pendingSheet.addRow([`${companyName} — Employees Pending Biometric Machine Enrolment`]);
-      pendingSheet.mergeCells('A1:F1');
-      pendingSheet.getCell('A1').font = { size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
-      pendingSheet.getCell('A1').fill = headerFill;
-      pendingSheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
-      pendingSheet.getRow(1).height = 32;
+      pendingSheet.addRow([`${companyName.toUpperCase()} — EMPLOYEES PENDING BIOMETRIC SCAN ON MACHINE`]);
+      pendingSheet.mergeCells('A1:G1');
+      const pendTitle = pendingSheet.getCell('A1');
+      pendTitle.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+      pendTitle.fill = brandDarkGreen;
+      pendTitle.alignment = { vertical: 'middle', horizontal: 'center' };
+      pendingSheet.getRow(1).height = 36;
 
-      pendingSheet.addRow(['S.No', 'Employee ID', 'Employee Name', 'Department', 'Machine PIN to Assign', 'Status']);
-      const phRow = pendingSheet.getRow(2);
-      phRow.height = 24;
-      phRow.eachCell((c) => {
-        c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-        c.fill = subHeaderFill;
+      const pendingHeaders = [
+        'S.No',
+        'Employee ID',
+        'Employee Name',
+        'Department',
+        'Machine PIN to Assign',
+        'Required Physical Action',
+        'Recommended Shift',
+      ];
+      pendingSheet.addRow(pendingHeaders);
+      const pendHRow = pendingSheet.getRow(2);
+      pendHRow.height = 26;
+      pendHRow.eachCell((c) => {
+        c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        c.fill = tableHeaderFill;
+        c.alignment = { vertical: 'middle', horizontal: 'center' };
+        c.border = thinBorder;
       });
 
       records
         .filter((r) => !r.isEnrolled)
         .forEach((r, idx) => {
-          pendingSheet.addRow([
+          const row = pendingSheet.addRow([
             idx + 1,
             r.employeeCode,
             r.displayName,
             r.department,
             `#${r.biometricPin}`,
-            'Pending Physical Face/Finger Scan',
+            'Register Face / Fingerprint on eSSL MB160 Terminal',
+            r.department === 'B-PACK' ? 'SHIFT-1' : r.department === 'BESS' ? 'SHIFT-2' : 'GEN-01',
           ]);
+          row.height = 22;
+          row.eachCell((c, colNum) => {
+            c.font = { name: 'Calibri', size: 9 };
+            c.border = thinBorder;
+            c.alignment = {
+              vertical: 'middle',
+              horizontal: colNum === 2 || colNum === 3 || colNum === 6 ? 'left' : 'center',
+            };
+            if (idx % 2 === 1) c.fill = zebraFill;
+          });
         });
-      pendingSheet.columns = [{ width: 6 }, { width: 14 }, { width: 28 }, { width: 24 }, { width: 24 }, { width: 34 }];
+
+      pendingSheet.columns = [
+        { width: 6 },
+        { width: 14 },
+        { width: 28 },
+        { width: 22 },
+        { width: 24 },
+        { width: 44 },
+        { width: 20 },
+      ];
 
       // Download buffer
       const buffer = await workbook.xlsx.writeBuffer();
@@ -792,11 +1453,11 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `Electra_EV_Biometric_Enrolment_and_Attendance_Report_Nov20_to_Nov24.xlsx`;
+      anchor.download = `Electra_EV_Biometric_Executive_Dashboard_and_Matrix_Nov20_to_Nov24.xlsx`;
       anchor.click();
       window.URL.revokeObjectURL(url);
 
-      showToast('✓ Comprehensive Excel audit report exported successfully!', 'success');
+      showToast('✓ Executive KPI Dashboard & 5-Day Matrix Workbook exported successfully!', 'success');
     } catch (err: any) {
       console.error('[ExcelExport] Error:', err);
       showToast('Failed to export Excel report', 'error');
@@ -884,7 +1545,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
               className="gap-2 rounded-xl text-xs font-bold bg-[#07563D] hover:bg-[#064e37] text-white shadow-sm h-10 px-4"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              {isExporting ? 'Exporting...' : 'Export Complete Excel (.xlsx)'}
+              {isExporting ? 'Generating Dashboard...' : 'Export Executive Workbook (.xlsx)'}
             </Button>
           </div>
         </div>
