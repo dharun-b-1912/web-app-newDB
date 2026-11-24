@@ -204,6 +204,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       return [];
     }
   });
+  const [prevDailyRecords, setPrevDailyRecords] = useState<AttendanceDaily[]>([]);
   const [departments, setDepartments] = useState<string[]>(['People & HR', 'Engineering', 'Operations', 'Quality Assurance']);
   const [locations, setLocations] = useState<string[]>(['Coimbatore HQ', 'Chennai Factory', 'Hosur Plant', 'Bangalore Office']);
   const [vendors, setVendors] = useState<string[]>(['Direct Payroll']);
@@ -247,6 +248,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
     const activeComp = api.getActiveCompany();
     const effectiveTenantId = activeComp?.organization_id || activeComp?.id;
+    const prevDateStr = attendanceTimeService.getPreviousDate(selectedDate);
+
     Promise.allSettled([
       api.getEmployees(activeComp?.id),
       api.getDepartments(activeComp?.id),
@@ -254,8 +257,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       attendanceRosterService.fetchShiftAssignmentsFromDb(effectiveTenantId),
       attendanceRosterService.fetchRostersFromDb(selectedDate, selectedDate, effectiveTenantId),
       attendanceApi.getDailyAttendanceAsync(selectedDate),
+      attendanceApi.getDailyAttendanceAsync(prevDateStr),
       biometricGatewayService.syncPunchesFromSupabase(1000),
-    ]).then(([empRes, deptRes, shiftRes, _assignRes, _rosterRes, dailyRes]) => {
+    ]).then(([empRes, deptRes, shiftRes, _assignRes, _rosterRes, dailyRes, prevDailyRes]) => {
       if (empRes.status === 'fulfilled' && empRes.value) {
         const realEmps = empRes.value;
         setEmployees(realEmps);
@@ -293,6 +297,14 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         const fallback = attendanceApi.getDailyAttendance(selectedDate);
         if (fallback && fallback.length > 0) {
           setDailyRecords(fallback);
+        }
+      }
+      if (prevDailyRes && prevDailyRes.status === 'fulfilled' && prevDailyRes.value) {
+        setPrevDailyRecords(prevDailyRes.value);
+      } else {
+        const prevFallback = attendanceApi.getDailyAttendance(prevDateStr);
+        if (prevFallback && prevFallback.length > 0) {
+          setPrevDailyRecords(prevFallback);
         }
       }
       setIsInitialLoading(false);
@@ -466,6 +478,13 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       const isOff = roster.is_weekly_off;
       let resolvedRecord = record;
 
+      // Extract yesterday's record for this employee to detect cross-midnight overtime and checkouts
+      const prevRecord = prevDailyRecords.find(
+        (r) =>
+          r.employee_id === emp.id ||
+          (emp.employee_code && r.employee_code && r.employee_code.toLowerCase() === emp.employee_code.toLowerCase())
+      );
+
       // Extract raw punches for employee
       const rawClassificationPunches: ClassifiedPunchEvent[] = [
         ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.id, selectedDate),
@@ -474,22 +493,79 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
       const gatewayPunches: ClassifiedPunchEvent[] = (biometricGatewayService.getRawPunches(5000, emp.organization_id || activeComp?.id) || [])
         .filter((p) => {
-          const pTime = p.punch_time || '';
-          const pDate = pTime ? attendanceTimeService.getAttendanceDate(pTime, 'Asia/Kolkata') : '';
-          if (normalizeDateStr(pDate) !== normSelectedDate) return false;
           const eId = (emp.id || '').toLowerCase();
           const eCode = (emp.employee_code || '').toLowerCase();
           const eDigits = eCode.replace(/\D/g, '') || eId.replace(/\D/g, '');
           const pEmpId = (p.employee_id || '').toLowerCase();
           const pPin = (p.biometric_pin || '').toLowerCase();
           const pDigits = pPin.replace(/\D/g, '');
-          return (
+          const isMatchingEmp = (
             pEmpId === eId ||
             pEmpId === eCode ||
             pPin === eId ||
             pPin === eCode ||
             (eDigits.length > 0 && pDigits.length > 0 && eDigits === pDigits)
           );
+          if (!isMatchingEmp) return false;
+
+          const pTime = p.punch_time || '';
+          const pAttDate = (p as any).attendance_date;
+
+          // 1. Authoritative Attendance Date Guard:
+          // If the biometric punch was ingested with an explicit attendance_date (e.g. yesterday),
+          // do NOT double-dip it into selectedDate!
+          if (pAttDate && normalizeDateStr(pAttDate) !== normSelectedDate) {
+            return false;
+          }
+
+          const pDate = pTime ? attendanceTimeService.getAttendanceDate(pTime, 'Asia/Kolkata') : '';
+          if (!pAttDate && normalizeDateStr(pDate) !== normSelectedDate) return false;
+
+          // 2. Cross-Midnight Check-Out & Rest Turnaround Guard:
+          // If yesterday's record already claimed this punch as last_check_out:
+          if (prevRecord?.last_check_out) {
+            const prevOutIso = prevRecord.last_check_out;
+            const prevOutMs = new Date(prevOutIso).getTime();
+            const pTimeMs = new Date(pTime).getTime();
+            if (Math.abs(pTimeMs - prevOutMs) < 60000) {
+              return false; // Already consumed by yesterday's shift checkout!
+            }
+          }
+
+          // 3. Early morning punches (< 04:30 AM IST) in 24x7 manufacturing:
+          // At Electra EV, Shift 1 arrival window starts at 04:30 AM.
+          // Any punch between 00:00 and 04:30 AM is an exit punch for the previous day's evening (Shift 2)
+          // or overnight (Shift 3) shift, NOT a check-in for a morning shift.
+          const timeIstStr = attendanceTimeService.formatAttendanceTime(
+            (p as any).raw_payload?.device_timestamp_raw || p.punch_time,
+            'Asia/Kolkata',
+            true
+          );
+          const pMinsFromMidnight = timeStringToMinutes(timeIstStr);
+          const isExplicitOut =
+            p.punch_direction === 'OUT' ||
+            (p as any).punch_type === 'CHECK_OUT' ||
+            (p as any).punch_type === 'OUT';
+
+          if (pMinsFromMidnight < 270) { // < 04:30 AM
+            const prevInTime = prevRecord?.first_check_in;
+            const prevInMins = prevInTime
+              ? timeStringToMinutes(attendanceTimeService.formatAttendanceTime(prevInTime, 'Asia/Kolkata', true))
+              : -1;
+            const prevShiftName = (prevRecord?.shift_name || '').toLowerCase();
+            const hadLateShiftYesterday =
+              prevInMins >= 720 ||
+              prevShiftName.includes('shift 2') ||
+              prevShiftName.includes('shift 3') ||
+              prevShiftName.includes('ngt') ||
+              prevShiftName.includes('night');
+
+            if (hadLateShiftYesterday || isExplicitOut || (prevRecord && !prevRecord.last_check_out)) {
+              return false; // Belongs to yesterday's shift!
+            }
+          }
+
+          return true;
         })
         .map((p) => {
           const timeStr = attendanceTimeService.formatAttendanceTime(
@@ -547,16 +623,43 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       let inSrc: any = resolvedRecord?.check_in_source || (resolvedRecord?.source && resolvedRecord.source !== 'SYSTEM' ? resolvedRecord.source : undefined);
       let checkOutSrc: any = resolvedRecord?.check_out_source || (resolvedRecord?.is_regularized ? 'MANUAL' : undefined);
 
+      // Check if resolvedRecord's first_check_in is actually yesterday's checkout leaked as today's checkin
+      if (firstIn && prevRecord?.last_check_out) {
+        const prevOutIst = attendanceTimeService.formatAttendanceTime(prevRecord.last_check_out, 'Asia/Kolkata', true);
+        const firstInIst = attendanceTimeService.formatAttendanceTime(firstIn, 'Asia/Kolkata', true);
+        if (prevOutIst === firstInIst || Math.abs(timeStringToMinutes(prevOutIst) - timeStringToMinutes(firstInIst)) <= 1) {
+          firstIn = undefined;
+          lastOut = undefined;
+          resolvedRecord = undefined;
+        }
+      }
+
       if (debouncedPunches.length > 0) {
-        const firstPunch = debouncedPunches[0];
-        if (!firstIn) {
-          firstIn = firstPunch.event_time_str;
-        }
-        if (firstIn && (firstIn.includes('03:02') || firstIn.includes('3:02')) && !firstPunch.event_time_str.includes('03:02')) {
-          firstIn = firstPunch.event_time_str;
-        }
-        if (!inSrc) {
-          inSrc = firstPunch.source || 'BIOMETRIC';
+        // Discard any early morning punch before 04:30 AM if the worker worked yesterday afternoon/night
+        const validFirstPunch = debouncedPunches.find((p) => {
+          const pMins = timeStringToMinutes(p.event_time_str);
+          if (pMins < 270) {
+            const prevInTime = prevRecord?.first_check_in;
+            const prevInMins = prevInTime
+              ? timeStringToMinutes(attendanceTimeService.formatAttendanceTime(prevInTime, 'Asia/Kolkata', true))
+              : -1;
+            if (prevInMins >= 720 || (prevRecord?.shift_name || '').toLowerCase().includes('shift 2')) {
+              return false; // Checkout from yesterday
+            }
+          }
+          return true;
+        });
+
+        if (validFirstPunch) {
+          if (!firstIn) {
+            firstIn = validFirstPunch.event_time_str;
+          }
+          if (firstIn && (firstIn.includes('03:02') || firstIn.includes('3:02')) && !validFirstPunch.event_time_str.includes('03:02')) {
+            firstIn = validFirstPunch.event_time_str;
+          }
+          if (!inSrc) {
+            inSrc = validFirstPunch.source || 'BIOMETRIC';
+          }
         }
       }
 

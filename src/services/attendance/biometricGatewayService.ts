@@ -166,6 +166,8 @@ export interface RawBiometricPunch {
   employee_id?: string;
   employee_name?: string;
   punch_time: string;
+  attendance_date?: string;
+  punch_type?: string;
   verification_mode: 'Fingerprint' | 'Face' | 'Card' | 'Manual';
   punch_direction: 'IN' | 'OUT' | 'MIDDAY' | 'AUTO';
   source_type: 'LAN_AGENT' | 'OFFLINE_BUFFER' | 'USB_SCANNER' | 'SIMULATOR';
@@ -6162,8 +6164,10 @@ class BiometricGatewayService {
             employee_id: row.employee_id,
             employee_name: empName,
             punch_time: pTime,
+            attendance_date: row.attendance_date,
+            punch_type: row.punch_type,
             verification_mode: mappedMode as any,
-            punch_direction: (row.punch_type === 'OUT' || row.punch_type === 'CHECK_OUT' ? 'OUT' : 'IN') as any,
+            punch_direction: (row.punch_type === 'OUT' || row.punch_type === 'CHECK_OUT' || (row as any).punch_direction === 'OUT' ? 'OUT' : 'IN') as any,
             source_type: 'ADMS_PUSH_LIVE',
             dedup_hash: `${devSerial}_${pin}_${minuteBucket}`,
             processed_status: 'PROCESSED' as const,

@@ -539,6 +539,29 @@ class SmartShiftResolutionService {
       let assignedScore: CandidateShiftScore | null = null;
       if (assignedShift) {
         assignedScore = this.scoreCandidateShift(assignedShift, punchMinutes, checkoutMinutes);
+
+        // Pre-shift Overtime Arrival Rule:
+        // In manufacturing, workers frequently arrive 2 to 4.5 hours early before their assigned shift (e.g. Shift 2).
+        // If an employee is explicitly assigned a plant shift (e.g. SHIFT-2 or SHIFT-1) and arrives within
+        // its early overtime arrival window (up to 300 minutes before shift start), retain their assigned shift
+        // rather than mis-adapting them to an unrelated daytime or general shift!
+        const assignedStartMins = this.extractMinutesFromTimeStr(assignedShift.start_time || '09:00:00');
+        let earlyDiff = assignedStartMins - punchMinutes;
+        if (earlyDiff < -720) earlyDiff += 1440;
+        if (earlyDiff > 720) earlyDiff -= 1440;
+
+        const assignedCode = String(assignedShift.code || assignedShift.shift_code || '').toUpperCase();
+        if (earlyDiff >= 0 && earlyDiff <= 300 && (assignedCode.includes('SHIFT-2') || assignedCode.includes('SHIFT-1') || assignedCode.includes('SHIFT-3') || assignedCode.includes('GEN'))) {
+          return this.buildResult(
+            assignedShift,
+            'APPROVED_EMPLOYEE_ASSIGNMENT',
+            Math.max(assignedScore.totalScore, 85),
+            false,
+            false,
+            candidateScores,
+            `Assigned shift ${assignedCode} retained; worker arrived ${Math.floor(earlyDiff / 60)}h ${earlyDiff % 60}m early (${this.formatMinutesToTime(punchMinutes)}) for pre-shift production overtime.`
+          );
+        }
       }
 
       // In HYBRID_MODE:
@@ -599,6 +622,21 @@ class SmartShiftResolutionService {
           `Ambiguous check-in at ${this.formatMinutesToTime(punchMinutes)}. Equally close to ${bestCandidate.shiftCode} and ${secondCandidate.shiftCode}. Pending HR review.`
         );
       }
+
+      // Out of bounds check: if best candidate score < 40 (punched wildly outside all shift windows or in dead of night)
+      if (bestCandidate && bestCandidate.totalScore < 40) {
+        const overnightShift = activeShifts.find((s) => s.is_overnight || s.code === 'SHIFT-3' || s.shift_code === 'SHIFT-3');
+        const fallback = overnightShift || assignedShift || activeShifts.find((s) => s.code === 'GEN-01') || activeShifts[0];
+        return this.buildResult(
+          fallback,
+          'DEFAULT_REVIEW_QUEUE',
+          bestCandidate.totalScore,
+          true,
+          true,
+          candidateScores,
+          `Punch at ${this.formatMinutesToTime(punchMinutes)} falls outside eligible windows of all plant shifts. Requires HR verification.`
+        );
+      }
     }
 
     const fallbackShift = assignedShift || activeShifts[0] || DEFAULT_SHIFTS[0];
@@ -638,6 +676,24 @@ class SmartShiftResolutionService {
     if (signedDiff > 720) signedDiff -= 1440;
 
     let diffMins = Math.abs(signedDiff);
+
+    // Statutory Night Rest Boundary: Morning shifts (Shift 1 / Corporate Day starting 06:00 - 09:30 AM)
+    // do not accept early check-in punches before 04:30 AM (270 mins).
+    // Punches before 04:30 AM are night-shift checkouts or overnight events, not Shift 1 arrivals.
+    if (scheduledStartMins >= 360 && scheduledStartMins <= 570 && firstPunchMinutes < 270) {
+      return {
+        shiftId: shift.id,
+        shiftCode: shift.code || shift.shift_code || 'GEN',
+        shiftName: shift.name || shift.shift_name || 'General Shift',
+        scheduledStart: (shift.start_time || '09:00:00').substring(0, 5),
+        scheduledEnd: (shift.end_time || '18:00:00').substring(0, 5),
+        startDifferenceMinutes: diffMins,
+        inAttendanceWindow: false,
+        checkoutCompatibilityScore: 0,
+        totalScore: 0,
+        matchConfidence: 'UNMATCHED',
+      };
+    }
 
     // Permitted early window: up to 120 mins early for upcoming shift
     // Permitted late grace: up to 60 mins late
