@@ -652,11 +652,9 @@ export class AttendanceMisDeliveryService {
           role: 'Authorized Management',
         });
       } else {
-        // Authenticated management dispatch: Allow valid 10-digit Indian numbers explicitly targeted by HR
-        authorizedWhatsApp.push({
-          phone: normPhone,
-          name: 'Management Recipient',
-          role: 'HR Dispatch',
+        rejected.push({
+          target: rawPhone,
+          reason: 'Unauthorized external number: External WhatsApp destinations must be explicitly authorized by management policy.',
         });
       }
     });
