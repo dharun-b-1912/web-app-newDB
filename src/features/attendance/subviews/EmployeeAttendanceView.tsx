@@ -380,7 +380,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   }, [loadData]);
 
   // Scoped and filtered employees & attendance records (strictly real UUID employees from DB only)
-  const filteredData = useMemo(() => {
+  const allResolvedRows = useMemo(() => {
     const activeComp = api.getActiveCompany();
     const isUuid = (val: any) =>
       typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
@@ -778,8 +778,10 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         adaptiveReason,
       };
     });
+  }, [employees, dailyRecords, selectedDate, rosterSyncVersion]);
 
-    // STEP 2: Filter resolved rows
+  // STEP 2: Scoped and filtered employees & attendance records
+  const filteredData = useMemo(() => {
     return allResolvedRows.filter(row => {
       const { emp, record, roster, shift, isMissingPunch, isWorking, inSrc, checkOutSrc, isAdaptiveInferred, adaptiveReason } = row;
       const empDept = emp.department_name || emp.department || 'People & HR';
@@ -919,7 +921,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
       return matchDept && matchLoc && matchVendor && matchShift && matchStatus && matchSource && matchQuery && matchTile;
     });
-  }, [employees, dailyRecords, selectedDate, deptFilter, locationFilter, vendorFilter, shiftFilter, statusFilter, sourceFilter, searchQuery, drilldownTileKey, rosterSyncVersion]);
+  }, [allResolvedRows, deptFilter, locationFilter, vendorFilter, shiftFilter, statusFilter, sourceFilter, searchQuery, drilldownTileKey]);
 
   // Aggregate stats for the active filtered set
   const totalInFilter = filteredData.length;
@@ -1878,7 +1880,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           isOpen={isSendReportOpen}
           onClose={() => setIsSendReportOpen(false)}
           filteredRows={filteredData}
-          allRows={filteredData}
+          allRows={allResolvedRows}
           selectedIds={selectedIds}
           reportDate={selectedDate}
           companyName={api.getActiveCompany()?.name || api.getActiveCompany()?.trade_name || api.getActiveCompany()?.legal_name || 'Joy Corporate Solutions'}
