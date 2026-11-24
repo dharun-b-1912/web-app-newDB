@@ -883,14 +883,43 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
 
   // Pre-dispatch validation & confirmation trigger
   const handleInitiateSend = () => {
+    // 1. Auto-commit pending manual phone input if valid
+    let currentWaList = [...whatsAppRecipientList];
+    const pendingPhone = whatsAppPhoneInput.trim();
+    if (pendingPhone) {
+      const norm = normalizeIndianPhone(pendingPhone);
+      if (norm && norm.length >= 10 && !currentWaList.some((w) => w.phone === norm)) {
+        const matchedContact = contacts.find((c) => c.phone && normalizeIndianPhone(c.phone) === norm);
+        const name = matchedContact?.name || 'Authorized Recipient';
+        const role = matchedContact?.designation || (matchedContact?.isHr ? 'HR Leadership' : 'Manual Entry');
+        const newEntry = { phone: norm, name, role };
+        currentWaList.push(newEntry);
+        setWhatsAppRecipientList(currentWaList);
+        setWhatsAppPhoneInput('');
+      }
+    }
+
+    // 2. Auto-commit pending email input if valid
+    let currentEmailList = [...recipients];
+    const pendingEmail = newEmailInput.trim();
+    if (pendingEmail) {
+      const parts = pendingEmail.split(/[,;\s]+/).filter(Boolean);
+      const valid = parts.filter(p => p.includes('@'));
+      if (valid.length > 0) {
+        currentEmailList = Array.from(new Set([...currentEmailList, ...valid]));
+        setRecipients(currentEmailList);
+        setNewEmailInput('');
+      }
+    }
+
     const wantsEmail = deliveryChannel !== 'WHATSAPP';
     const wantsWhatsApp = deliveryChannel !== 'EMAIL';
 
-    if (wantsEmail && recipients.length === 0) {
+    if (wantsEmail && currentEmailList.length === 0) {
       showToast('Please specify at least one recipient email address.', 'error');
       return;
     }
-    if (wantsWhatsApp && whatsAppRecipientList.length === 0) {
+    if (wantsWhatsApp && currentWaList.length === 0) {
       showToast('Please specify at least one authorized WhatsApp recipient.', 'error');
       return;
     }
@@ -1654,6 +1683,11 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                         type="text"
                         value={whatsAppPhoneInput}
                         onChange={(e) => setWhatsAppPhoneInput(e.target.value)}
+                        onBlur={() => {
+                          if (whatsAppPhoneInput.trim().replace(/[^0-9]/g, '').length >= 10) {
+                            handleAddManualWhatsApp();
+                          }
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
@@ -3309,27 +3343,30 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                 >
                   Proceed to Dispatch
                 </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  onClick={handleInitiateSend}
-                  disabled={
-                    isSending ||
-                    ((deliveryChannel !== 'WHATSAPP' && recipients.length === 0) &&
-                      (deliveryChannel !== 'EMAIL' && whatsAppRecipientList.length === 0))
-                  }
-                  leftIcon={isSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                  className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs shadow-xs"
-                >
-                  {isSending ? 'Dispatching Report...' : `Send Report Now (${
-                    (deliveryChannel !== 'WHATSAPP' ? recipients.length : 0) +
-                    (deliveryChannel !== 'EMAIL' ? whatsAppRecipientList.length : 0)
-                  } Recipient${
-                    ((deliveryChannel !== 'WHATSAPP' ? recipients.length : 0) +
-                      (deliveryChannel !== 'EMAIL' ? whatsAppRecipientList.length : 0)) === 1 ? '' : 's'
-                  })`}
-                </Button>
-              )}
+              ) : (() => {
+                const hasPendingWa = whatsAppPhoneInput.trim().replace(/[^0-9]/g, '').length >= 10;
+                const hasPendingEmail = newEmailInput.trim().includes('@');
+                const effectiveEmailCount = recipients.length + (hasPendingEmail ? 1 : 0);
+                const effectiveWaCount = whatsAppRecipientList.length + (hasPendingWa ? 1 : 0);
+                const totalEffectiveRecipients =
+                  (deliveryChannel !== 'WHATSAPP' ? effectiveEmailCount : 0) +
+                  (deliveryChannel !== 'EMAIL' ? effectiveWaCount : 0);
+                const isSendDisabled = isSending || totalEffectiveRecipients === 0;
+
+                return (
+                  <Button
+                    size="sm"
+                    onClick={handleInitiateSend}
+                    disabled={isSendDisabled}
+                    leftIcon={isSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs shadow-xs"
+                  >
+                    {isSending
+                      ? 'Dispatching Report...'
+                      : `Send Report Now (${totalEffectiveRecipients} Recipient${totalEffectiveRecipients === 1 ? '' : 's'})`}
+                  </Button>
+                );
+              })()}
             </div>
           </div>
         )}

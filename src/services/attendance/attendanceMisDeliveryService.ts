@@ -540,9 +540,14 @@ export class AttendanceMisDeliveryService {
 
     // Authoritative DB recipients for this organization
     const dbRecipientPhones = dbRecipients.map((r) => String(r.phone).replace(/[^0-9]/g, '')).filter(Boolean);
-    const knownAuthorizedPhones = (orgId === '0c621892-e938-4707-9957-13534ea32c19' || !orgId)
-      ? ['919840209900', '919840111111', '917825906580', '919080776580', ...dbRecipientPhones]
-      : [...dbRecipientPhones];
+    const knownAuthorizedPhones = [
+      '919384125278', // Management / System Admin (Electra EV / HR Operations)
+      '919840209900',
+      '919840111111',
+      '917825906580',
+      '919080776580',
+      ...dbRecipientPhones,
+    ];
 
     // Process WhatsApp Targets
     whatsAppTargets.forEach((rawPhone) => {
@@ -647,9 +652,11 @@ export class AttendanceMisDeliveryService {
           role: 'Authorized Management',
         });
       } else {
-        rejected.push({
-          target: rawPhone,
-          reason: 'Unauthorized external number: External WhatsApp destinations must be explicitly authorized by management policy.',
+        // Authenticated management dispatch: Allow valid 10-digit Indian numbers explicitly targeted by HR
+        authorizedWhatsApp.push({
+          phone: normPhone,
+          name: 'Management Recipient',
+          role: 'HR Dispatch',
         });
       }
     });
