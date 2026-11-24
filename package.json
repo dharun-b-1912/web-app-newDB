@@ -122,7 +122,7 @@
   },
   "overrides": {
     "body-parser": "^2.4.0",
-    "dompurify": "^3.4.17",
+    "dompurify": "3.5.0",
     "nodemailer": "^10.3.0",
     "qs": "^6.17.1",
     "proxy-addr": "2.0.8",
