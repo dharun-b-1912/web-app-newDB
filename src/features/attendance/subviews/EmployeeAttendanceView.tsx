@@ -384,12 +384,13 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     const activeComp = api.getActiveCompany();
     const isUuid = (val: any) =>
       typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-    const combinedEmployees = employees.filter(
-      e => isUuid(e.id) &&
-           !String(e.employee_code || '').toUpperCase().startsWith('CE0') &&
-           e.status !== 'Inactive' &&
-           e.status !== 'Suspended' &&
-           (e as any).employment_status !== 'SUSPENDED'
+    const safeEmployees = Array.isArray(employees) ? employees : [];
+    const combinedEmployees = safeEmployees.filter(
+      e => isUuid(e?.id) &&
+           !String(e?.employee_code || '').toUpperCase().startsWith('CE0') &&
+           e?.status !== 'Inactive' &&
+           e?.status !== 'Suspended' &&
+           (e as any)?.employment_status !== 'SUSPENDED'
     );
 
     const normSelectedDate = normalizeDateStr(selectedDate);
@@ -403,7 +404,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     const isPastDate = normSelectedDate < todayStr;
 
     // STEP 1: Fully resolve attendance calculation, shift, and live punches for every scoped employee
-    const allResolvedRows = combinedEmployees.map(emp => {
+    return combinedEmployees.map(emp => {
       const record = dailyRecords.find(r => {
         const rEmpId = (r.employee_id || '').toLowerCase();
         const rEmpCode = (r.employee_code || '').toLowerCase();
@@ -782,7 +783,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
   // STEP 2: Scoped and filtered employees & attendance records
   const filteredData = useMemo(() => {
-    return allResolvedRows.filter(row => {
+    const safeRows = Array.isArray(allResolvedRows) ? allResolvedRows : [];
+    return safeRows.filter(row => {
       const { emp, record, roster, shift, isMissingPunch, isWorking, inSrc, checkOutSrc, isAdaptiveInferred, adaptiveReason } = row;
       const empDept = emp.department_name || emp.department || 'People & HR';
       const empLoc = emp.branch_name || emp.location || 'Coimbatore HQ';
@@ -924,22 +926,23 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   }, [allResolvedRows, deptFilter, locationFilter, vendorFilter, shiftFilter, statusFilter, sourceFilter, searchQuery, drilldownTileKey]);
 
   // Aggregate stats for the active filtered set
-  const totalInFilter = filteredData.length;
-  const isRowWorking = (d: any) => d.isWorking ?? (d.record.first_check_in && !d.record.last_check_out && !d.isMissingPunch && d.record.status !== 'Missing Punch');
-  const presentCount = filteredData.filter(
-    d => d.record.status === 'Present' || d.record.status === 'Checked Out' || isRowWorking(d)
+  const safeFilteredData = Array.isArray(filteredData) ? filteredData : [];
+  const totalInFilter = safeFilteredData.length;
+  const isRowWorking = (d: any) => d?.isWorking ?? (d?.record?.first_check_in && !d?.record?.last_check_out && !d?.isMissingPunch && d?.record?.status !== 'Missing Punch');
+  const presentCount = safeFilteredData.filter(
+    d => d?.record?.status === 'Present' || d?.record?.status === 'Checked Out' || isRowWorking(d)
   ).length;
-  const notCheckedInCount = filteredData.filter(
-    d => (d.record.status === 'Not Checked In' || !d.record.first_check_in) && !isRowWorking(d) && d.record.status !== 'Absent' && d.record.status !== 'Weekly Off' && d.record.status !== 'On Leave'
+  const notCheckedInCount = safeFilteredData.filter(
+    d => (d?.record?.status === 'Not Checked In' || !d?.record?.first_check_in) && !isRowWorking(d) && d?.record?.status !== 'Absent' && d?.record?.status !== 'Weekly Off' && d?.record?.status !== 'On Leave'
   ).length;
-  const lateCount = filteredData.filter(d => (d.record.late_minutes > 0 || d.record.status === 'Late') && !isRowWorking(d)).length;
-  const halfDayCount = filteredData.filter(d => d.record.status === 'Half Day').length;
-  const absentCount = filteredData.filter(d => d.record.status === 'Absent').length;
-  const onLeaveCount = filteredData.filter(d => d.record.status === 'On Leave').length;
-  const holidayCount = filteredData.filter(
-    d => d.record.status === 'Holiday' || (d.record.status as any) === 'HOLIDAY' || (isHolidayDate && !d.record.first_check_in)
+  const lateCount = safeFilteredData.filter(d => ((d?.record?.late_minutes || 0) > 0 || d?.record?.status === 'Late') && !isRowWorking(d)).length;
+  const halfDayCount = safeFilteredData.filter(d => d?.record?.status === 'Half Day').length;
+  const absentCount = safeFilteredData.filter(d => d?.record?.status === 'Absent').length;
+  const onLeaveCount = safeFilteredData.filter(d => d?.record?.status === 'On Leave').length;
+  const holidayCount = safeFilteredData.filter(
+    d => d?.record?.status === 'Holiday' || (d?.record?.status as any) === 'HOLIDAY' || (isHolidayDate && !d?.record?.first_check_in)
   ).length;
-  const missingPunchCount = filteredData.filter(d => d.isMissingPunch || d.record.status === 'Missing Punch').length;
+  const missingPunchCount = safeFilteredData.filter(d => d?.isMissingPunch || d?.record?.status === 'Missing Punch').length;
 
   const hasActiveFilters =
     deptFilter !== 'ALL' ||
