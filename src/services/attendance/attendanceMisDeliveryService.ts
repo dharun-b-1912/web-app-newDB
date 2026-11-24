@@ -1005,25 +1005,33 @@ export class AttendanceMisDeliveryService {
         try {
           const reportDateFormatted = new Date(dateStr + 'T00:00:00+05:30').toLocaleDateString('en-GB', {
             day: '2-digit',
-            month: 'long',
+            month: 'short',
             year: 'numeric',
           });
+
+          const cleanReportTitle = reportType === 'MORNING_CHECKIN'
+            ? 'Morning Turnout Snapshot'
+            : reportType === 'WEEKLY'
+            ? 'Weekly HR Intelligence Audit'
+            : reportType === 'MONTHLY'
+            ? 'Monthly Governance MIS'
+            : 'Daily Attendance Audit';
 
           // Meta template trigger with document header referencing the exact artifact
           const trigger = {
             organizationId,
             recipientPhone: recipient.phone,
-            recipientName: recipient.name,
-            reportTitle: reportType === 'MORNING_CHECKIN'
-              ? 'Morning Workforce Check-In & Turnout Snapshot'
-              : 'Daily Attendance & Biometric Audit Report',
+            recipientName: recipient.name || 'HR Leadership',
+            reportTitle: cleanReportTitle,
             reportDate: reportDateFormatted,
             companyName,
             totalWorkforce: artifact.stats.totalWorkforce,
-            presentTurnout: artifact.stats.presentTurnout,
+            presentTurnout: `${artifact.stats.presentCount} (${artifact.stats.turnoutPct}%)`,
             lateClockIns: artifact.stats.lateCount,
             weeklyOffOrLeave: artifact.stats.weeklyOffLeave,
-            cumulativeWorkHours: artifact.stats.cumulativeHours,
+            cumulativeWorkHours: artifact.stats.cumulativeHours.endsWith(' 00m')
+              ? artifact.stats.cumulativeHours.replace(' 00m', ' Hours')
+              : artifact.stats.cumulativeHours,
             reportPdfUrl: artifact.documentUrl,
             pdfFilename: artifact.filename, // Exact official filename e.g. Joy_Corporate_Solutions_Executive_Morning_Snapshot_2026-10-21.pdf
             sha256Checksum: artifact.sha256Checksum,

@@ -542,6 +542,34 @@ export class WhatsAppTemplateRegistry {
       ? 'Joy Corporate Solutions'
       : trigger.companyName;
 
+    // Clean, crisp presentation for WhatsApp mobile screen (avoiding congested text or wrapping numbers)
+    let recipientClean = trigger.recipientName;
+    if (!recipientClean || recipientClean.toLowerCase() === 'admin' || recipientClean.toLowerCase() === 'authorized recipient' || recipientClean.toLowerCase() === 'management / hr admin') {
+      recipientClean = 'HR Leadership';
+    }
+
+    let reportTitle = trigger.reportTitle || 'Daily Attendance Audit';
+    reportTitle = reportTitle
+      .replace(/& Biometric Audit Report/i, 'Audit')
+      .replace(/Workforce Check-In & Turnout Snapshot/i, 'Morning Turnout Snapshot')
+      .replace(/Daily Attendance & Biometric Audit/i, 'Daily Attendance Audit')
+      .trim();
+
+    // Clean Present Turnout: e.g. "74 (34.1%)" instead of redundant "74 Staff (34.1% Turnout)"
+    let cleanTurnout = trigger.presentTurnout || '0 (0%)';
+    cleanTurnout = cleanTurnout
+      .replace(/% Turnout\)/i, '%)')
+      .replace(/Staff \(/i, '(')
+      .trim();
+
+    // Clean Cumulative Work Hours: e.g. "592 Hours" or "592h 00m"
+    let cleanHours = trigger.cumulativeWorkHours || '0 Hours';
+    if (cleanHours.endsWith(' 00m')) {
+      cleanHours = cleanHours.replace(' 00m', '') + ' Hours';
+    } else if (cleanHours.endsWith('h 0m')) {
+      cleanHours = cleanHours.replace('h 0m', '') + ' Hours';
+    }
+
     if (trigger.mediaId) {
       components.push({
         type: 'header',
@@ -570,20 +598,18 @@ export class WhatsAppTemplateRegistry {
       });
     }
 
-    const reportTitle = trigger.reportTitle || 'Daily Attendance & Biometric Audit Report';
-
     components.push({
       type: 'body',
       parameters: [
-        { type: 'text', text: trigger.recipientName },             // {{1}} Recipient (e.g. HR Operations)
-        { type: 'text', text: reportTitle },                       // {{2}} Report Title
-        { type: 'text', text: trigger.reportDate },                // {{3}} Report Date (e.g. 20 October 2026)
-        { type: 'text', text: cleanCompany },                      // {{4}} Company Name (e.g. Joy Corporate Solutions)
-        { type: 'text', text: String(trigger.totalWorkforce) },    // {{5}} Total Workforce
-        { type: 'text', text: trigger.presentTurnout },            // {{6}} Present Turnout (e.g. 13 Staff (62% Turnout))
-        { type: 'text', text: String(trigger.lateClockIns) },      // {{7}} Late Clock-In Arrivals
-        { type: 'text', text: String(trigger.weeklyOffOrLeave) },  // {{8}} Weekly Off / Approved Leave
-        { type: 'text', text: trigger.cumulativeWorkHours },       // {{9}} Total Billed Shift Duration
+        { type: 'text', text: recipientClean },                     // {{1}} Recipient (e.g. HR Leadership)
+        { type: 'text', text: reportTitle },                        // {{2}} Report Title (e.g. Daily Attendance Audit)
+        { type: 'text', text: trigger.reportDate },                 // {{3}} Report Date (e.g. 24 Nov 2026)
+        { type: 'text', text: cleanCompany },                       // {{4}} Company Name (e.g. Electra EV)
+        { type: 'text', text: String(trigger.totalWorkforce) },     // {{5}} Total Workforce (e.g. 217)
+        { type: 'text', text: cleanTurnout },                       // {{6}} Present Turnout (e.g. 74 (34.1%))
+        { type: 'text', text: String(trigger.lateClockIns) },       // {{7}} Late Clock-In Arrivals (e.g. 5)
+        { type: 'text', text: String(trigger.weeklyOffOrLeave) },   // {{8}} Weekly Off / Approved Leave (e.g. 143)
+        { type: 'text', text: cleanHours },                         // {{9}} Total Billed Shift Duration (e.g. 592 Hours)
       ],
     });
 
