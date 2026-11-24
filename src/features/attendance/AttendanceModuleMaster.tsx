@@ -230,12 +230,28 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       subPath === 'punch-mapping'
     ) {
       if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
         const sp = new URLSearchParams(window.location.search);
         const sub = sp.get('subTab') || sp.get('tab');
-        if (sub === 'terminal-logs' || sub === 'terminal-ledger' || sub === 'device-logs' || sub === 'raw-logs') {
+        if (
+          path.includes('terminal-ledger') ||
+          path.includes('terminal-logs') ||
+          path.includes('biometric-ledger') ||
+          sub === 'terminal-logs' ||
+          sub === 'terminal-ledger' ||
+          sub === 'device-logs' ||
+          sub === 'raw-logs'
+        ) {
           return 'terminal-ledger';
         }
-        if (sub === 'enrolment' || sub === 'enrollment' || sub === 'enrolment-directory') {
+        if (
+          path.includes('enrolment') ||
+          path.includes('enrollment') ||
+          sub === 'enrolment' ||
+          sub === 'enrollment' ||
+          sub === 'enrolment-directory' ||
+          sub === 'biometric-enrolment'
+        ) {
           return 'enrolment';
         }
       }
@@ -664,16 +680,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       case 'raw-logs':
         return (
           <TerminalLogLedgerView
-            onBack={() => {
-              if (typeof window !== 'undefined') {
-                const url = new URL(window.location.href);
-                url.searchParams.delete('tab');
-                url.searchParams.delete('subTab');
-                url.searchParams.delete('emp');
-                window.history.pushState(null, '', url.pathname);
-              }
-              handleSelectTab('biometric');
-            }}
+            onBack={() => handleSelectTab('biometric')}
           />
         );
       case 'enrolment':
@@ -682,21 +689,12 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       case 'enrolment-directory':
         return (
           <BiometricEnrolmentDirectoryView
-            onBack={() => {
-              if (typeof window !== 'undefined') {
-                const url = new URL(window.location.href);
-                url.searchParams.delete('tab');
-                url.searchParams.delete('subTab');
-                window.history.pushState(null, '', url.pathname);
-              }
-              handleSelectTab('biometric');
-            }}
+            onBack={() => handleSelectTab('biometric')}
             onNavigateToTerminalLogs={(empId) => {
-              if (typeof window !== 'undefined') {
+              if (empId && typeof window !== 'undefined') {
                 const url = new URL(window.location.href);
-                url.searchParams.set('tab', 'terminal-ledger');
-                if (empId) url.searchParams.set('emp', empId);
-                window.history.pushState(null, '', url.pathname + url.search);
+                url.searchParams.set('emp', empId);
+                window.history.replaceState(null, '', url.pathname + url.search);
               }
               handleSelectTab('terminal-ledger');
             }}

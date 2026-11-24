@@ -204,7 +204,26 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
       currentNav === 'biometric/geofences' ||
       currentNav === '/biometric/geofences'
     ) return false;
-    if (currentNav === 'biometric' || currentNav === 'biometric-devices' || currentNav === '/biometric' || currentNav === '/biometric/devices' || currentNav === 'device-enrollment' || currentNav === 'device-sync' || currentNav === 'device-logs') return true;
+    if (
+      currentNav === 'biometric' ||
+      currentNav === 'biometric-devices' ||
+      currentNav === '/biometric' ||
+      currentNav === '/biometric/devices' ||
+      currentNav === 'device-enrollment' ||
+      currentNav === 'device-sync' ||
+      currentNav === 'device-logs' ||
+      currentNav === 'terminal-ledger' ||
+      currentNav === 'terminal-logs' ||
+      currentNav === 'biometric-ledger' ||
+      currentNav === '/biometric/terminal-ledger' ||
+      currentNav === '/terminal-ledger' ||
+      currentNav === 'enrolment' ||
+      currentNav === 'enrollment' ||
+      currentNav === 'enrolment-directory' ||
+      currentNav === 'biometric-enrolment' ||
+      currentNav === '/biometric/enrolment' ||
+      currentNav === '/enrolment'
+    ) return true;
   }
   if (itemId === 'attendance-rules') {
     if (currentNav === 'biometric' || currentNav === '/biometric' || currentNav === 'biometric-devices' || currentNav === '/biometric/devices') return false;

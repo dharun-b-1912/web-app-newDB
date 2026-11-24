@@ -28,9 +28,9 @@ describe('Joy PeopleHR — CLOCKING & DEVICES Comprehensive Tour', () => {
       expect(ROUTE_ALIASES['/biometric/devices']).toBe('biometric');
     });
 
-    it('correctly maps /biometric/terminal-ledger and /biometric/ledger to biometric route', () => {
-      expect(ROUTE_ALIASES['/biometric/terminal-ledger']).toBe('biometric');
-      expect(ROUTE_ALIASES['/biometric/ledger']).toBe('biometric');
+    it('correctly maps /biometric/terminal-ledger and /biometric/ledger to terminal-ledger route', () => {
+      expect(ROUTE_ALIASES['/biometric/terminal-ledger']).toBe('terminal-ledger');
+      expect(ROUTE_ALIASES['/biometric/ledger']).toBe('terminal-ledger');
     });
 
     it('correctly maps /attendance-rules and /biometric-rules to attendance-rules route', () => {

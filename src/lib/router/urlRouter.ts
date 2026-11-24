@@ -200,8 +200,19 @@ export const ROUTE_ALIASES: Record<string, string> = {
   '/biometric/': 'biometric',
   '/biometric/devices': 'biometric',
   '/biometric/workspace': 'biometric',
-  '/biometric/terminal-ledger': 'biometric',
-  '/biometric/ledger': 'biometric',
+  '/biometric/terminal-ledger': 'terminal-ledger',
+  '/biometric/ledger': 'terminal-ledger',
+  '/biometric/terminal-logs': 'terminal-ledger',
+  '/terminal-ledger': 'terminal-ledger',
+  '/terminal-logs': 'terminal-ledger',
+  '/biometric-ledger': 'terminal-ledger',
+  '/biometric/enrolment': 'enrolment',
+  '/biometric/enrollment': 'enrolment',
+  '/biometric/enrolment-directory': 'enrolment',
+  '/biometric-enrolment': 'enrolment',
+  '/enrolment': 'enrolment',
+  '/enrollment': 'enrolment',
+  '/enrolment-directory': 'enrolment',
   '/biometric-devices': 'biometric',
   '/biometric_devices': 'biometric',
   '/biometric/rules': 'attendance-rules',
@@ -218,19 +229,19 @@ export const ROUTE_ALIASES: Record<string, string> = {
   '/live-tracking': 'live-tracking',
   '/tracking': 'live-tracking',
   '/shift-tracking': 'live-tracking',
-  '/biometric/face': 'biometric',
-  '/face-attendance': 'biometric',
-  '/face-recognition': 'biometric',
-  '/face-enrollment': 'biometric',
-  '/face-devices': 'biometric',
-  '/face-logs': 'biometric',
-  '/face-exceptions': 'biometric',
+  '/biometric/face': 'face-attendance',
+  '/face-attendance': 'face-attendance',
+  '/face-recognition': 'face-attendance',
+  '/face-enrollment': 'face-attendance',
+  '/face-devices': 'face-attendance',
+  '/face-logs': 'face-attendance',
+  '/face-exceptions': 'face-attendance',
   '/biometric/geofences': 'geofences',
   '/geofences': 'geofences',
   '/device-enrollment': 'device-enrollment',
   '/device-sync': 'device-sync',
   '/punch-mapping': 'punch-mapping',
-  '/device-logs': 'device-logs',
+  '/device-logs': 'terminal-ledger',
 
   // Core HRMS Slugs — Audit & Control
   '/audit/ledger': 'calculation-audit',
@@ -565,20 +576,27 @@ export const ROUTE_TO_PATH: Record<string, string> = {
   // Clocking & Devices
   'biometric': '/biometric',
   'biometric-devices': '/biometric',
+  'terminal-ledger': '/biometric/terminal-ledger',
+  'terminal-logs': '/biometric/terminal-ledger',
+  'biometric-ledger': '/biometric/terminal-ledger',
+  'enrolment': '/biometric/enrolment',
+  'enrollment': '/biometric/enrolment',
+  'enrolment-directory': '/biometric/enrolment',
+  'biometric-enrolment': '/biometric/enrolment',
   'attendance-rules': '/biometric/rules',
   'biometric-rules': '/biometric/rules',
   'rules-engine': '/biometric/rules',
   'device-enrollment': '/device-enrollment',
   'device-sync': '/device-sync',
   'punch-mapping': '/punch-mapping',
-  'device-logs': '/device-logs',
+  'device-logs': '/biometric/terminal-ledger',
   'gps': '/biometric/gps',
   'gps-attendance': '/biometric/gps',
   'gps-travel-fare': '/gps-travel-fare',
   'travel-fare': '/gps-travel-fare',
   'km-fare': '/gps-travel-fare',
-  'face-attendance': '/biometric',
-  'face-recognition': '/biometric',
+  'face-attendance': '/biometric/face',
+  'face-recognition': '/biometric/face',
   'geofences': '/biometric/geofences',
 
   // Audit & Control
@@ -785,14 +803,29 @@ export const ROUTE_TO_PATH: Record<string, string> = {
   'platform-account': '/platform/account',
 };
 
-export function parseRouteFromUrl(): RouteState {
-  if (typeof window === 'undefined') {
+export function parseRouteFromUrl(customUrl?: string): RouteState {
+  if (typeof window === 'undefined' && !customUrl) {
     return { route: '', params: {}, pathname: '/', search: '' };
   }
 
-  const rawPath = window.location.pathname || '/';
+  let rawPath = '/';
+  let search = '';
+  if (customUrl) {
+    try {
+      const parsed = new URL(customUrl, 'https://app.joypeoplehr.com');
+      rawPath = parsed.pathname;
+      search = parsed.search;
+    } catch {
+      const parts = customUrl.split('?');
+      rawPath = parts[0] || '/';
+      search = parts[1] ? `?${parts[1]}` : '';
+    }
+  } else if (typeof window !== 'undefined') {
+    rawPath = window.location.pathname || '/';
+    search = window.location.search || '';
+  }
+
   const pathname = normalizePath(rawPath);
-  const search = window.location.search;
   const searchParams = new URLSearchParams(search);
   const params: Record<string, string> = {};
 
@@ -804,6 +837,27 @@ export function parseRouteFromUrl(): RouteState {
 
   // 1. Direct path-based route match against aliases
   if (pathname !== '/' && pathname !== '') {
+    // Biometric query tab override takes precedence over generic /biometric parent route
+    if (pathname === '/biometric' || pathname === '/biometric/') {
+      const explicitTab = searchParams.get('tab') || searchParams.get('subTab');
+      if (explicitTab === 'terminal-ledger' || explicitTab === 'terminal-logs' || explicitTab === 'ledger') {
+        return {
+          route: 'terminal-ledger',
+          params,
+          pathname,
+          search,
+        };
+      }
+      if (explicitTab === 'enrolment' || explicitTab === 'enrollment' || explicitTab === 'enrolment-directory' || explicitTab === 'biometric-enrolment') {
+        return {
+          route: 'enrolment',
+          params,
+          pathname,
+          search,
+        };
+      }
+    }
+
     if (ROUTE_ALIASES[pathname]) {
       return {
         route: ROUTE_ALIASES[pathname],
@@ -824,8 +878,58 @@ export function parseRouteFromUrl(): RouteState {
       };
     }
 
-    // Special prefix handling
+    // Special prefix handling for Biometric hub sub-routes
+    if (
+      pathname === '/biometric/terminal-ledger' ||
+      pathname === '/biometric/ledger' ||
+      pathname === '/biometric/terminal-logs' ||
+      pathname === '/terminal-ledger' ||
+      pathname === '/terminal-logs' ||
+      pathname === '/biometric-ledger'
+    ) {
+      return {
+        route: 'terminal-ledger',
+        params,
+        pathname,
+        search,
+      };
+    }
+
+    if (
+      pathname === '/biometric/enrolment' ||
+      pathname === '/biometric/enrollment' ||
+      pathname === '/biometric/enrolment-directory' ||
+      pathname === '/enrolment' ||
+      pathname === '/enrollment' ||
+      pathname === '/enrolment-directory' ||
+      pathname === '/biometric-enrolment'
+    ) {
+      return {
+        route: 'enrolment',
+        params,
+        pathname,
+        search,
+      };
+    }
+
     if (pathname.startsWith('/biometric')) {
+      const explicitTab = searchParams.get('tab') || searchParams.get('subTab');
+      if (explicitTab === 'terminal-ledger' || explicitTab === 'terminal-logs' || explicitTab === 'ledger') {
+        return {
+          route: 'terminal-ledger',
+          params,
+          pathname,
+          search,
+        };
+      }
+      if (explicitTab === 'enrolment' || explicitTab === 'enrollment' || explicitTab === 'enrolment-directory' || explicitTab === 'biometric-enrolment') {
+        return {
+          route: 'enrolment',
+          params,
+          pathname,
+          search,
+        };
+      }
       return {
         route: 'biometric',
         params,

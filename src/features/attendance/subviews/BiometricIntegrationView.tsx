@@ -66,6 +66,7 @@ import { BiometricDeviceWorkspace } from '../components/BiometricDeviceWorkspace
 import { BiometricLiveTelemetryHUD } from '../components/BiometricLiveTelemetryHUD';
 import { TerminalLogLedgerView } from './TerminalLogLedgerView';
 import { BiometricEnrolmentDirectoryView } from './BiometricEnrolmentDirectoryView';
+import { syncUrlWithRoute } from '../../../lib/router/urlRouter';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
@@ -157,9 +158,13 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   }, [isLiveStreamPaused]);
   const [showTerminalLog, setShowTerminalLog] = useState(() => {
     if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
       const sp = new URLSearchParams(window.location.search);
       const sub = sp.get('subTab') || sp.get('tab');
       return (
+        path.includes('terminal-ledger') ||
+        path.includes('terminal-logs') ||
+        path.includes('biometric-ledger') ||
         sub === 'terminal-logs' ||
         sub === 'terminal-ledger' ||
         sub === 'device-logs' ||
@@ -175,9 +180,12 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
 
   const [showEnrolmentDirectory, setShowEnrolmentDirectory] = useState(() => {
     if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
       const sp = new URLSearchParams(window.location.search);
       const sub = sp.get('subTab') || sp.get('tab');
       return (
+        path.includes('enrolment') ||
+        path.includes('enrollment') ||
         sub === 'enrolment' ||
         sub === 'enrollment' ||
         sub === 'enrolment-directory' ||
@@ -195,59 +203,65 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   const openTerminalLedger = useCallback((employeeId?: string) => {
     setShowTerminalLog(true);
     setShowEnrolmentDirectory(false);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('tab', 'terminal-ledger');
-      if (employeeId) url.searchParams.set('emp', employeeId);
-      window.history.pushState(null, '', url.pathname + url.search);
+    if (onNavigateSubPath) {
+      onNavigateSubPath('terminal-ledger');
+    } else if (typeof window !== 'undefined') {
+      syncUrlWithRoute('terminal-ledger', employeeId ? { emp: employeeId } : undefined, false);
     }
-    if (onNavigateSubPath) onNavigateSubPath('terminal-ledger');
   }, [onNavigateSubPath]);
 
   const closeTerminalLedger = useCallback(() => {
     setShowTerminalLog(false);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('tab');
-      url.searchParams.delete('subTab');
-      url.searchParams.delete('emp');
-      const searchStr = url.searchParams.toString();
-      window.history.pushState(null, '', url.pathname + (searchStr ? '?' + searchStr : ''));
+    if (onNavigateSubPath) {
+      onNavigateSubPath('biometric');
+    } else if (typeof window !== 'undefined') {
+      syncUrlWithRoute('biometric', undefined, false);
     }
-    if (onNavigateSubPath) onNavigateSubPath('biometric');
   }, [onNavigateSubPath]);
 
   const openEnrolmentDirectory = useCallback(() => {
     setShowEnrolmentDirectory(true);
     setShowTerminalLog(false);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('tab', 'enrolment');
-      window.history.pushState(null, '', url.pathname + url.search);
+    if (onNavigateSubPath) {
+      onNavigateSubPath('enrolment');
+    } else if (typeof window !== 'undefined') {
+      syncUrlWithRoute('enrolment', undefined, false);
     }
-    if (onNavigateSubPath) onNavigateSubPath('enrolment');
   }, [onNavigateSubPath]);
 
   const closeEnrolmentDirectory = useCallback(() => {
     setShowEnrolmentDirectory(false);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('tab');
-      url.searchParams.delete('subTab');
-      const searchStr = url.searchParams.toString();
-      window.history.pushState(null, '', url.pathname + (searchStr ? '?' + searchStr : ''));
+    if (onNavigateSubPath) {
+      onNavigateSubPath('biometric');
+    } else if (typeof window !== 'undefined') {
+      syncUrlWithRoute('biometric', undefined, false);
     }
-    if (onNavigateSubPath) onNavigateSubPath('biometric');
   }, [onNavigateSubPath]);
 
   // Handle browser back and forward navigation
   useEffect(() => {
     const handlePop = () => {
       if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
         const sp = new URLSearchParams(window.location.search);
         const sub = sp.get('subTab') || sp.get('tab');
-        setShowTerminalLog(sub === 'terminal-logs' || sub === 'terminal-ledger' || sub === 'device-logs' || sub === 'raw-logs');
-        setShowEnrolmentDirectory(sub === 'enrolment' || sub === 'enrollment' || sub === 'enrolment-directory' || sub === 'biometric-enrolment');
+        setShowTerminalLog(
+          path.includes('terminal-ledger') ||
+          path.includes('terminal-logs') ||
+          path.includes('biometric-ledger') ||
+          sub === 'terminal-logs' ||
+          sub === 'terminal-ledger' ||
+          sub === 'device-logs' ||
+          sub === 'raw-logs'
+        );
+        setShowEnrolmentDirectory(
+          path.includes('enrolment') ||
+          path.includes('enrollment') ||
+          sub === 'enrolment' ||
+          sub === 'enrollment' ||
+          sub === 'enrolment-directory' ||
+          sub === 'biometric-enrolment'
+        );
       }
     };
     window.addEventListener('popstate', handlePop);
@@ -921,7 +935,11 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   }
 
   // Dedicated Enrolment Directory View
-  if (showEnrolmentDirectory || currentTab === 'enrolment' || currentTab === 'enrollment' || currentTab === 'biometric-enrolment' || currentTab === 'enrolment-directory') {
+  const isEnrolmentPath = typeof window !== 'undefined' && (
+    window.location.pathname.includes('enrolment') ||
+    window.location.pathname.includes('enrollment')
+  );
+  if (showEnrolmentDirectory || isEnrolmentPath || currentTab === 'enrolment' || currentTab === 'enrollment' || currentTab === 'biometric-enrolment' || currentTab === 'enrolment-directory') {
     return (
       <BiometricEnrolmentDirectoryView
         onBack={closeEnrolmentDirectory}
@@ -931,7 +949,12 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   }
 
   // Dedicated Authoritative Terminal Event Ledger View
-  if (showTerminalLog || currentTab === 'device-logs' || currentTab === 'terminal-logs' || currentTab === 'terminal-ledger' || currentTab === 'raw-logs') {
+  const isTerminalLedgerPath = typeof window !== 'undefined' && (
+    window.location.pathname.includes('terminal-ledger') ||
+    window.location.pathname.includes('terminal-logs') ||
+    window.location.pathname.includes('biometric-ledger')
+  );
+  if (showTerminalLog || isTerminalLedgerPath || currentTab === 'device-logs' || currentTab === 'terminal-logs' || currentTab === 'terminal-ledger' || currentTab === 'raw-logs') {
     return (
       <TerminalLogLedgerView
         onBack={closeTerminalLedger}

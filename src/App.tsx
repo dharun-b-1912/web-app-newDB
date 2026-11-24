@@ -1093,6 +1093,8 @@ const AppContent: React.FC = () => {
       case 'biometric/terminal-ledger':
       case 'enrolment':
       case 'enrollment':
+      case 'enrolment-directory':
+      case 'biometric-enrolment':
       case 'biometric/enrolment':
       case 'biometric/enrollment':
       case 'face-attendance':

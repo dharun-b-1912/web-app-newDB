@@ -335,6 +335,8 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
 
   // ── CLOCKING & DEVICES ──
   { id: 'biometric', label: 'Biometric Devices', canonicalPath: '/biometric', section: 'CLOCKING & DEVICES', aliases: ['/biometric/devices', '/biometric-devices'], exact: true },
+  { id: 'terminal-ledger', label: 'Terminal Event Ledger', canonicalPath: '/biometric/terminal-ledger', section: 'CLOCKING & DEVICES', aliases: ['/terminal-ledger', '/terminal-logs', '/biometric-ledger', '/biometric/ledger', '/biometric/terminal-logs', '/device-logs', '/raw-logs'] },
+  { id: 'enrolment', label: 'Biometric Enrolment Directory', canonicalPath: '/biometric/enrolment', section: 'CLOCKING & DEVICES', aliases: ['/enrolment', '/enrollment', '/enrolment-directory', '/biometric-enrolment', '/biometric/enrollment', '/biometric/enrolment-directory'] },
   { id: 'attendance-rules', label: 'Biometric Rules & Automation', canonicalPath: '/biometric/rules', section: 'CLOCKING & DEVICES', aliases: ['/attendance-rules', '/biometric-rules', '/rules-engine'] },
   { id: 'gps', label: 'GPS & Mobile Channel', canonicalPath: '/biometric/gps', section: 'CLOCKING & DEVICES', aliases: ['/gps', '/gps-attendance'] },
   { id: 'gps-travel-fare', label: 'Field Travel & KM Fare Config', canonicalPath: '/gps-travel-fare', section: 'CLOCKING & DEVICES', aliases: ['/gps-travel-fare', '/travel-fare', '/km-fare', '/fare-config'] },
