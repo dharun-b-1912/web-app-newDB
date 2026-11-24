@@ -765,10 +765,16 @@ serve(async (req: Request) => {
           if (yDaily && yDaily.first_check_in && !yDaily.last_check_out) {
             const yInMs = new Date(yDaily.first_check_in).getTime();
             const yInIstHour = (new Date(yDaily.first_check_in).getUTCHours() + 5.5 + new Date(yDaily.first_check_in).getUTCMinutes() / 60) % 24;
-            
-            // Check if check-in was in the afternoon/evening (>= 15:00 IST) or overnight shift
-            if (yInIstHour >= 15.0 || eventIstHour < 5.0) {
-              const yTotalMins = Math.max(0, Math.floor((currentPunchMs - yInMs) / 60000));
+            const yTotalMins = Math.max(0, Math.floor((currentPunchMs - yInMs) / 60000));
+
+            // Only reconcile as yesterday's night shift checkout if:
+            // 1. Check-in was genuinely at night (>= 20:00 IST / 8 PM) OR midnight early hours (< 05:00 IST)
+            // 2. AND current checkout punch is in the early morning (<= 08:30 IST)
+            // 3. AND duration is realistic for a shift (<= 14 hours / 840 mins)
+            // If check-in was daytime/afternoon (e.g. 15:19 IST), an arrival next morning at 09:47 IST is TODAY'S check-in!
+            const isGenuineNightShift = (yInIstHour >= 20.0 || yInIstHour < 5.0) && eventIstHour <= 8.5 && yTotalMins <= 840;
+
+            if (isGenuineNightShift) {
               const yOvertimeMins = Math.max(0, yTotalMins - 480);
               const yHours = Math.floor(yTotalMins / 60);
               const yMins = yTotalMins % 60;

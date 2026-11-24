@@ -47,6 +47,7 @@ import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { isHardwareBiometricPunch } from './BiometricIntegrationView';
 import { supabase, supabaseAdmin, isSupabaseEnabled } from '../../../lib/supabase';
+import { formatEmployeeName } from '../../../utils/nameFormat';
 
 export interface TerminalLogLedgerViewProps {
   initialEmployeeId?: string;
@@ -157,10 +158,7 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
 
             gatewayPunches = dbRows.map((row: any) => {
               const emp = row.employees;
-              const empName = emp?.display_name ||
-                (emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : '') ||
-                row.employee_name ||
-                'Employee';
+              const empName = emp ? formatEmployeeName(emp) : (row.employee_name ? formatEmployeeName(row.employee_name) : 'Employee');
               const cleanDigits = (emp?.employee_code || '').replace(/\D/g, '');
               const pin = cleanDigits ? String(parseInt(cleanDigits, 10)) : String(row.biometric_pin || '1');
               const pTime = row.punch_time || new Date().toISOString();

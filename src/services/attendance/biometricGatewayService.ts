@@ -17,6 +17,7 @@ import { attendanceTimeService, DeviceClockDriftDiagnostic } from './attendanceT
 import { attendanceDecisionEngine } from './attendanceDecisionEngine';
 import { JoyRedis } from '../../lib/redis';
 import { AUTHENTIC_BASELINE_PUNCHES } from './baselineBiometricData';
+import { formatEmployeeName } from '../../utils/nameFormat';
 
 export type ConnectorStatus = 'idle' | 'connecting' | 'online' | 'offline' | 'reconnecting' | 'error';
 
@@ -6137,10 +6138,7 @@ class BiometricGatewayService {
 
         const mappedPunches: any[] = biometricRows.map((row: any) => {
           const emp = row.employees;
-          const empName = emp?.display_name ||
-            (emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : '') ||
-            row.employee_name ||
-            'Employee';
+          const empName = emp ? formatEmployeeName(emp) : (row.employee_name ? formatEmployeeName(row.employee_name) : 'Employee');
           const pin = String(
             emp?.employee_code?.replace(/\D/g, '') ||
             row.biometric_pin ||

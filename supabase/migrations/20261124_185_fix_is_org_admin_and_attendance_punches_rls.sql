@@ -53,3 +53,4 @@ WHERE NOT EXISTS (
   SELECT 1 FROM public.user_roles ur WHERE ur.user_profile_id = up.id
 )
 ON CONFLICT DO NOTHING;
+

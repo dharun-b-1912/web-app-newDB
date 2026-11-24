@@ -70,6 +70,7 @@ import { syncUrlWithRoute } from '../../../lib/router/urlRouter';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
+import { formatEmployeeName } from '../../../utils/nameFormat';
 import { navPerfTracker } from '../../../services/observability/navigationPerfTracker';
 import { cn } from '../../../lib/utils';
 
@@ -1829,10 +1830,10 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
               const known = KNOWN_PINS[matchedPin] || (cleanPin ? KNOWN_PINS[cleanPin] : null);
 
               // 1. Resolve Display Name
-              let resolvedName = p.employee_name;
+              let resolvedName = p.employee_name ? formatEmployeeName(p.employee_name) : '';
               if (!resolvedName || isRawUuid(resolvedName) || resolvedName === 'Employee' || resolvedName.startsWith('User #') || resolvedName.startsWith('Machine User')) {
                 if (emp) {
-                  resolvedName = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name;
+                  resolvedName = formatEmployeeName(emp);
                 } else if (known) {
                   resolvedName = known.name;
                 } else if (rawPin) {

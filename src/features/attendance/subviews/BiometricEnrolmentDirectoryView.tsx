@@ -36,6 +36,7 @@ import type { Employee } from '../../../types';
 import { supabase, supabaseAdmin, isSupabaseEnabled } from '../../../lib/supabase';
 import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
+import { formatEmployeeName } from '../../../utils/nameFormat';
 import ExcelJS from 'exceljs';
 
 export interface EnrolmentRecord {
@@ -233,7 +234,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
         return {
           employeeId: emp.id,
           employeeCode: emp.employee_code || '—',
-          displayName: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee',
+          displayName: formatEmployeeName(emp),
           department: deptName,
           designation: (emp as any).designation_title || (emp as any).designation || 'Staff',
           employmentStatus: emp.employment_status || (emp as any).status || 'Active',

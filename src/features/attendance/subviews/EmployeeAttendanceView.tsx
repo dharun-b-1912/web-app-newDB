@@ -50,6 +50,7 @@ import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
 import { attendanceClassificationEngine, ClassifiedPunchEvent } from '../../../services/attendance/attendanceClassificationEngine';
 import { biometricGatewayService } from '../../../services/attendance/biometricGatewayService';
+import { formatEmployeeName } from '../../../utils/nameFormat';
 import { SendAttendanceReportModal } from '../components/SendAttendanceReportModal';
 import {
   attendanceReportExportService,
@@ -499,7 +500,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             id: p.id,
             organization_id: '',
             employee_id: emp.id,
-            employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name,
+            employee_name: formatEmployeeName(emp),
             employee_code: emp.employee_code,
             device_id: p.device_id,
             device_name: p.device_name || 'Biometric Terminal',
@@ -737,7 +738,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           emp.employee_code && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(emp.employee_code)
             ? emp.employee_code
             : 'EMP-PENDING',
-        employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name,
+        employee_name: formatEmployeeName(emp),
         department: emp.department_name || emp.department || 'General',
         designation: emp.designation_title || emp.designation || 'Staff',
         organization_id: emp.organization_id || '',
@@ -871,7 +872,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       // 7. Search Query Filter
       const q = searchQuery.toLowerCase().trim();
       const matchQuery = !q ||
-        (`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name || '').toLowerCase().includes(q) ||
+        formatEmployeeName(emp).toLowerCase().includes(q) ||
         (emp.employee_code || '').toLowerCase().includes(q) ||
         empDept.toLowerCase().includes(q) ||
         (emp.designation_title || emp.designation || '').toLowerCase().includes(q) ||
@@ -1013,7 +1014,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             id: `punch-in-${emp.id}-${selectedDate}`,
             organization_id: record.organization_id || '',
             employee_id: emp.id,
-            employee_name: record.employee_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Staff',
+            employee_name: record.employee_name ? formatEmployeeName(record.employee_name) : formatEmployeeName(emp),
             employee_code: emp.employee_code || record.employee_code || 'EMP',
             device_id: 'DEV-01',
             device_name: record.check_in_source === 'BIOMETRIC' ? 'Biometric Terminal' : 'Web/Mobile Check-In',
@@ -1038,7 +1039,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             id: `punch-out-${emp.id}-${selectedDate}`,
             organization_id: record.organization_id || '',
             employee_id: emp.id,
-            employee_name: record.employee_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Staff',
+            employee_name: record.employee_name ? formatEmployeeName(record.employee_name) : formatEmployeeName(emp),
             employee_code: emp.employee_code || record.employee_code || 'EMP',
             device_id: 'DEV-01',
             device_name: record.check_out_source === 'BIOMETRIC' ? 'Biometric Terminal' : 'Web/Mobile Check-Out',
@@ -1539,7 +1540,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                 </tr>
               ) : (
                 filteredData.map(({ emp, record, roster, shift, isWorking: rowIsWorking, isMissingPunch: rowIsMissingPunch, isAdaptiveInferred, adaptiveReason }) => {
-                  const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name || 'Employee';
+                  const empName = formatEmployeeName(emp);
                   const empCode = emp.employee_code || `WF-${emp.id}`;
                   const dept = formatTitleCase(emp.department_name || emp.department || 'General');
                   const designation = emp.designation_title || emp.designation || 'Staff';
