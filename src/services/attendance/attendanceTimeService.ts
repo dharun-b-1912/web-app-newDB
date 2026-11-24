@@ -348,6 +348,28 @@ export class AttendanceTimeService {
     return AttendanceTimeService.getAttendanceDate(date, timezone);
   }
 
+  public static getPreviousDate(dateStr: string): string {
+    try {
+      const match = (dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (match) {
+        const y = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10) - 1;
+        const d = parseInt(match[3], 10);
+        const dt = new Date(Date.UTC(y, m, d - 1, 12, 0, 0));
+        return dt.toISOString().slice(0, 10);
+      }
+      const dt = new Date(dateStr);
+      dt.setDate(dt.getDate() - 1);
+      return dt.toISOString().slice(0, 10);
+    } catch {
+      return dateStr;
+    }
+  }
+
+  public getPreviousDate(dateStr: string): string {
+    return AttendanceTimeService.getPreviousDate(dateStr);
+  }
+
   /**
    * Formats any backend timestamptz or raw UTC time into authoritative 12-hour display string in Asia/Kolkata (IST)
    * e.g. "09:12:34 AM" or "06:04:32 PM"

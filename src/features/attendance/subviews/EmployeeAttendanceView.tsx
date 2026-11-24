@@ -242,13 +242,33 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   const isLoadingRef = useRef<boolean>(false);
   const debounceTimerRef = useRef<any>(null);
 
+  const getPreviousDateSafe = (dateStr: string): string => {
+    try {
+      if (attendanceTimeService && typeof (attendanceTimeService as any).getPreviousDate === 'function') {
+        return (attendanceTimeService as any).getPreviousDate(dateStr);
+      }
+      const match = (dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (match) {
+        const y = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10) - 1;
+        const d = parseInt(match[3], 10);
+        return new Date(Date.UTC(y, m, d - 1, 12, 0, 0)).toISOString().slice(0, 10);
+      }
+      const dt = new Date(dateStr);
+      dt.setDate(dt.getDate() - 1);
+      return dt.toISOString().slice(0, 10);
+    } catch {
+      return dateStr;
+    }
+  };
+
   const loadData = useCallback(() => {
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
 
     const activeComp = api.getActiveCompany();
     const effectiveTenantId = activeComp?.organization_id || activeComp?.id;
-    const prevDateStr = attendanceTimeService.getPreviousDate(selectedDate);
+    const prevDateStr = getPreviousDateSafe(selectedDate);
 
     Promise.allSettled([
       api.getEmployees(activeComp?.id),
@@ -882,7 +902,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         adaptiveReason,
       };
     });
-  }, [employees, dailyRecords, selectedDate, rosterSyncVersion]);
+  }, [employees, dailyRecords, prevDailyRecords, selectedDate, rosterSyncVersion]);
 
   // STEP 2: Scoped and filtered employees & attendance records
   const filteredData = useMemo(() => {
