@@ -673,9 +673,10 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
                 net_working_minutes: 480,
               };
               const isNight = currentRoster.shift_code.includes('NGT');
+              const formatShiftTime = (t?: string) => attendanceTimeService.formatAttendanceTime(t, undefined, false, t || '');
               const shiftDisplay = currentRoster.is_weekly_off
                 ? 'Weekly Off (Rest Day)'
-                : `${currentShift.shift_name} (${currentShift.start_time} - ${currentShift.end_time}${isNight ? ' Next Day' : ''})`;
+                : `${currentShift.shift_name} (${formatShiftTime(currentShift.start_time)} - ${formatShiftTime(currentShift.end_time)}${isNight ? ' Next Day' : ''})`;
 
               return (
                 <div className="flex flex-wrap items-center gap-3 text-xs text-emerald-100 pt-0.5">

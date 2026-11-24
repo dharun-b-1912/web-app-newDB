@@ -6089,12 +6089,12 @@ class BiometricGatewayService {
         return this.getRawPunches(limit, orgId);
       }
 
-      // 2. Direct Supabase fallback
+      // Direct Supabase fallback (14-day rolling window for comprehensive payroll cycle sync)
       ensureSupabaseSession().catch(() => {});
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), 10000);
 
-      const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+      const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
 
       let { data, error } = await supabase
         .from('attendance_punches')

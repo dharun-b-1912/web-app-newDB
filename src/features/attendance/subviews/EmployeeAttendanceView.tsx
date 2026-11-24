@@ -262,6 +262,13 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     }
   };
 
+  const formatShiftRange = (start?: string, end?: string): string => {
+    if (!start && !end) return '';
+    const s = attendanceTimeService.formatAttendanceTime(start, undefined, false, start || '');
+    const e = attendanceTimeService.formatAttendanceTime(end, undefined, false, end || '');
+    return `${s} - ${e}`;
+  };
+
   const loadData = useCallback(() => {
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
@@ -1488,7 +1495,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             >
               <option value="ALL">All Shifts</option>
               {shifts.map(s => (
-                <option key={s.id} value={s.shift_code}>{s.shift_code} ({s.start_time} - {s.end_time})</option>
+                <option key={s.id} value={s.shift_code}>{s.shift_code} ({formatShiftRange(s.start_time, s.end_time)})</option>
               ))}
             </select>
 
@@ -1771,7 +1778,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                             {shift.shift_code}
                           </span>
                           <span className="text-gray-700 font-mono font-semibold text-xs whitespace-nowrap">
-                            {shift.start_time} - {shift.end_time}
+                            {formatShiftRange(shift.start_time, shift.end_time)}
                           </span>
                           {isNight && (
                             <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1 py-0.5 rounded font-bold shrink-0">

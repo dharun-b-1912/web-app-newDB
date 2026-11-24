@@ -5,6 +5,7 @@ import { Badge } from '../../../components/ui/Badge';
 import { Clock, Plus, Moon, Sun, Calendar, RefreshCw, Users } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
 import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
+import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
 import { ShiftMaster } from '../../../types/shiftRoster';
 import { api } from '../../../services/api';
 
@@ -75,7 +76,7 @@ export const ShiftScheduleView: React.FC = () => {
               <div>
                 <h3 className="text-base font-extrabold text-gray-900">{shift.shift_name}</h3>
                 <div className="text-sm font-bold font-mono text-emerald-800 mt-1">
-                  {shift.shift_code} • {shift.start_time} - {shift.end_time} {isNight ? '(Next Day)' : ''}
+                  {shift.shift_code} • {attendanceTimeService.formatAttendanceTime(shift.start_time, undefined, false, shift.start_time)} - {attendanceTimeService.formatAttendanceTime(shift.end_time, undefined, false, shift.end_time)} {isNight ? '(Next Day)' : ''}
                 </div>
               </div>
 
