@@ -263,13 +263,20 @@ export function processAttendanceStatus(
   let earlyMinutes = 0;
   if (checkOutMinutes !== null) {
     const earlyGrace = policy.early_checkout_grace_minutes || 15;
-    if (isOvernightShift) {
-      // For overnight shifts, checkOutMinutes is expected on the next day (e.g. 07:30)
-      if (checkOutMinutes < expectedOutMinutes - earlyGrace) {
-        earlyMinutes = (expectedOutMinutes - earlyGrace) - checkOutMinutes;
-      }
-    } else {
-      earlyMinutes = Math.max(0, expectedOutMinutes - earlyGrace - checkOutMinutes);
+
+    // Normalize checkout minutes when check-out occurs past midnight into the next day
+    let effectiveOutMinutes = checkOutMinutes;
+    if (checkInMinutes !== null && effectiveOutMinutes < checkInMinutes) {
+      effectiveOutMinutes += 1440;
+    }
+
+    let effectiveExpOut = expectedOutMinutes;
+    if (isOvernightShift && effectiveExpOut < expectedInMinutes) {
+      effectiveExpOut += 1440;
+    }
+
+    if (effectiveOutMinutes < effectiveExpOut - earlyGrace) {
+      earlyMinutes = (effectiveExpOut - earlyGrace) - effectiveOutMinutes;
     }
   }
 

@@ -195,20 +195,25 @@ serve(async (req: Request) => {
         const prevDay = new Date(punchDateObj.getTime() - 24 * 60 * 60 * 1000);
         const prevDayDateStr = prevDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-        // If punch is in morning before 14:00, check if employee has an open overnight shift on yesterday
-        if (istHoursDecimal < 14.0) {
-          const { data: prevOvernight } = await supabase
+        // If punch is in morning before 11:00 AM IST, check if employee has an open overnight / afternoon shift yesterday
+        if (istHoursDecimal < 11.0) {
+          const { data: prevShiftRows } = await supabase
             .from('attendance_daily')
             .select('id, first_check_in, last_check_out, is_overnight, shift_code')
             .eq('employee_id', employeeId)
             .eq('attendance_date', prevDayDateStr)
-            .or('is_overnight.eq.true,shift_code.ilike.%NS%,shift_code.ilike.%NGT%')
-            .is('last_check_out', null)
             .limit(1);
 
-          if (prevOvernight && prevOvernight.length > 0) {
-            attendanceDateStr = prevDayDateStr;
-          } else if (istHoursDecimal < 6.0) {
+          const prevShift = prevShiftRows && prevShiftRows.length > 0 ? prevShiftRows[0] : null;
+          if (prevShift && prevShift.first_check_in && !prevShift.last_check_out) {
+            const prevInMs = new Date(prevShift.first_check_in).getTime();
+            const elapsedMins = (punchDateObj.getTime() - prevInMs) / 60000;
+            // If employee checked in yesterday afternoon/evening/night and has been working >= 180 min (3h)
+            if (elapsedMins >= 180 && elapsedMins <= 960) {
+              attendanceDateStr = prevDayDateStr;
+            }
+          } else if (istHoursDecimal < 4.5) {
+            // Any punch between 00:00 and 04:30 AM in 24x7 manufacturing strictly belongs to yesterday's night operations
             attendanceDateStr = prevDayDateStr;
           }
         }
