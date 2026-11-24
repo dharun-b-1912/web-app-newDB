@@ -755,7 +755,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         total_break_minutes: resolvedRecord?.total_break_minutes || 0,
         late_minutes: calc.lateMinutes,
         early_checkout_minutes: lastOut ? calc.earlyMinutes : 0,
-        overtime_minutes: lastOut ? calc.overtimeMinutes : 0,
+        early_arrival_minutes: calc.earlyArrivalMinutes || 0,
+        overtime_minutes: calc.overtimeMinutes || (resolvedRecord?.overtime_minutes ?? 0),
         status: effectiveStatus,
         source: overallSrc,
         check_in_source: inSrc as PunchSource,
@@ -1764,6 +1765,13 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                             {record.late_minutes > 0 ? (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80 whitespace-nowrap">
                                 Late {formatDeviationDuration(record.late_minutes, { showBoth: record.late_minutes >= 60 })}
+                              </span>
+                            ) : (record as any)?.early_arrival_minutes >= 30 ? (
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-sky-800 border border-sky-200/80 whitespace-nowrap"
+                                title={`Checked in ${formatDeviationDuration((record as any).early_arrival_minutes)} early before shift start`}
+                              >
+                                Early In {formatDeviationDuration((record as any).early_arrival_minutes, { showBoth: (record as any).early_arrival_minutes >= 60 })}
                               </span>
                             ) : record.early_checkout_minutes > 0 ? (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-orange-800 border border-orange-200/80 whitespace-nowrap">

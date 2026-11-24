@@ -22,10 +22,19 @@ describe('Electra EV Smart Adaptive Shift Resolution', () => {
     expect(res.confidenceScore).toBeGreaterThanOrEqual(80);
   });
 
-  it('correctly matches GEN-01 for mid-morning late arrival (09:47 AM)', () => {
+  it('correctly matches SHIFT-2 for mid-morning early arrival (09:47 AM, ~4.5h before Shift 2 start)', () => {
     const res = smartShiftResolutionService.resolveShiftDeterministic({
       activeShifts: ELECTRA_EV_SHIFTS,
       firstPunchTime: '2026-11-24T09:47:18+05:30',
+      mode: 'ADAPTIVE_SHIFT',
+    });
+    expect(res.shiftCode).toBe('SHIFT-2');
+  });
+
+  it('correctly matches GEN-01 for General Shift arrival (08:48 AM)', () => {
+    const res = smartShiftResolutionService.resolveShiftDeterministic({
+      activeShifts: ELECTRA_EV_SHIFTS,
+      firstPunchTime: '2026-11-24T08:48:00+05:30',
       mode: 'ADAPTIVE_SHIFT',
     });
     expect(res.shiftCode).toBe('GEN-01');

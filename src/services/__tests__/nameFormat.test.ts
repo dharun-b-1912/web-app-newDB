@@ -26,3 +26,4 @@ describe('formatEmployeeName universal name sanitization', () => {
     expect(formatEmployeeName({})).toBe('Employee');
   });
 });
+

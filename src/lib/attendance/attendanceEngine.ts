@@ -102,6 +102,7 @@ export function processAttendanceStatus(
   lateMinutes: number;
   rawLateMinutes?: number;
   graceAppliedMinutes?: number;
+  earlyArrivalMinutes?: number;
   earlyMinutes: number;
   overtimeMinutes: number;
 } {
@@ -231,10 +232,11 @@ export function processAttendanceStatus(
   const shiftBaseMinutes = scheduledShiftDurationMinutes > 0 ? scheduledShiftDurationMinutes : ((policy.required_hours_per_day || 8) * 60);
   const halfDayThresholdMinutes = (policy.half_day_hours_threshold || 4) * 60; // 240 minutes (4 hours)
 
-  // Late minutes calculation against shift scheduled start + grace
+  // Late minutes and Early Arrival calculation against shift scheduled start
   let rawLateMinutes = 0;
   let graceAppliedMinutes = 0;
   let lateMinutes = 0;
+  let earlyArrivalMinutes = 0;
   const configuredGrace = policy.late_grace_minutes || 15;
 
   if (checkInMinutes !== null) {
@@ -246,6 +248,13 @@ export function processAttendanceStatus(
       } else {
         graceAppliedMinutes = rawLateMinutes;
         lateMinutes = 0;
+      }
+    } else if (checkInMinutes < expectedInMinutes) {
+      let earlyDiff = expectedInMinutes - checkInMinutes;
+      if (isOvernightShift && earlyDiff < -720) earlyDiff += 1440;
+      if (earlyDiff > 720) earlyDiff -= 1440;
+      if (earlyDiff > 0) {
+        earlyArrivalMinutes = earlyDiff;
       }
     }
   }
@@ -265,11 +274,18 @@ export function processAttendanceStatus(
   }
 
   // Overtime minutes:
-  // Overtime is only confirmed after check-out, and only beyond the shift's scheduled duration + OT threshold
+  // Overtime includes BOTH staying past shift end AND early arrival before shift start!
   let overtimeMinutes = 0;
   const minOtThreshold = policy.overtime_min_minutes || 30;
-  if (checkOutMinutes !== null && net > shiftBaseMinutes + minOtThreshold) {
-    overtimeMinutes = net - shiftBaseMinutes;
+  if (checkOutMinutes !== null) {
+    if (net > shiftBaseMinutes + minOtThreshold) {
+      overtimeMinutes = net - shiftBaseMinutes;
+    }
+  } else if (checkInMinutes !== null) {
+    // If worker arrived >= 30m early for shift, pre-shift overtime is active and credited
+    if (earlyArrivalMinutes >= minOtThreshold) {
+      overtimeMinutes = earlyArrivalMinutes;
+    }
   }
 
   let status: AttendanceStatus = 'Present';
@@ -335,6 +351,7 @@ export function processAttendanceStatus(
     lateMinutes,
     rawLateMinutes,
     graceAppliedMinutes,
+    earlyArrivalMinutes,
     earlyMinutes,
     overtimeMinutes,
   };

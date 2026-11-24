@@ -650,18 +650,21 @@ class SmartShiftResolutionService {
     // and heavily penalizes attempting to match a past shift that started hours ago!
     let startScore = 0;
     if (signedDiff >= 0) {
-      // Early arrival for upcoming shift
+      // Early arrival for upcoming shift (supports early workers arriving 2 to 4 hours early for pre-shift OT)
       if (signedDiff <= 15) {
         startScore = 70; // On-time early arrival (0-15m before start)
       } else if (signedDiff <= 45) {
         startScore = 68; // Standard factory early arrival window (15-45m)
       } else if (signedDiff <= 90) {
         startScore = 62; // 45-90m early check-in
-      } else if (signedDiff <= 120) {
-        startScore = 55; // Up to 2h early (permitted factory gate opening)
+      } else if (signedDiff <= 150) {
+        startScore = 55; // Up to 2.5h early
+      } else if (signedDiff <= 240) {
+        startScore = 48; // 2.5h to 4h early arrival (factory pre-shift overtime window)
+      } else if (signedDiff <= 300) {
+        startScore = 40; // Up to 5h early pre-shift arrival
       } else {
-        // More than 2 hours early: steep penalty so arrivals do not erroneously latch to shifts starting half a day later
-        startScore = Math.max(0, 15 - Math.floor((signedDiff - 120) / 20));
+        startScore = Math.max(0, 15 - Math.floor((signedDiff - 300) / 20));
       }
     } else {
       // Late arrival after shift start
@@ -673,10 +676,10 @@ class SmartShiftResolutionService {
       } else if (lateMins <= 60) {
         startScore = 40; // Moderate late
       } else if (lateMins <= 90) {
-        startScore = 25; // Significant late
+        startScore = 22; // Significant late
       } else {
-        // Shift started > 90m ago; worker belongs to next upcoming shift, not this past shift
-        startScore = Math.max(0, 10 - Math.floor((lateMins - 90) / 30));
+        // Shift started > 90m ago; worker belongs to next upcoming shift, not this expired past shift
+        startScore = Math.max(0, 5 - Math.floor((lateMins - 90) / 30));
       }
     }
 

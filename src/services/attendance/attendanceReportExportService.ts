@@ -217,22 +217,6 @@ export function computeEmployeeOvertime(
   shift?: any,
   isMorningSnapshot: boolean = false
 ): ResolvedOvertime {
-  // If it's a morning snapshot and employee has NOT checked out,
-  // do NOT calculate confirmed overtime on partial-day elapsed hours!
-  if (isMorningSnapshot && !rec.last_check_out) {
-    return {
-      overtimeMinutes: 0,
-      hours: 0,
-      minutes: 0,
-      formatted: '— (Pending Checkout)',
-      verbose: '0 mins (Shift in progress)',
-      hasOvertime: false,
-    };
-  }
-
-  // Priority 1: Check if attendance record already has explicit overtime_minutes
-  let ot = typeof rec.overtime_minutes === 'number' ? rec.overtime_minutes : 0;
-
   // Calculate shift duration accurately (accounting for cross-midnight shifts)
   let shiftDuration = shift?.scheduled_duration_minutes;
   if (!shiftDuration && shift?.start_time && shift?.end_time) {
@@ -246,34 +230,69 @@ export function computeEmployeeOvertime(
     shiftDuration = 480; // fallback to 8 hours only if shift undefined
   }
 
-  // Priority 2: If not set, evaluate check-out time past scheduled shift end (+ 30m minimum OT threshold)
-  if (ot <= 0 && rec.last_check_out && shift?.end_time) {
-    const outMins = extractIstMinutesOfDay(rec.last_check_out);
-    const endMins = extractIstMinutesOfDay(shift.end_time);
-    if (outMins !== null && endMins !== null) {
-      const isNight = (shift.cross_midnight || (shift.start_time && extractIstMinutesOfDay(shift.start_time)! > endMins));
-      if (!isNight && outMins >= endMins + 30) {
-        ot = outMins - endMins;
-      } else if (isNight && outMins >= endMins + 30 && outMins < 840) { // checkout past 08:00 AM on a 07:30 shift
-        ot = outMins - endMins;
-      }
+  const sMins = shift?.start_time ? extractIstMinutesOfDay(shift.start_time) : null;
+  const eMins = shift?.end_time ? extractIstMinutesOfDay(shift.end_time) : null;
+  const inMins = rec?.first_check_in ? extractIstMinutesOfDay(rec.first_check_in) : null;
+  const outMins = rec?.last_check_out ? extractIstMinutesOfDay(rec.last_check_out) : null;
+
+  // 1. Calculate Pre-Shift Early Check-in Overtime (e.g. employee comes 2 to 4 hours early before shift)
+  let earlyArrivalOt = 0;
+  if (inMins !== null && sMins !== null) {
+    let earlyDiff = sMins - inMins;
+    if (shift?.cross_midnight && earlyDiff < -720) earlyDiff += 1440;
+    if (earlyDiff > 720) earlyDiff -= 1440;
+    // If worker arrived at least 30 minutes before scheduled start time, that is pre-shift early OT!
+    if (earlyDiff >= 30) {
+      earlyArrivalOt = earlyDiff;
     }
   }
 
-  // Priority 3: Only if employee has actually checked out past shift end, and net working minutes exceeds shift duration + 30m OT threshold
+  // 2. Calculate Post-Shift Late Stay Overtime (past scheduled shift end)
+  let postShiftOt = 0;
+  if (outMins !== null && eMins !== null) {
+    const isNight = Boolean(shift?.cross_midnight || (sMins !== null && sMins > eMins));
+    let postDiff = outMins - eMins;
+    if (isNight && postDiff < -720) postDiff += 1440;
+    if (postDiff > 720) postDiff -= 1440;
+    if (postDiff >= 30) {
+      postShiftOt = postDiff;
+    }
+  }
+
+  // Priority 1: Check if attendance record already has explicit overtime_minutes
+  let explicitOt = typeof rec?.overtime_minutes === 'number' ? rec.overtime_minutes : 0;
+
+  // Priority 2: Duration-based overtime (net/total worked minutes exceeding scheduled shift duration)
   const workMins = rec?.total_work_minutes ?? rec?.net_working_minutes ?? 0;
-  if (ot <= 0 && rec.last_check_out && shift?.end_time && workMins >= shiftDuration + 30) {
-    const outMins = extractIstMinutesOfDay(rec.last_check_out);
-    const endMins = extractIstMinutesOfDay(shift.end_time);
-    // Employee must actually stay past shift end to qualify for overtime (early arrival before shift start is not OT)
-    if (outMins !== null && endMins !== null && outMins >= endMins + 30) {
-      ot = workMins - shiftDuration;
+  let durationOt = 0;
+  if (outMins !== null && workMins >= shiftDuration + 30) {
+    durationOt = workMins - shiftDuration;
+  }
+
+  let ot = Math.max(explicitOt, durationOt, earlyArrivalOt + postShiftOt);
+
+  // If employee has NOT checked out yet (actively in shift):
+  if (!rec?.last_check_out) {
+    if (earlyArrivalOt > 0) {
+      // Early arrival overtime is active and credited while in shift
+      ot = earlyArrivalOt;
+    } else if (isMorningSnapshot) {
+      return {
+        overtimeMinutes: 0,
+        hours: 0,
+        minutes: 0,
+        formatted: '— (Pending Checkout)',
+        verbose: '0 mins (Shift in progress)',
+        hasOvertime: false,
+      };
+    } else {
+      ot = 0;
     }
   }
 
-  // Safety guard: Single shift overtime capped at 360 mins (6 hours)
-  if (ot > 360) {
-    ot = 360;
+  // Safety guard: Single shift overtime capped at 480 mins (8 hours)
+  if (ot > 480) {
+    ot = 480;
   }
   if (ot < 0) ot = 0;
 

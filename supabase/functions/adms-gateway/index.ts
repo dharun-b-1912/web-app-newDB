@@ -870,25 +870,25 @@ serve(async (req: Request) => {
             }
           } else {
             // Case 1C: First arrival of the day!
-            // Smart Adaptive Shift Resolution for Electra EV:
-            // - 04:30 AM to 06:45 AM: SHIFT-1 (06:00 - 14:30)
-            // - 06:45 AM to 11:30 AM: GEN-01 (08:30 - 17:00)
-            // - 11:30 AM to 18:00 PM: SHIFT-2 (14:30 - 23:00)
-            // - 18:00 PM to 04:30 AM: SHIFT-3 (23:00 - 06:00, Overnight)
+            // Smart Adaptive Shift Resolution for Electra EV (supporting workers arriving 2 to 4 hours early):
+            // - 04:00 AM to 06:45 AM: SHIFT-1 (06:00 - 14:30)
+            // - 06:45 AM to 09:15 AM: GEN-01 (08:30 - 17:00)
+            // - 09:15 AM to 18:00 PM: SHIFT-2 (14:30 - 23:00) [Workers arriving 2-4h early for Shift 2 arrive from 09:15 onwards]
+            // - 18:00 PM to 04:00 AM: SHIFT-3 (23:00 - 06:00, Overnight)
             let adaptiveShiftId = '03af7148-163b-4263-b080-df44cd9f564d';
             let adaptiveShiftCode = 'SHIFT-1';
             let adaptiveShiftStartHour = 6.0;
             const adaptiveGraceMins = 15;
 
-            if (eventIstHour >= 4.5 && eventIstHour < 6.75) {
+            if (eventIstHour >= 4.0 && eventIstHour < 6.75) {
               adaptiveShiftId = '03af7148-163b-4263-b080-df44cd9f564d';
               adaptiveShiftCode = 'SHIFT-1';
               adaptiveShiftStartHour = 6.0;
-            } else if (eventIstHour >= 6.75 && eventIstHour < 11.5) {
+            } else if (eventIstHour >= 6.75 && eventIstHour < 9.25) {
               adaptiveShiftId = '659ba299-eb9b-432b-ab42-e456fd630be0';
               adaptiveShiftCode = 'GEN-01';
               adaptiveShiftStartHour = 8.5;
-            } else if (eventIstHour >= 11.5 && eventIstHour < 18.0) {
+            } else if (eventIstHour >= 9.25 && eventIstHour < 18.0) {
               adaptiveShiftId = '98c0f403-5523-4e52-b044-c55b1f112c21';
               adaptiveShiftCode = 'SHIFT-2';
               adaptiveShiftStartHour = 14.5;
@@ -899,8 +899,14 @@ serve(async (req: Request) => {
             }
 
             let adaptiveLateMins = 0;
+            let adaptiveEarlyOtMins = 0;
             if (eventIstHour > (adaptiveShiftStartHour + adaptiveGraceMins / 60.0)) {
               adaptiveLateMins = Math.round((eventIstHour - adaptiveShiftStartHour) * 60);
+            } else if (eventIstHour < adaptiveShiftStartHour) {
+              const earlyDiff = Math.round((adaptiveShiftStartHour - eventIstHour) * 60);
+              if (earlyDiff >= 30) {
+                adaptiveEarlyOtMins = earlyDiff;
+              }
             }
 
             await supabase.from('attendance_punches').insert({
@@ -924,10 +930,11 @@ serve(async (req: Request) => {
               status: adaptiveLateMins > 0 ? 'LATE' : 'PRESENT',
               payable_status: 1.0,
               late_entry_minutes: adaptiveLateMins,
+              overtime_minutes: adaptiveEarlyOtMins,
               current_work_state: 'WORKING',
             }, { onConflict: 'employee_id,attendance_date' });
 
-            console.log(`[ADMS-EDGE] 🟢 Check-in accepted for ${emp.first_name} at ${timeFormatted} -> Adapted to ${adaptiveShiftCode} (Late: ${adaptiveLateMins}m).`);
+            console.log(`[ADMS-EDGE] 🟢 Check-in accepted for ${emp.first_name} at ${timeFormatted} -> Adapted to ${adaptiveShiftCode} (Late: ${adaptiveLateMins}m, Early OT: ${adaptiveEarlyOtMins}m).`);
 
             if (emp.phone && !smsSentTodayCache.has(checkInKey)) {
               const msg = `Dear ${empName}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
@@ -958,8 +965,14 @@ serve(async (req: Request) => {
           }
 
           let adaptiveLateMins = 0;
-          if (adaptiveShiftCode === 'SHIFT-2' && eventIstHour > (adaptiveShiftStartHour + adaptiveGraceMins / 60.0)) {
+          let adaptiveEarlyOtMins = 0;
+          if (eventIstHour > (adaptiveShiftStartHour + adaptiveGraceMins / 60.0)) {
             adaptiveLateMins = Math.round((eventIstHour - adaptiveShiftStartHour) * 60);
+          } else if (eventIstHour < adaptiveShiftStartHour) {
+            const earlyDiff = Math.round((adaptiveShiftStartHour - eventIstHour) * 60);
+            if (earlyDiff >= 30) {
+              adaptiveEarlyOtMins = earlyDiff;
+            }
           }
 
           await supabase.from('attendance_punches').insert({
@@ -983,6 +996,7 @@ serve(async (req: Request) => {
             status: adaptiveLateMins > 0 ? 'LATE' : 'PRESENT',
             payable_status: 1.0,
             late_entry_minutes: adaptiveLateMins,
+            overtime_minutes: adaptiveEarlyOtMins,
             current_work_state: 'WORKING',
           }, { onConflict: 'employee_id,attendance_date' });
 
