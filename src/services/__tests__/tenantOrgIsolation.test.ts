@@ -62,5 +62,58 @@ describe('Multi-Tenant Organization & Legal Entity Isolation', () => {
     expect(ctx.activeOrganization?.id).toBe(ELECTRA_ORG_ID);
     expect(ctx.organizations.map((o) => o.id)).toEqual([ELECTRA_ORG_ID]);
   });
+
+  it('purges stale duplicate Electra EV Pvt Ltd entity from cached localStorage workforce_ctx', async () => {
+    const shaliniUser: any = {
+      id: '5fb9c461-cec7-4265-817c-64f7971bea6a',
+      organization_id: ELECTRA_ORG_ID,
+      role: 'HR_HEAD',
+      email: 'shalini@electraev.com',
+      name: 'Shalini J',
+    };
+
+    // Simulate stale cached context in user's browser with 2 duplicate Electra entities
+    const staleContext = {
+      userId: shaliniUser.id,
+      roleTitle: 'HR Head (Company)',
+      isPlatformAdmin: false,
+      activeOrganization: { id: ELECTRA_ORG_ID, name: 'Electra EV' },
+      organizations: [{ id: ELECTRA_ORG_ID, name: 'Electra EV' }],
+      authorizedLegalEntities: [
+        {
+          id: ELECTRA_COMPANY_ID,
+          organization_id: ELECTRA_ORG_ID,
+          legal_name: 'Electra EV',
+          trade_name: 'Electra EV',
+          country: 'India',
+          currency: 'INR',
+        },
+        {
+          id: '3041388a-b7b2-438a-cfba-5fd788b4cbf3',
+          organization_id: ELECTRA_ORG_ID,
+          legal_name: 'Electra EV Pvt Ltd',
+          trade_name: 'Electra EV Pvt Ltd',
+          country: 'India',
+          currency: 'INR',
+        },
+      ],
+      activeLegalEntity: {
+        id: ELECTRA_COMPANY_ID,
+        organization_id: ELECTRA_ORG_ID,
+        legal_name: 'Electra EV',
+      },
+    };
+
+    mockLocalStorage.setItem(`workforce_ctx_${shaliniUser.id}`, JSON.stringify(staleContext));
+
+    const svc = new OrganizationContextService();
+    const syncCtx = svc.getCachedContextSync(shaliniUser);
+
+    expect(syncCtx).not.toBeNull();
+    // Must sanitize duplicate down to exactly 1 canonical entity
+    expect(syncCtx!.authorizedLegalEntities.length).toBe(1);
+    expect(syncCtx!.authorizedLegalEntities[0].id).toBe(ELECTRA_COMPANY_ID);
+    expect(syncCtx!.authorizedLegalEntities[0].legal_name).toBe('Electra EV');
+  });
 });
 

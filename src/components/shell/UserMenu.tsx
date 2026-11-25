@@ -176,7 +176,7 @@ export const UserMenu: React.FC = () => {
               ) : isVendorRole ? (
                 <span className="text-[10px] text-emerald-800 font-bold flex items-center gap-1 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.5 rounded-md truncate max-w-[200px]">
                   <Building2 className="w-2.5 h-2.5 shrink-0 text-emerald-600" />
-                  <span className="truncate">Connected: Joy Corporate Solutions</span>
+                  <span className="truncate">Connected: {activeLegalEntity?.legal_name || organization?.name || 'Partner Workspace'}</span>
                 </span>
               ) : activeLegalEntity ? (
                 <span className="text-[10px] text-gray-500 font-medium flex items-center gap-1 bg-white border border-gray-200 px-1.5 py-0.5 rounded-md truncate max-w-[170px]">

@@ -20,11 +20,59 @@ const STORAGE_KEYS = {
   AUDIT_LOGS: 'workforce_context_audit_logs',
 };
 
-// One-time migration: replace stale company ID from old default with correct Supabase UUID
+// Canonical ID constants matching authoritative Supabase records
 const STALE_COMPANY_ID = '0ce6436c-e9b4-4e0e-9102-411ea21b8b80';
 const CORRECT_COMPANY_ID = '2030277f-a6a1-427f-beaf-4fc677a3bae2';
 const STALE_ELECTRA_COMPANY_ID = '3041388a-b7b2-438a-cfba-5fd788b4cbf3';
 const CORRECT_ELECTRA_COMPANY_ID = 'c0bbfb28-1500-4ebb-aba8-453b3681f342';
+
+/**
+ * Universal Sanitizer: Purges obsolete mock IDs and collapses duplicate legal entities
+ * (e.g., merging "Electra EV" and duplicate "Electra EV Pvt Ltd" into the canonical record).
+ */
+export function sanitizeAuthorizedEntities(entities: Company[]): Company[] {
+  if (!Array.isArray(entities) || entities.length === 0) return [];
+
+  const obsoleteIds = new Set([
+    STALE_ELECTRA_COMPANY_ID,
+    STALE_COMPANY_ID,
+  ]);
+
+  const seenIds = new Set<string>();
+  const seenNormKeys = new Set<string>();
+  const cleanList: Company[] = [];
+
+  for (const ent of entities) {
+    if (!ent || !ent.id || obsoleteIds.has(ent.id)) continue;
+    if (seenIds.has(ent.id)) continue;
+
+    // Normalize entity legal and trade names to prevent duplicates like "Electra EV" vs "Electra EV Pvt Ltd"
+    const rawName = (ent.legal_name || ent.trade_name || '').toLowerCase();
+    const cleanNormName = rawName
+      .replace(/\b(private|pvt|limited|ltd|solutions|technologies|gmc|plant)\b/gi, '')
+      .replace(/[^a-z0-9]/g, '');
+    const orgKey = `${ent.organization_id || 'global'}_${cleanNormName}`;
+
+    if (seenNormKeys.has(orgKey)) {
+      continue;
+    }
+
+    seenIds.add(ent.id);
+    seenNormKeys.add(orgKey);
+
+    cleanList.push({
+      ...ent,
+      legal_name: (ent.legal_name || ent.trade_name || 'Enterprise Legal Entity').replace(/\bPVE\b/gi, 'PVT'),
+      trade_name: (ent.trade_name || ent.legal_name || 'Enterprise Legal Entity').replace(/\bPVE\b/gi, 'PVT'),
+      country: ent.country || 'India',
+      city: ent.city || 'Coimbatore',
+      currency: ent.currency || 'INR',
+    });
+  }
+
+  return cleanList;
+}
+
 if (typeof localStorage !== 'undefined') {
   try {
     const cachedEntityId = localStorage.getItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID);
@@ -33,50 +81,57 @@ if (typeof localStorage !== 'undefined') {
     } else if (cachedEntityId === STALE_ELECTRA_COMPANY_ID) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, CORRECT_ELECTRA_COMPANY_ID);
     }
-    // Also migrate the cached COMPANIES list in api.ts KEYS.COMPANIES and sanitize PVE -> PVT
+
+    // Clean cached workforce_companies
     const cachedCompanies = localStorage.getItem('workforce_companies');
     if (cachedCompanies) {
       const parsed = JSON.parse(cachedCompanies);
       if (Array.isArray(parsed)) {
-        let changed = false;
-        const migrated = parsed.map((c: any) => {
+        const cleaned = sanitizeAuthorizedEntities(parsed.map((c: any) => {
           let updated = { ...c };
-          if (updated.id === STALE_COMPANY_ID) {
-            updated.id = CORRECT_COMPANY_ID;
-            changed = true;
-          }
-          if (updated.legal_name && /\bPVE\b/i.test(updated.legal_name)) {
-            updated.legal_name = updated.legal_name.replace(/\bPVE\b/gi, 'PVT');
-            changed = true;
-          }
-          if (updated.trade_name && /\bPVE\b/i.test(updated.trade_name)) {
-            updated.trade_name = updated.trade_name.replace(/\bPVE\b/gi, 'PVT');
-            changed = true;
-          }
+          if (updated.id === STALE_COMPANY_ID) updated.id = CORRECT_COMPANY_ID;
+          if (updated.id === STALE_ELECTRA_COMPANY_ID) updated.id = CORRECT_ELECTRA_COMPANY_ID;
           return updated;
-        });
-        if (changed) {
-          localStorage.setItem('workforce_companies', JSON.stringify(migrated));
+        }));
+        localStorage.setItem('workforce_companies', JSON.stringify(cleaned));
+      }
+    }
+
+    // Proactively clean all workforce_ctx_* entries to eradicate duplicate Electra EV entities across browser sessions
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('workforce_ctx_')) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try {
+            const ctxObj = JSON.parse(raw);
+            if (ctxObj && Array.isArray(ctxObj.authorizedLegalEntities)) {
+              ctxObj.authorizedLegalEntities = sanitizeAuthorizedEntities(ctxObj.authorizedLegalEntities);
+              if (ctxObj.activeLegalEntity) {
+                if (
+                  ctxObj.activeLegalEntity.id === STALE_ELECTRA_COMPANY_ID ||
+                  !ctxObj.authorizedLegalEntities.some((e: any) => e.id === ctxObj.activeLegalEntity.id)
+                ) {
+                  ctxObj.activeLegalEntity = ctxObj.authorizedLegalEntities[0] || null;
+                }
+              }
+              if (!ctxObj.isPlatformAdmin && ctxObj.activeOrganization?.id) {
+                ctxObj.organizations = [ctxObj.activeOrganization];
+              }
+              localStorage.setItem(key, JSON.stringify(ctxObj));
+            }
+          } catch (_) {}
         }
       }
     }
+
     const cachedActiveCompany = localStorage.getItem('workforce_active_company');
     if (cachedActiveCompany) {
       const parsed = JSON.parse(cachedActiveCompany);
-      let changed = false;
-      if (parsed?.id === STALE_COMPANY_ID) {
-        parsed.id = CORRECT_COMPANY_ID;
-        changed = true;
-      }
-      if (parsed?.legal_name && /\bPVE\b/i.test(parsed.legal_name)) {
-        parsed.legal_name = parsed.legal_name.replace(/\bPVE\b/gi, 'PVT');
-        changed = true;
-      }
-      if (parsed?.trade_name && /\bPVE\b/i.test(parsed.trade_name)) {
-        parsed.trade_name = parsed.trade_name.replace(/\bPVE\b/gi, 'PVT');
-        changed = true;
-      }
-      if (changed) {
+      if (parsed?.id === STALE_ELECTRA_COMPANY_ID || (parsed?.legal_name && /Electra EV Pvt Ltd/i.test(parsed.legal_name))) {
+        parsed.id = CORRECT_ELECTRA_COMPANY_ID;
+        parsed.legal_name = 'Electra EV';
+        parsed.trade_name = 'Electra EV';
         localStorage.setItem('workforce_active_company', JSON.stringify(parsed));
       }
     }
@@ -221,6 +276,14 @@ export class OrganizationContextService {
             (!user.organization_id || parsed.activeOrganization.id === user.organization_id) &&
             roleMatches
           ) {
+            // Apply universal entity sanitization to purge duplicate or obsolete records
+            parsed.authorizedLegalEntities = sanitizeAuthorizedEntities(parsed.authorizedLegalEntities || []);
+            if (!parsed.isPlatformAdmin && user.organization_id) {
+              parsed.organizations = parsed.organizations?.filter((o: any) => o.id === user.organization_id) || [parsed.activeOrganization];
+            }
+            if (!parsed.authorizedLegalEntities.some((e: any) => e.id === parsed.activeLegalEntity?.id)) {
+              parsed.activeLegalEntity = parsed.authorizedLegalEntities[0] || null;
+            }
             OrganizationContextService.cachedUserContext.set(userKey, { ctx: parsed, timestamp: Date.now() });
             return parsed;
           }
@@ -461,6 +524,9 @@ export class OrganizationContextService {
           organization_id: activeOrg?.id || e.organization_id,
         }));
       }
+
+      // Universal deduplication and obsolete mock removal
+      authorizedEntities = sanitizeAuthorizedEntities(authorizedEntities);
 
       // 4. Determine Active Legal Entity
       let activeLegalEntity: Company | null = null;

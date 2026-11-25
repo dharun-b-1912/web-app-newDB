@@ -78,6 +78,22 @@ export const DEFAULT_COMPANIES: Company[] = [
     status: 'Active',
     created_at: '2024-01-01T00:00:00Z',
   },
+  {
+    id: 'c0bbfb28-1500-4ebb-aba8-453b3681f342',
+    organization_id: 'c5ab6b03-adde-47cc-a033-064f4c39b21e',
+    legal_name: 'Electra EV',
+    trade_name: 'Electra EV',
+    name: 'Electra EV',
+    statutory_registration_no: 'U34100TN2024PTC054321',
+    tax_id: 'BBBEV5678G',
+    country: 'India',
+    city: 'Coimbatore',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata',
+    address: 'Coimbatore Plant, Tamil Nadu',
+    status: 'Active',
+    created_at: '2024-01-01T00:00:00Z',
+  },
 ];
 
 export const DEFAULT_BRANCHES: Branch[] = [
@@ -616,8 +632,22 @@ export const api = {
   getOrganizationSync(): Organization {
     const cached = getStorage<Organization | null>(KEYS.ORG, null);
     if (cached) return cached;
+    const activeOrgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : null;
+    if (activeOrgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e') {
+      return {
+        id: 'c5ab6b03-adde-47cc-a033-064f4c39b21e',
+        name: 'Electra EV',
+        slug: 'electra-ev',
+        status: 'Active',
+        plan: 'Enterprise',
+        default_currency: 'INR',
+        timezone: 'Asia/Kolkata',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      };
+    }
     return {
-      id: 'org-joy-01',
+      id: '0c621892-e938-4707-9957-13534ea32c19',
       name: 'Joy Corporate Solutions',
       slug: 'joy-corporate-solutions',
       status: 'Active',
@@ -746,9 +776,14 @@ export const api = {
   // ==========================================
 
   async getCompanies(): Promise<Company[]> {
+    const activeOrgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : null;
     if (isSupabaseEnabled) {
       try {
-        const { data, error } = await supabase.from('companies').select('*').order('created_at', { ascending: true });
+        let q = supabase.from('companies').select('*').order('created_at', { ascending: true });
+        if (activeOrgId && isValidUUID(activeOrgId)) {
+          q = q.eq('organization_id', activeOrgId);
+        }
+        const { data, error } = await q;
         if (!error && data && data.length > 0) {
           const mapped: Company[] = data.map((d: any) => ({
             id: d.id,
@@ -774,10 +809,11 @@ export const api = {
     }
     const list = getStorage<Company[]>(KEYS.COMPANIES, DEFAULT_COMPANIES);
     if (!list || list.length === 0) {
-      setStorage(KEYS.COMPANIES, DEFAULT_COMPANIES);
-      return DEFAULT_COMPANIES;
+      const fallbackList = activeOrgId ? DEFAULT_COMPANIES.filter(c => c.organization_id === activeOrgId) : DEFAULT_COMPANIES;
+      setStorage(KEYS.COMPANIES, fallbackList);
+      return fallbackList;
     }
-    return list;
+    return activeOrgId ? list.filter(c => c.organization_id === activeOrgId) : list;
   },
 
   async createCompany(input: Omit<Company, 'id' | 'created_at'>): Promise<Company> {

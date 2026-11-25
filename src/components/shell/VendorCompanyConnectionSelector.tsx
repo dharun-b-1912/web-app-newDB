@@ -47,6 +47,25 @@ export interface ConnectedClientCompany {
 
 export const CONNECTED_CLIENT_COMPANIES: ConnectedClientCompany[] = [
   {
+    id: 'c0bbfb28-1500-4ebb-aba8-453b3681f342',
+    clientCode: 'CLI-EEV-01',
+    legalName: 'Electra EV',
+    tradeName: 'Electra EV',
+    siteName: 'Coimbatore Manufacturing Plant',
+    siteCode: 'EEV-CBE-01',
+    contractCode: 'CON-EEV-MANPOWER-2026',
+    masterPoNumber: 'PO-EEV-2026-001',
+    activeWorkforceCount: 217,
+    serviceChargePct: 8.5,
+    contractPeriod: '01 Nov 2026 – 31 Oct 2027',
+    contactPerson: 'Shalini J (HR Head)',
+    contactEmail: 'shalini@electraev.com',
+    statutoryPfCode: 'CB/CBE/1892341000',
+    statutoryEsiCode: '56001195190002002',
+    status: 'ACTIVE',
+    isPrimary: true,
+  },
+  {
     id: 'comp-joy-cbe',
     clientCode: 'CLI-JOY-01',
     legalName: 'Joy Corporate Solutions Pvt Ltd',
@@ -63,7 +82,7 @@ export const CONNECTED_CLIENT_COMPANIES: ConnectedClientCompany[] = [
     statutoryPfCode: 'CB/CBE/1724259000',
     statutoryEsiCode: '56001195190001001',
     status: 'ACTIVE',
-    isPrimary: true,
+    isPrimary: false,
   },
   {
     id: 'arjuna-natural-coimbatore',

@@ -155,7 +155,8 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
     if (checkIsVendor(emp)) {
       return emp.vendor_name || emp.employment?.vendor_name || 'Vendor Workforce';
     }
-    return 'Joy Corporate Solutions Pvt Ltd';
+    const comp = api.getActiveCompany();
+    return comp?.legal_name || comp?.trade_name || 'Electra EV';
   };
 
   const monthName = new Date(currentYear, currentMonthIndex, 1).toLocaleString('en-US', { month: 'long' });

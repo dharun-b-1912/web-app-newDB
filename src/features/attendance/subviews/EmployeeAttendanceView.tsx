@@ -39,6 +39,7 @@ import { AttendanceDaily, PunchSource } from '../../../types/attendance';
 import { attendanceApi } from '../../../services/attendanceApi';
 import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
+import { useTenant } from '../../../hooks/useTenant';
 import { formatMinutesToHoursStr, formatCleanTime, timeStringToMinutes, processAttendanceStatus, DEFAULT_ATTENDANCE_POLICY, formatDeviationDuration, getShiftScheduledBreakMinutes } from '../../../lib/attendance/attendanceEngine';
 import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
 import { smartShiftResolutionService, DEFAULT_SHIFTS, ELECTRA_EV_SHIFTS } from '../../../services/attendance/smartShiftResolutionService';
@@ -169,6 +170,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   onBackToDashboard,
 }) => {
   const { showToast } = useToast();
+  const { activeLegalEntity, organization } = useTenant();
 
   const selectedDate = filterState?.date || (() => {
     const d = new Date();
@@ -1239,7 +1241,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   const handleExportPdf = async () => {
     try {
       setIsExportingPdf(true);
-      const safeComp = api.getActiveCompany()?.name || api.getActiveCompany()?.trade_name || 'Joy Corporate Solutions';
+      const safeComp = activeLegalEntity?.legal_name || organization?.name || api.getActiveCompany()?.legal_name || 'Electra EV';
       const res = await attendanceReportExportService.generatePdfDocument(filteredData, allPunchesForModal, {
         companyName: safeComp,
         reportDate: selectedDate,
@@ -1259,7 +1261,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     try {
       setIsExportingExcel(true);
       showToast('Generating Dynamic Attendance Excel (.xlsx) workbook...', 'info');
-      const safeComp = api.getActiveCompany()?.name || api.getActiveCompany()?.trade_name || 'Joy Corporate Solutions';
+      const safeComp = activeLegalEntity?.legal_name || organization?.name || api.getActiveCompany()?.legal_name || 'Electra EV';
       const res = await attendanceReportExportService.generateExcelWorkbook(filteredData, allPunchesForModal, {
         companyName: safeComp,
         reportDate: selectedDate,
@@ -2045,8 +2047,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           allRows={allResolvedRows}
           selectedIds={selectedIds}
           reportDate={selectedDate}
-          companyName={api.getActiveCompany()?.name || api.getActiveCompany()?.trade_name || api.getActiveCompany()?.legal_name || 'Joy Corporate Solutions'}
-          organizationId={api.getActiveCompany()?.organization_id || api.getActiveCompany()?.id}
+          companyName={activeLegalEntity?.legal_name || organization?.name || api.getActiveCompany()?.legal_name || 'Electra EV'}
+          organizationId={organization?.id || api.getActiveCompany()?.organization_id || 'c5ab6b03-adde-47cc-a033-064f4c39b21e'}
           punches={allPunchesForModal}
         />
       )}

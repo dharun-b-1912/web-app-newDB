@@ -336,8 +336,8 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
     if (isVendor) {
       return currentEmployee?.vendor_name || currentEmployee?.employment?.vendor_name || 'Contract Vendor Agency';
     }
-    return 'Joy Corporate Solutions Pvt Ltd';
-  }, [isVendor, currentEmployee]);
+    return activeCompany?.legal_name || activeCompany?.trade_name || 'Electra EV';
+  }, [isVendor, currentEmployee, activeCompany]);
 
   // Active Effective Payroll Period & Dynamic Filter Engine (Phase 1)
   const activePeriod: PayrollPeriod = useMemo(() => {
@@ -645,7 +645,7 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
   const empCode = currentEmployee?.employee_code || '';
   const empDept = currentEmployee?.department_name || currentEmployee?.department || 'Engineering';
   const empDesignation = currentEmployee?.designation_title || currentEmployee?.designation || currentEmployee?.role || 'Senior Software Engineer';
-  const empBranch = currentEmployee?.branch_name || currentEmployee?.location || currentEmployee?.company_name || 'Joy Corporate Solutions (HQ)';
+  const empBranch = currentEmployee?.branch_name || currentEmployee?.location || currentEmployee?.company_name || (activeCompany?.legal_name ? `${activeCompany.legal_name} Plant` : 'Electra EV Plant');
   const empManager = currentEmployee?.reporting_manager_name || (currentEmployee?.reporting_manager_id ? 'Reporting Manager' : 'Executive Operations');
 
   if (!employeeId) return null;

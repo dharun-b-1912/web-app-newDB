@@ -198,13 +198,14 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
   allRows,
   selectedIds = new Set(),
   reportDate,
-  companyName = 'Joy Corporate Solutions',
+  companyName: propCompanyName,
   organizationId,
   punches = [],
 }) => {
   const { showToast } = useToast();
   const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
-  const effectiveOrgId = organizationId || activeComp?.organization_id || activeComp?.id || '0c621892-e938-4707-9957-13534ea32c19';
+  const companyName = propCompanyName && propCompanyName !== 'Joy Corporate Solutions' ? propCompanyName : (activeComp?.legal_name || activeComp?.trade_name || 'Electra EV');
+  const effectiveOrgId = organizationId || activeComp?.organization_id || (activeComp?.id !== '0c621892-e938-4707-9957-13534ea32c19' ? activeComp?.id : 'c5ab6b03-adde-47cc-a033-064f4c39b21e');
 
   // Active Tab: 'DISPATCH' (Manual Send) | 'SCHEDULE' (Automated Time Dispatch) | 'RECIPIENTS' (Access Control) | 'PREVIEW'
   const [activeTab, setActiveTab] = useState<'DISPATCH' | 'SCHEDULE' | 'RECIPIENTS' | 'PREVIEW'>('DISPATCH');

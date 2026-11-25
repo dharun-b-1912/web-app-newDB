@@ -435,7 +435,8 @@ export const AttendanceReportsView: React.FC = () => {
         dailyData?.companyName ||
         weeklyData?.companyName ||
         monthlyData?.companyName ||
-        'Joy Corporate Solutions Pvt. Ltd.',
+        api.getActiveCompany()?.legal_name ||
+        'Electra EV',
       daily: dailyData,
       weekly: weeklyData,
       monthly: monthlyData,
@@ -855,7 +856,7 @@ export const AttendanceReportsView: React.FC = () => {
             </div>
             <span className="text-slate-300">•</span>
             <Badge className="bg-emerald-50 text-emerald-800 border border-emerald-200/80 text-[11px] font-semibold px-2 py-0.5 whitespace-nowrap">
-              {dailyData?.companyName || 'Joy Corporate Solutions Pvt. Ltd.'}
+              {dailyData?.companyName || api.getActiveCompany()?.legal_name || 'Electra EV'}
             </Badge>
             <span className="text-slate-300">•</span>
             <span className="text-slate-500 font-medium text-[11px]">Period: {targetDate}</span>
@@ -2816,7 +2817,7 @@ export const AttendanceReportsView: React.FC = () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Organization:</span>
-                <span className="font-semibold text-slate-800">{dailyData?.companyName || 'Joy Corporate Solutions Pvt. Ltd.'}</span>
+                <span className="font-semibold text-slate-800">{dailyData?.companyName || api.getActiveCompany()?.legal_name || 'Electra EV'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Channel:</span>
@@ -2889,7 +2890,7 @@ export const AttendanceReportsView: React.FC = () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Organization:</span>
-                <span className="font-semibold text-slate-800">{dailyData?.companyName || 'Joy Corporate Solutions Pvt. Ltd.'}</span>
+                <span className="font-semibold text-slate-800">{dailyData?.companyName || api.getActiveCompany()?.legal_name || 'Electra EV'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Channel:</span>

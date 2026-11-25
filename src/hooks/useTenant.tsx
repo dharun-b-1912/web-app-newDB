@@ -101,10 +101,11 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
           // Strict Tenant Isolation: Never silently replace with another organization's stored defaults!
           const targetOrgId = userOrgId || '0c621892-e938-4707-9957-13534ea32c19';
           console.warn('[TenantProvider] organizationContextService timed out; preserving strict tenant identity:', targetOrgId);
+          const isElectra = targetOrgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
           const scopedOrg: Organization = {
             id: targetOrgId,
-            name: (user as any).organization_name || 'Joy Corporate Solutions',
-            slug: `tenant-${targetOrgId.slice(0, 8)}`,
+            name: (user as any).organization_name || (isElectra ? 'Electra EV' : 'Joy Corporate Solutions'),
+            slug: isElectra ? 'electra-ev' : `tenant-${targetOrgId.slice(0, 8)}`,
             status: 'Active',
             plan: 'Enterprise',
             default_currency: 'INR',
@@ -113,11 +114,11 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
             updated_at: new Date().toISOString(),
           };
           const scopedComp: Company = {
-            id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+            id: isElectra ? 'c0bbfb28-1500-4ebb-aba8-453b3681f342' : '2030277f-a6a1-427f-beaf-4fc677a3bae2',
             organization_id: targetOrgId,
-            legal_name: 'Joy Corporate Solutions Pvt Ltd',
-            trade_name: 'Joy Corporate Solutions',
-            statutory_registration_no: 'U72900TZ2024PTC032145',
+            legal_name: isElectra ? 'Electra EV' : 'Joy Corporate Solutions Pvt Ltd',
+            trade_name: isElectra ? 'Electra EV' : 'Joy Corporate Solutions',
+            statutory_registration_no: isElectra ? 'U34100TN2024PTC054321' : 'U72900TZ2024PTC032145',
             country: 'India',
             city: 'Coimbatore',
             currency: 'INR',

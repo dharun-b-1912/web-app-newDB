@@ -73,7 +73,7 @@ export const CompanySelector: React.FC<CompanySelectorProps> = ({ onOpenLocation
             </div>
             <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
               <Globe className="w-3.5 h-3.5 text-[#07563D] shrink-0" />
-              <span className="truncate">{organization?.name || 'Joy Corporate Solutions'}</span>
+              <span className="truncate">{organization?.name || activeLegalEntity?.legal_name || 'Organization Workspace'}</span>
             </div>
 
             {/* Organization Switcher strictly restricted to Platform/Super Admins */}
