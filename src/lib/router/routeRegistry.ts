@@ -322,6 +322,9 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
 
   // ── WORK & OVERTIME ──
   { id: 'overtime', label: 'Overtime Engine', canonicalPath: '/overtime', section: 'WORK & OVERTIME', aliases: ['/work-overtime'] },
+  { id: 'overtime-policies', label: 'Tenant Overtime Policies', canonicalPath: '/overtime/policies', section: 'WORK & OVERTIME', aliases: ['/ot-policies'] },
+  { id: 'overtime-queue', label: 'HR Verification Queue', canonicalPath: '/overtime/queue', section: 'WORK & OVERTIME', aliases: ['/ot-queue'] },
+  { id: 'overtime-reports', label: 'Overtime MIS Reports', canonicalPath: '/overtime/reports', section: 'WORK & OVERTIME', aliases: ['/ot-reports'] },
   { id: 'overtime-requests', label: 'Overtime Requests', canonicalPath: '/overtime/requests', section: 'WORK & OVERTIME', aliases: ['/overtime-requests'] },
   { id: 'wfh', label: 'WFH Requests', canonicalPath: '/wfh', section: 'WORK & OVERTIME' },
   { id: 'breaks-workhours', label: 'Breaks & Work Hours', canonicalPath: '/breaks', section: 'WORK & OVERTIME', aliases: ['/breaks-workhours'] },

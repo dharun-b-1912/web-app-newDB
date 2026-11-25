@@ -40,6 +40,7 @@ import {
   tenantOvertimePolicyService,
   TenantOvertimePolicyConfig,
 } from '../../services/attendance/tenantOvertimePolicyService';
+import { tenantOvertimeEngineService } from '../../services/attendance/tenantOvertimeEngineService';
 import { getActiveOrgId } from '../../services/attendance/biometricCommandService';
 
 const PRESET_ICONS: Record<IndustryPreset, React.ElementType> = {
@@ -82,6 +83,9 @@ export const OvertimeEngineView: React.FC = () => {
   const [tenantPolicy, setTenantPolicy] = useState<TenantOvertimePolicyConfig>(() =>
     tenantOvertimePolicyService.getPolicySync(getActiveOrgId() || 'org-default')
   );
+  const [orgSettings, setOrgSettings] = useState(() =>
+    tenantOvertimeEngineService.getOrgSettings(getActiveOrgId() || 'org-default')
+  );
   const [isSavingPolicy, setIsSavingPolicy] = useState(false);
   const [selectedRecordForDrawer, setSelectedRecordForDrawer] = useState<WorkHourRecord | null>(null);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -104,6 +108,7 @@ export const OvertimeEngineView: React.FC = () => {
     setExceptions(workOvertimeService.getWorkExceptions(date));
     setPolicy(workOvertimeService.getPolicy());
     setTenantPolicy(tenantOvertimePolicyService.getPolicySync(currentOrg));
+    setOrgSettings(tenantOvertimeEngineService.getOrgSettings(currentOrg));
   };
 
   useEffect(() => {
@@ -155,10 +160,13 @@ export const OvertimeEngineView: React.FC = () => {
               <Zap className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-xl font-bold text-gray-900 tracking-tight">Work & Overtime Calculation Engine</h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-[#07563D] border border-emerald-200">
-                  {policy.version}
+                  {activeOrgName}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-700 border border-gray-200">
+                  {orgSettings.otMode.replace('_', ' ')}
                 </span>
               </div>
               <p className="text-xs text-gray-500 mt-0.5">

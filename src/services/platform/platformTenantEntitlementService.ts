@@ -46,6 +46,14 @@ export const PLATFORM_FEATURE_DEFINITIONS: Omit<TenantFeatureCapability, 'isEnab
     isAddon: false,
   },
   {
+    key: 'overtime_engine',
+    name: 'Tenant Overtime & Multi-Mode Governance Engine',
+    category: 'Attendance & Biometrics',
+    description: 'Tenant-configurable OT policies, multi-tier hierarchy, HR verification fallback, and statutory cap governance.',
+    minPlanTier: 'Professional',
+    isAddon: false,
+  },
+  {
     key: 'biometric_hardware',
     name: 'Hardware Biometrics Hub (ZKTeco / Matrix / eSSL)',
     category: 'Attendance & Biometrics',

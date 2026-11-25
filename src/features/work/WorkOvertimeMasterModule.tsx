@@ -3,18 +3,24 @@ import { OvertimeEngineView } from './OvertimeEngineView';
 import { OvertimeRequestsView } from './OvertimeRequestsView';
 import { WfhRequestsView } from './WfhRequestsView';
 import { BreaksWorkHoursView } from './BreaksWorkHoursView';
-import { TrendingUp, Clock, Laptop, Coffee } from 'lucide-react';
+import { TenantOvertimePolicyManagementView } from './TenantOvertimePolicyManagementView';
+import { TenantOvertimeApprovalQueueView } from './TenantOvertimeApprovalQueueView';
+import { TenantOvertimeReportsView } from './TenantOvertimeReportsView';
+import { TrendingUp, Clock, Laptop, Coffee, Sliders, CheckSquare, FileSpreadsheet } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 interface WorkOvertimeMasterModuleProps {
   initialTab?: string;
 }
 
-type TabKey = 'engine' | 'requests' | 'wfh' | 'breaks';
+type TabKey = 'engine' | 'requests' | 'policies' | 'queue' | 'reports' | 'wfh' | 'breaks';
 
 const resolveTab = (route?: string): TabKey => {
   if (!route || route === 'overtime' || route === 'work-overtime') return 'engine';
   if (route === 'overtime-requests') return 'requests';
+  if (route === 'overtime-policies' || route === 'ot-policies') return 'policies';
+  if (route === 'overtime-queue' || route === 'ot-queue') return 'queue';
+  if (route === 'overtime-reports' || route === 'ot-reports') return 'reports';
   if (route === 'wfh') return 'wfh';
   if (route === 'breaks-workhours' || route === 'breaks') return 'breaks';
   return 'engine';
@@ -31,6 +37,9 @@ export const WorkOvertimeMasterModule: React.FC<WorkOvertimeMasterModuleProps> =
 
   const tabs: { key: TabKey; label: string; icon: React.ElementType }[] = [
     { key: 'engine', label: 'Overtime Engine', icon: TrendingUp },
+    { key: 'policies', label: 'Tenant Policies & Modes', icon: Sliders },
+    { key: 'queue', label: 'HR Verification Queue', icon: CheckSquare },
+    { key: 'reports', label: 'Overtime MIS Reports', icon: FileSpreadsheet },
     { key: 'requests', label: 'Overtime Requests', icon: Clock },
     { key: 'wfh', label: 'WFH Requests', icon: Laptop },
     { key: 'breaks', label: 'Breaks & Work Hours', icon: Coffee },
@@ -66,6 +75,9 @@ export const WorkOvertimeMasterModule: React.FC<WorkOvertimeMasterModuleProps> =
       {/* View Container */}
       <div>
         {activeTab === 'engine' && <OvertimeEngineView />}
+        {activeTab === 'policies' && <TenantOvertimePolicyManagementView />}
+        {activeTab === 'queue' && <TenantOvertimeApprovalQueueView />}
+        {activeTab === 'reports' && <TenantOvertimeReportsView />}
         {activeTab === 'requests' && <OvertimeRequestsView />}
         {activeTab === 'wfh' && <WfhRequestsView />}
         {activeTab === 'breaks' && <BreaksWorkHoursView />}
