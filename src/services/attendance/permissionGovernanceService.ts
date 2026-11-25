@@ -165,40 +165,48 @@ class PermissionGovernanceService {
     employeeId: string,
     monthStr: string // YYYY-MM
   ): Promise<AttendancePermissionRecord[]> {
-    // 1. Try Supabase permissions table
+    // 1. Check Supabase attendance_regularizations for persistent permission records
     try {
       const startOfMonth = `${monthStr}-01`;
       const endOfMonth = `${monthStr}-31`;
 
-      const { data, error } = await supabase
-        .from('attendance_permissions')
+      const { data: regData } = await supabase
+        .from('attendance_regularizations')
         .select('*')
         .eq('employee_id', employeeId)
         .gte('attendance_date', startOfMonth)
         .lte('attendance_date', endOfMonth)
         .order('attendance_date', { ascending: true });
 
-      if (!error && data && data.length > 0) {
-        return data.map((d: any) => ({
-          id: d.id,
-          organizationId: d.organization_id,
-          employeeId: d.employee_id,
-          employeeCode: d.employee_code,
-          employeeName: d.employee_name,
-          attendanceDate: d.attendance_date,
-          category: d.category || 'LATE_ARRIVAL_PERMISSION',
-          requestedMinutes: d.requested_minutes || 0,
-          approvedMinutes: d.approved_minutes || 0,
-          usedMinutes: d.used_minutes || d.approved_minutes || 0,
-          startTime: d.start_time,
-          endTime: d.end_time,
-          reason: d.reason || '',
-          status: d.status || 'APPROVED',
-          approvedBy: d.approved_by,
-          approvedAt: d.approved_at,
-          createdAt: d.created_at,
-          updatedAt: d.updated_at,
-        }));
+      if (regData && regData.length > 0) {
+        const parsed: AttendancePermissionRecord[] = [];
+        for (const r of regData) {
+          const reasonStr = r.reason || '';
+          if (reasonStr.includes('[PERMISSION:') || reasonStr.toLowerCase().includes('permission')) {
+            const match = reasonStr.match(/\[PERMISSION:(.*?):(\d+)m\]/);
+            const category: PermissionCategory = (match ? match[1] : 'LATE_ARRIVAL_PERMISSION') as PermissionCategory;
+            const mins = match ? Number(match[2]) : (r.requested_check_in ? 60 : 30);
+            parsed.push({
+              id: r.id,
+              organizationId: r.organization_id,
+              employeeId: r.employee_id,
+              attendanceDate: r.attendance_date,
+              category,
+              requestedMinutes: mins,
+              approvedMinutes: mins,
+              usedMinutes: mins,
+              reason: reasonStr.replace(/\[PERMISSION:.*?\]\s*/, ''),
+              status: r.status === 'APPROVED' ? 'APPROVED' : (r.status as any),
+              approvedBy: r.approved_by,
+              approvedAt: r.approved_at,
+              createdAt: r.created_at,
+              updatedAt: r.updated_at,
+            });
+          }
+        }
+        if (parsed.length > 0) {
+          return parsed;
+        }
       }
     } catch (_) {}
 
@@ -231,27 +239,49 @@ class PermissionGovernanceService {
       updatedAt: new Date().toISOString(),
     };
 
-    // Attempt Supabase insert
+    // 1. Attempt Supabase insert into attendance_regularizations with permission metadata
     try {
-      await supabase.from('attendance_permissions').insert({
-        id: record.id,
+      const formattedReason = `[PERMISSION:${record.category}:${record.approvedMinutes}m] ${record.reason}`;
+      await supabase.from('attendance_regularizations').insert({
         organization_id: record.organizationId,
         employee_id: record.employeeId,
-        employee_code: record.employeeCode,
-        employee_name: record.employeeName,
         attendance_date: record.attendanceDate,
-        category: record.category,
-        requested_minutes: record.requestedMinutes,
-        approved_minutes: record.approvedMinutes,
-        used_minutes: record.usedMinutes,
-        reason: record.reason,
-        status: record.status,
-        approved_by: record.approvedBy,
-        approved_at: record.approvedAt,
+        reason: formattedReason,
+        status: record.status || 'APPROVED',
+        approved_by: null,
+        approved_at: record.approvedAt || new Date().toISOString(),
       });
-    } catch (_) {}
 
-    // Store in local ledger
+      // 2. Update attendance_daily on that date to regularize and deduct late minutes
+      if (record.category === 'LATE_ARRIVAL_PERMISSION') {
+        const { data: dailyRow } = await supabase
+          .from('attendance_daily')
+          .select('id, late_entry_minutes')
+          .eq('employee_id', record.employeeId)
+          .eq('attendance_date', record.attendanceDate)
+          .maybeSingle();
+
+        if (dailyRow) {
+          const currentLate = Number(dailyRow.late_entry_minutes || 0);
+          const newLate = Math.max(0, currentLate - record.approvedMinutes);
+          const finalizedLate = newLate <= 15 ? 0 : newLate; // Zero out if within grace buffer
+          await supabase
+            .from('attendance_daily')
+            .update({
+              is_regularized: true,
+              late_entry_minutes: finalizedLate,
+              status: 'PRESENT',
+              payable_status: 1.0,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', dailyRow.id);
+        }
+      }
+    } catch (err) {
+      console.warn('[PermissionGovernanceService] Error persisting to Supabase:', err);
+    }
+
+    // 3. Store in local ledger cache
     if (typeof localStorage !== 'undefined') {
       try {
         const stored = localStorage.getItem(STORAGE_KEYS.PERMISSIONS_LIST);
@@ -261,7 +291,7 @@ class PermissionGovernanceService {
       } catch (_) {}
     }
 
-    // Trigger deterministic ledger recalculation
+    // 4. Trigger deterministic ledger recalculation
     const monthStr = record.attendanceDate.substring(0, 7);
     await this.calculateMonthlyLedger(record.organizationId, record.employeeId, monthStr, {
       employeeCode: record.employeeCode,
@@ -319,10 +349,13 @@ class PermissionGovernanceService {
           for (const row of dailyRows) {
             const rawLate = Number(row.late_entry_minutes || 0);
             const grace = policy.graceThresholdMinutes || 15;
-            if (rawLate > grace) {
-              const excessLate = rawLate - grace; // Minutes beyond shift grace
-              const d = row.attendance_date;
-              const cur = dailyEventsMap.get(d) || { permissionMins: 0, lateMins: 0 };
+            const d = row.attendance_date;
+            const cur = dailyEventsMap.get(d) || { permissionMins: 0, lateMins: 0 };
+            
+            // Subtract any approved permission on this date so late arrival is excused and not double-counted
+            const unexcusedLate = Math.max(0, rawLate - cur.permissionMins);
+            if (unexcusedLate > grace) {
+              const excessLate = unexcusedLate - grace; // Minutes beyond shift grace
               cur.lateMins += excessLate;
               dailyEventsMap.set(d, cur);
               totalLateMinutesConsumed += excessLate;

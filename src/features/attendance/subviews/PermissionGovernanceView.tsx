@@ -75,9 +75,21 @@ export const PermissionGovernanceView: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
+  const activeOrgId = useMemo(() => {
+    return (
+      (typeof localStorage !== 'undefined'
+        ? localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')
+        : '') || 'c5ab6b03-adde-47cc-a033-064f4c39b21e'
+    );
+  }, []);
+
   // Policy Settings State
   const [policyConfig, setPolicyConfig] = useState<PermissionPolicyConfig>(() =>
-    permissionGovernanceService.loadPolicyConfig()
+    permissionGovernanceService.loadPolicyConfig(
+      (typeof localStorage !== 'undefined'
+        ? localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')
+        : '') || 'c5ab6b03-adde-47cc-a033-064f4c39b21e'
+    )
   );
   const [monthlyAllowanceMins, setMonthlyAllowanceMins] = useState(policyConfig.monthlyAllowanceMinutes);
   const [activePolicy, setActivePolicy] = useState<PermissionThresholdPolicy>(policyConfig.activePolicy);
@@ -122,7 +134,7 @@ export const PermissionGovernanceView: React.FC = () => {
       const empList = await api.getEmployees().catch(() => api.getEmployeesSync());
       setEmployees(empList || []);
 
-      const orgId = '0c621892-e938-4707-9957-13534ea32c19';
+      const orgId = activeOrgId;
       const calcLedgers: EmployeeMonthlyPermissionLedger[] = [];
 
       for (const emp of (empList || [])) {
@@ -138,7 +150,7 @@ export const PermissionGovernanceView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth, showToast]);
+  }, [selectedMonth, showToast, activeOrgId]);
 
   useEffect(() => {
     loadData();
@@ -176,13 +188,16 @@ export const PermissionGovernanceView: React.FC = () => {
 
   // Save Policy Changes
   const handleSavePolicy = () => {
-    const updated = permissionGovernanceService.savePolicyConfig({
-      monthlyAllowanceMinutes: Number(monthlyAllowanceMins),
-      activePolicy,
-      consumeOn,
-      includeLateArrivalsBeyondGrace: includeLateArrivals,
-      subsequentExcessHandling: excessHandling,
-    });
+    const updated = permissionGovernanceService.savePolicyConfig(
+      {
+        monthlyAllowanceMinutes: Number(monthlyAllowanceMins),
+        activePolicy,
+        consumeOn,
+        includeLateArrivalsBeyondGrace: includeLateArrivals,
+        subsequentExcessHandling: excessHandling,
+      },
+      activeOrgId
+    );
     setPolicyConfig(updated);
     showToast('Permission policy configuration saved & applied to current period', 'success');
     loadData();
@@ -198,7 +213,7 @@ export const PermissionGovernanceView: React.FC = () => {
     try {
       const selectedEmp = employees.find((e) => e.id === permEmployeeId);
       await permissionGovernanceService.recordPermission({
-        organizationId: '0c621892-e938-4707-9957-13534ea32c19',
+        organizationId: activeOrgId,
         employeeId: permEmployeeId,
         employeeCode: selectedEmp?.employee_code || permEmployeeId,
         employeeName: `${selectedEmp?.first_name || ''} ${selectedEmp?.last_name || ''}`.trim(),
