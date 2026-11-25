@@ -17,6 +17,7 @@ import { attendanceReportContactService } from './attendanceReportContactService
 import { attendanceClassificationEngine, ClassifiedPunchEvent } from './attendanceClassificationEngine';
 import { attendanceRosterService } from './attendanceRosterService';
 import { attendanceTimeService } from './attendanceTimeService';
+import { smartShiftResolutionService, DEFAULT_SHIFTS, ELECTRA_EV_SHIFTS } from './smartShiftResolutionService';
 import {
   timeStringToMinutes,
   processAttendanceStatus,
@@ -622,7 +623,7 @@ class AttendanceReportSchedulerService {
   /**
    * Assembles authentic daily rows, shifts, and punches from Supabase and active biometric pipelines.
    */
-  async assembleReportDataAsync(dateStr: string): Promise<{
+  async assembleReportDataAsync(dateStr: string, orgIdOverride?: string): Promise<{
     rows: AttendanceReportRow[];
     punches: ClassifiedPunchEvent[];
     companyName: string;
@@ -630,6 +631,12 @@ class AttendanceReportSchedulerService {
     const isUuid = (val: any) =>
       typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
     const activeComp = api.getActiveCompany();
+    const targetOrg = orgIdOverride || activeComp?.organization_id || activeComp?.id || '0c621892-e938-4707-9957-13534ea32c19';
+    const isElectra =
+      targetOrg === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ||
+      targetOrg === 'c0bbfb28-1500-4ebb-aba8-453b3681f342' ||
+      String(activeComp?.name || '').toLowerCase().includes('electra');
+
     let companyName = activeComp?.name || 'Joy Corporate Solutions';
     if (companyName === 'Workforce Organization' || !companyName) {
       companyName = 'Joy Corporate Solutions';
@@ -637,7 +644,7 @@ class AttendanceReportSchedulerService {
 
     let allEmps: any[] = [];
     try {
-      allEmps = await api.getEmployees({ skipEnrichment: true });
+      allEmps = await api.getEmployees(activeComp?.id);
     } catch {
       allEmps = api.getEmployeesSync ? api.getEmployeesSync() : [];
     }
@@ -647,8 +654,6 @@ class AttendanceReportSchedulerService {
     // Direct Supabase fallback if local memory cache was empty
     if (!allEmps || allEmps.length === 0) {
       try {
-        const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
-        const targetOrg = activeComp?.organization_id || activeComp?.id || '0c621892-e938-4707-9957-13534ea32c19';
         const { data: dbEmps } = await (supabaseAdmin || supabase)
           .from('employees')
           .select('*')
@@ -659,12 +664,15 @@ class AttendanceReportSchedulerService {
       } catch (_) {}
     }
     const employees = allEmps.filter(
-      e => isUuid(e.id) && !String(e.employee_code || '').toUpperCase().startsWith('CE0')
+      e =>
+        isUuid(e.id) &&
+        !String(e.employee_code || '').toUpperCase().startsWith('CE0') &&
+        (!e.organization_id || e.organization_id === targetOrg)
     );
 
     let dailyRecords: AttendanceDaily[] = [];
     try {
-      dailyRecords = await attendanceApi.getDailyAttendanceAsync(dateStr);
+      dailyRecords = await attendanceApi.getDailyAttendanceAsync(dateStr, undefined, undefined, undefined, targetOrg);
     } catch {
       try {
         dailyRecords = attendanceApi.getDailyAttendance(dateStr);
@@ -672,6 +680,11 @@ class AttendanceReportSchedulerService {
         dailyRecords = [];
       }
     }
+
+    // Ensure gateway punches are synced for this tenant
+    try {
+      await biometricGatewayService.syncPunchesFromSupabase(1000, targetOrg);
+    } catch (_) {}
 
     // Query Supabase directly for all punches on dateStr (accounting for IST timezone GMT+5:30)
     let supabasePunches: any[] = [];
@@ -683,6 +696,7 @@ class AttendanceReportSchedulerService {
       const { data, error } = await dbClient
         .from('attendance_punches')
         .select('*')
+        .eq('organization_id', targetOrg)
         .or(`attendance_date.eq.${dateStr},and(attendance_date.is.null,punch_time.gte.${startIso},punch_time.lte.${endIso})`)
         .order('punch_time', { ascending: true });
 
@@ -693,7 +707,7 @@ class AttendanceReportSchedulerService {
       console.warn('[AttendanceScheduler] Error querying Supabase punches:', e);
     }
 
-    const gatewayPunches = (biometricGatewayService.getRawPunches(500) as any) || [];
+    const gatewayPunches = (biometricGatewayService.getRawPunches(5000, targetOrg) as any) || [];
 
     // Map supabase punches to ClassifiedPunchEvent
     const dbPunchEvents: ClassifiedPunchEvent[] = supabasePunches.map((p: any) => {
@@ -828,6 +842,7 @@ class AttendanceReportSchedulerService {
       const matchingPunches = Array.from(allMatchingPunchesMap.values());
 
       let resolvedRecord = record;
+      let effectiveShift = shift;
 
       if (matchingPunches.length > 0 || (resolvedRecord && resolvedRecord.first_check_in)) {
         const sortedPunches = [...matchingPunches].sort(
@@ -848,11 +863,33 @@ class AttendanceReportSchedulerService {
         if (inSrc === 'SYSTEM') inSrc = 'BIOMETRIC';
         let checkOutSrc = resolvedRecord?.check_out_source;
 
-        const shiftEndMins = timeStringToMinutes(shift.end_time) || 1110;
+        const activeShiftsList = isElectra ? ELECTRA_EV_SHIFTS : DEFAULT_SHIFTS;
+        if (firstIn && !roster?.is_override) {
+          const adaptiveRes = smartShiftResolutionService.resolveShiftDeterministic({
+            assignedShift: shift,
+            activeShifts: activeShiftsList,
+            firstPunchTime: firstIn,
+            lastPunchTime: lastOut,
+            mode: 'ADAPTIVE_SHIFT',
+          });
+          if (adaptiveRes) {
+            effectiveShift = {
+              ...shift,
+              id: adaptiveRes.shiftId,
+              shift_code: adaptiveRes.shiftCode,
+              shift_name: adaptiveRes.shiftName,
+              start_time: adaptiveRes.startTime,
+              end_time: adaptiveRes.endTime,
+              cross_midnight: adaptiveRes.isOvernight,
+            } as any;
+          }
+        }
+
+        const shiftEndMins = timeStringToMinutes(effectiveShift.end_time) || 1110;
         const validOutPunch = sortedPunches.find((p) => {
           const pMins = timeStringToMinutes(p.event_time_str);
           const isExplicitOut = p.classification === 'CHECK_OUT' || (p as any).punch_direction === 'OUT';
-          const isNearOrAfterShiftEnd = pMins >= shiftEndMins - 15;
+          const isNearOrAfterShiftEnd = pMins !== null && pMins >= shiftEndMins - 15;
           return isExplicitOut || isNearOrAfterShiftEnd;
         });
 
@@ -864,8 +901,8 @@ class AttendanceReportSchedulerService {
         if (firstIn) {
           const inMins = timeStringToMinutes(firstIn);
           const outMins = timeStringToMinutes(lastOut);
-          const expIn = timeStringToMinutes(shift.start_time) || 540;
-          const expOut = timeStringToMinutes(shift.end_time) || 1080;
+          const expIn = timeStringToMinutes(effectiveShift.start_time) || 540;
+          const expOut = timeStringToMinutes(effectiveShift.end_time) || 1080;
           const calc = processAttendanceStatus(inMins, outMins, expIn, expOut, DEFAULT_ATTENDANCE_POLICY, false, false, false, dateStr);
 
           const liveGrossMins = lastOut
@@ -886,13 +923,13 @@ class AttendanceReportSchedulerService {
             employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || (emp as any).name || 'Staff',
             department: emp.department_name || emp.department || 'General',
             designation: emp.designation_title || emp.designation || 'Staff',
-            organization_id: emp.organization_id || 'org-joy-01',
+            organization_id: emp.organization_id || targetOrg,
             company_id: emp.company_id || 'comp-joy-01',
             date: dateStr,
-            shift_id: (shift as any).id || 'shift-gen-09',
-            shift_name: shift.shift_name || 'General Shift',
-            expected_check_in: shift.start_time || '09:00',
-            expected_check_out: shift.end_time || '18:00',
+            shift_id: (effectiveShift as any).id || 'shift-gen-09',
+            shift_name: effectiveShift.shift_name || 'General Shift',
+            expected_check_in: effectiveShift.start_time || '09:00',
+            expected_check_out: effectiveShift.end_time || '18:00',
             first_check_in: firstIn,
             last_check_out: lastOut,
             gross_working_minutes: liveGrossMins,
@@ -949,7 +986,7 @@ class AttendanceReportSchedulerService {
         emp,
         record: resolvedRecord,
         roster,
-        shift,
+        shift: effectiveShift,
       };
     });
 
@@ -1100,6 +1137,7 @@ class AttendanceReportSchedulerService {
       const matchingPunches = Array.from(allMatchingPunchesMap.values());
 
       let resolvedRecord = record;
+      let effectiveShift = shift;
 
       if (matchingPunches.length > 0 || (resolvedRecord && resolvedRecord.first_check_in)) {
         const sortedPunches = [...matchingPunches].sort(
@@ -1221,7 +1259,7 @@ class AttendanceReportSchedulerService {
         emp,
         record: resolvedRecord,
         roster,
-        shift,
+        shift: effectiveShift,
       };
     });
 

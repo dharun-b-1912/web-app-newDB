@@ -209,6 +209,58 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
   // Active Tab: 'DISPATCH' (Manual Send) | 'SCHEDULE' (Automated Time Dispatch) | 'RECIPIENTS' (Access Control) | 'PREVIEW'
   const [activeTab, setActiveTab] = useState<'DISPATCH' | 'SCHEDULE' | 'RECIPIENTS' | 'PREVIEW'>('DISPATCH');
 
+  // Report Date State (allows selecting any past/present date directly inside the modal)
+  const [activeReportDate, setActiveReportDate] = useState<string>(reportDate);
+  const [dateOverrideRows, setDateOverrideRows] = useState<AttendanceReportRow[] | null>(null);
+  const [dateOverridePunches, setDateOverridePunches] = useState<ClassifiedPunchEvent[] | null>(null);
+  const [isLoadingDateData, setIsLoadingDateData] = useState<boolean>(false);
+
+  // Sync activeReportDate when modal opens or parent reportDate changes
+  useEffect(() => {
+    if (isOpen) {
+      setActiveReportDate(reportDate);
+      setDateOverrideRows(null);
+      setDateOverridePunches(null);
+    }
+  }, [isOpen, reportDate]);
+
+  // Re-fetch and re-calculate employee shift, department, and punch data whenever activeReportDate differs from prop reportDate
+  useEffect(() => {
+    if (!isOpen) return;
+    if (activeReportDate === reportDate) {
+      setDateOverrideRows(null);
+      setDateOverridePunches(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingDateData(true);
+    attendanceReportSchedulerService
+      .assembleReportDataAsync(activeReportDate, effectiveOrgId)
+      .then((res) => {
+        if (cancelled) return;
+        setDateOverrideRows(res.rows || []);
+        setDateOverridePunches(res.punches || []);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.warn('[SendAttendanceReportModal] Date override load failed:', err);
+          showToast(`Could not load attendance data for ${activeReportDate}`, 'error');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDateData(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, activeReportDate, reportDate, effectiveOrgId]);
+
+  const effectiveAllRows = dateOverrideRows ?? allRows;
+  const effectiveFilteredRows = dateOverrideRows ?? filteredRows;
+  const effectivePunches = dateOverridePunches ?? punches;
+
   // Report Period Selection: 'DAILY' | 'SHIFT_WISE' | 'WEEKLY' | 'MONTHLY'
   const [reportPeriod, setReportPeriod] = useState<'DAILY' | 'SHIFT_WISE' | 'WEEKLY' | 'MONTHLY'>('DAILY');
 
@@ -266,7 +318,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
         : undefined;
       return shiftReportScheduleService.formatShiftEmailSubject({
         companyName,
-        reportDate,
+        reportDate: activeReportDate,
         shiftCode: sCode,
         shiftName: rule?.shiftName,
         phase: pPhase,
@@ -276,12 +328,12 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
     }
     if (period === 'DAILY') {
       if (slot === 'MORNING_CHECKIN') {
-        return `[Joy PeopleHR] Morning Check-In & Turnout Status Report — ${reportDate} (${companyName})`;
+        return `[Joy PeopleHR] Morning Check-In & Turnout Status Report — ${activeReportDate} (${companyName})`;
       }
-      return `[Joy PeopleHR] End-of-Day Final Attendance & Working Hours Report — ${reportDate} (${companyName})`;
+      return `[Joy PeopleHR] End-of-Day Final Attendance & Working Hours Report — ${activeReportDate} (${companyName})`;
     }
     if (period === 'WEEKLY') {
-      return `[Joy PeopleHR] Weekly HR Intelligence & Turnout Trend MIS Report — ${reportDate} (${companyName})`;
+      return `[Joy PeopleHR] Weekly HR Intelligence & Turnout Trend MIS Report — ${activeReportDate} (${companyName})`;
     }
     return `[Joy PeopleHR] Monthly Workforce Governance & Statutory Payroll Reconciliation MIS Report — ${payrollCycle?.name || 'October 2026'} (${companyName})`;
   };
@@ -302,7 +354,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
         ? formatTime24To12(pPhase === 'CHECK_IN' ? rule.checkInDispatchTime : rule.checkOutDispatchTime)
         : undefined;
       const summary = shiftReportScheduleService.buildShiftDepartmentStructuredSummary(
-        allRows,
+        effectiveAllRows,
         sCode,
         pPhase,
         dFilter,
@@ -310,16 +362,16 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
       );
       return shiftReportScheduleService.formatShiftExecutiveNote({
         summary,
-        reportDate,
+        reportDate: activeReportDate,
         companyName,
         dispatchTimeLabel: dispatchTime,
       });
     }
     if (period === 'DAILY') {
       if (slot === 'MORNING_CHECKIN') {
-        return `Please review the morning workforce check-in status, on-time arrivals, and pending punches for ${reportDate}. Biometric and mobile punches have been verified.`;
+        return `Please review the morning workforce check-in status, on-time arrivals, and pending punches for ${activeReportDate}. Biometric and mobile punches have been verified.`;
       }
-      return `Please review the daily workforce attendance summary and verified biometric machine punch logs. All shifts and check-in variances have been audited.`;
+      return `Please review the daily workforce attendance summary and verified biometric machine punch logs for ${activeReportDate}. All shifts and check-in variances have been audited.`;
     }
     if (period === 'WEEKLY') {
       return `Please review the 7-day attendance trend, repeated punctuality violations, workforce overtime distribution, and comprehensive weekly master ledger for executive review.`;
@@ -627,20 +679,20 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
 
   const availableDepartments = useMemo(() => {
     const set = new Set<string>();
-    allRows.forEach((r) => {
+    effectiveAllRows.forEach((r) => {
       const d = String(r.emp?.department_name || r.emp?.department || r.record?.department || '').trim();
       if (d) set.add(d);
     });
     return Array.from(set).sort();
-  }, [allRows]);
+  }, [effectiveAllRows]);
 
   // Target data based on chosen scope + optional Shift-Wise & Department filter
   const targetRows = useMemo(() => {
-    let base = filteredRows;
-    if (scope === 'SELECTED' && selectedIds.size > 0) {
-      base = allRows.filter(r => selectedIds.has(r.emp.id));
-    } else if (scope === 'ALL') {
-      base = allRows;
+    let base = effectiveFilteredRows;
+    if (scope === 'SELECTED' && selectedIds.size > 0 && activeReportDate === reportDate) {
+      base = effectiveAllRows.filter(r => selectedIds.has(r.emp.id));
+    } else if (scope === 'ALL' || activeReportDate !== reportDate) {
+      base = effectiveAllRows;
     }
 
     if (reportPeriod === 'SHIFT_WISE') {
@@ -651,18 +703,18 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
       );
     }
     return base;
-  }, [scope, selectedIds, filteredRows, allRows, reportPeriod, selectedShiftCode, selectedDepartmentFilter]);
+  }, [scope, selectedIds, effectiveFilteredRows, effectiveAllRows, activeReportDate, reportDate, reportPeriod, selectedShiftCode, selectedDepartmentFilter]);
 
   const activeShiftSummary = useMemo(() => {
     const rule = shiftScheduleConfig.rules.find(r => r.shiftCode === selectedShiftCode);
     return shiftReportScheduleService.buildShiftDepartmentStructuredSummary(
-      allRows,
+      effectiveAllRows,
       selectedShiftCode,
       shiftPhase,
       selectedDepartmentFilter,
       rule?.shiftName
     );
-  }, [allRows, selectedShiftCode, shiftPhase, selectedDepartmentFilter, shiftScheduleConfig.rules]);
+  }, [effectiveAllRows, selectedShiftCode, shiftPhase, selectedDepartmentFilter, shiftScheduleConfig.rules]);
 
   // Filtered contacts for manual staff directory search
   const filteredContacts = useMemo(() => {
@@ -937,9 +989,9 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
       const { activeFmt, exportPeriod, typeLabel, cutoffTime } = getResolvedExportParams();
 
       showToast(`Generating ${typeLabel} Excel (.xlsx)...`, 'info');
-      const res = await attendanceReportExportService.generateExcelWorkbook(targetRows, punches, {
+      const res = await attendanceReportExportService.generateExcelWorkbook(targetRows, effectivePunches, {
         companyName,
-        reportDate,
+        reportDate: activeReportDate,
         includePunches,
         reportType: activeFmt,
         reportPeriod: exportPeriod,
@@ -965,9 +1017,9 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
       const { activeFmt, exportPeriod, typeLabel, cutoffTime } = getResolvedExportParams();
 
       showToast(`Generating ${typeLabel} PDF (.pdf)...`, 'info');
-      const res = await attendanceReportExportService.generatePdfDocument(targetRows, punches, {
+      const res = await attendanceReportExportService.generatePdfDocument(targetRows, effectivePunches, {
         companyName,
-        reportDate,
+        reportDate: activeReportDate,
         includePunches,
         reportType: activeFmt,
         reportPeriod: exportPeriod,
@@ -993,14 +1045,14 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
       const safeComp = companyName.replace(/[^a-zA-Z0-9]/g, '_');
       const filename =
         reportPeriod === 'SHIFT_WISE'
-          ? `${safeComp}_${selectedShiftCode}_${shiftPhase}_${reportDate}.csv`
+          ? `${safeComp}_${selectedShiftCode}_${shiftPhase}_${activeReportDate}.csv`
           : reportPeriod === 'WEEKLY'
-          ? `${safeComp}_Weekly_Attendance_${reportDate}.csv`
+          ? `${safeComp}_Weekly_Attendance_${activeReportDate}.csv`
           : reportPeriod === 'MONTHLY'
-          ? `${safeComp}_Monthly_Attendance_${reportDate}.csv`
+          ? `${safeComp}_Monthly_Attendance_${activeReportDate}.csv`
           : dailySlot === 'MORNING_CHECKIN'
-          ? `${safeComp}_Morning_CheckIn_${reportDate}.csv`
-          : `${safeComp}_Daily_Attendance_${reportDate}.csv`;
+          ? `${safeComp}_Morning_CheckIn_${activeReportDate}.csv`
+          : `${safeComp}_Daily_Attendance_${activeReportDate}.csv`;
       attendanceReportExportService.downloadFile(csvStr, filename, 'text/csv;charset=utf-8;');
       showToast(`✓ Downloaded ${filename}`, 'success');
     } catch (err: any) {
@@ -1092,8 +1144,8 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
 
       const delivery = await attendanceMisDeliveryService.deliverUnifiedMisReport({
         rows: targetRows,
-        punches,
-        reportDate,
+        punches: effectivePunches,
+        reportDate: activeReportDate,
         reportType: activeFmt,
         companyName,
         organizationId: effectiveOrgId,
@@ -1251,12 +1303,12 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
 
     try {
       const scopedRows = shiftReportScheduleService.filterRowsForShiftAndDepartment(
-        allRows,
+        effectiveAllRows,
         rule.shiftCode,
         rule.departmentFilter
       );
       if (scopedRows.length === 0) {
-        showToast(`No employees assigned to ${rule.shiftCode} on ${reportDate}.`, 'error');
+        showToast(`No employees assigned to ${rule.shiftCode} on ${activeReportDate}.`, 'error');
         return;
       }
 
@@ -1266,7 +1318,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
         : (recipients.length > 0 ? recipients : (fallbackHrEmail ? [fallbackHrEmail] : []));
 
       const summary = shiftReportScheduleService.buildShiftDepartmentStructuredSummary(
-        allRows,
+        effectiveAllRows,
         rule.shiftCode,
         phase,
         rule.departmentFilter,
@@ -1274,7 +1326,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
       );
       const customShiftSubject = shiftReportScheduleService.formatShiftEmailSubject({
         companyName,
-        reportDate,
+        reportDate: activeReportDate,
         shiftCode: rule.shiftCode,
         shiftName: rule.shiftName,
         phase,
@@ -1283,7 +1335,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
       });
       const customShiftNote = shiftReportScheduleService.formatShiftExecutiveNote({
         summary,
-        reportDate,
+        reportDate: activeReportDate,
         companyName,
         dispatchTimeLabel: dispatchTime,
       });
@@ -1294,8 +1346,8 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
 
       const delivery = await attendanceMisDeliveryService.deliverUnifiedMisReport({
         rows: scopedRows,
-        punches,
-        reportDate,
+        punches: effectivePunches,
+        reportDate: activeReportDate,
         reportType: phase === 'CHECK_IN' ? 'MORNING_CHECKIN' : 'EVENING_FINAL',
         companyName,
         organizationId: effectiveOrgId,
@@ -1344,9 +1396,9 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
               <p className="text-xs text-emerald-100/90 mt-1 flex items-center gap-2">
                 <span className="font-semibold text-white/95">{companyName}</span>
                 <span>&bull;</span>
-                <span>Date: <strong className="text-white">{reportDate}</strong></span>
+                <span>Date: <strong className="text-white">{activeReportDate}</strong></span>
                 <span>&bull;</span>
-                <span>{totalHeadcount} Total Employees</span>
+                <span>{effectiveAllRows.length} Total Employees</span>
               </p>
             </div>
           </div>
@@ -1430,9 +1482,33 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
             </button>
           </div>
 
-          <div className="hidden lg:flex items-center gap-2 text-[11px] text-gray-500 font-semibold bg-white px-3 py-1.5 rounded-lg border border-gray-200/80 shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-            <span className="text-gray-700">Realtime Punch Sync Active</span>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Interactive Report Date Picker (works for any past or present date) */}
+            <div className="flex items-center gap-2 bg-white border border-emerald-200/90 rounded-lg px-2.5 py-1.5 shadow-2xs">
+              <Calendar className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+              <span className="text-[11px] font-bold text-gray-600">Date:</span>
+              <input
+                type="date"
+                value={activeReportDate}
+                onChange={(e) => {
+                  const newDate = e.target.value;
+                  if (newDate) {
+                    setActiveReportDate(newDate);
+                    setSubject(getSubjectForFormat(reportPeriod, dailySlot, selectedShiftCode, shiftPhase, selectedDepartmentFilter));
+                  }
+                }}
+                aria-label="Select Report Date"
+                className="text-xs font-extrabold text-emerald-950 bg-transparent focus:outline-none cursor-pointer"
+              />
+              {isLoadingDateData && (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 shrink-0" />
+              )}
+            </div>
+
+            <div className="hidden lg:flex items-center gap-2 text-[11px] text-gray-500 font-semibold bg-white px-3 py-1.5 rounded-lg border border-gray-200/80 shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+              <span className="text-gray-700">Realtime Punch Sync Active</span>
+            </div>
           </div>
         </div>
 
