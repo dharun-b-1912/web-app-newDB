@@ -39,7 +39,7 @@ import { AttendanceDaily, PunchSource } from '../../../types/attendance';
 import { attendanceApi } from '../../../services/attendanceApi';
 import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
-import { formatMinutesToHoursStr, formatCleanTime, timeStringToMinutes, processAttendanceStatus, DEFAULT_ATTENDANCE_POLICY, formatDeviationDuration } from '../../../lib/attendance/attendanceEngine';
+import { formatMinutesToHoursStr, formatCleanTime, timeStringToMinutes, processAttendanceStatus, DEFAULT_ATTENDANCE_POLICY, formatDeviationDuration, getShiftScheduledBreakMinutes } from '../../../lib/attendance/attendanceEngine';
 import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
 import { smartShiftResolutionService, DEFAULT_SHIFTS, ELECTRA_EV_SHIFTS } from '../../../services/attendance/smartShiftResolutionService';
 import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
@@ -814,6 +814,11 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         resolvedRecord?.status === 'On Leave'
       );
       const isWfh = resolvedRecord?.status === 'WFH';
+      const scheduledBreakMins = getShiftScheduledBreakMinutes(
+        shift.shift_code || (shift as any).code,
+        Boolean((shift as any).is_overnight || shift.cross_midnight),
+        emp.organization_id || activeComp?.organization_id || activeComp?.id
+      );
       const calc = processAttendanceStatus(
         inMins,
         outMins,
@@ -823,7 +828,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         isLeave,
         isWfh,
         isHolidayDate,
-        selectedDate
+        selectedDate,
+        undefined,
+        scheduledBreakMins
       );
 
       const isShiftEnded = checkIsShiftEnded(shift.start_time, shift.end_time, isShiftCrossMidnight, selectedDate);
@@ -849,7 +856,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           (resolvedRecord?.status as any) === 'ON_LEAVE' ||
           (resolvedRecord?.status as any) === 'LEAVE'
         ) {
-          effectiveStatus = (calc.netMinutes >= 240 || (calc.grossMinutes || 0) >= 240) ? 'Present' : 'Half Day';
+          effectiveStatus = (calc.netMinutes >= (scheduledBreakMins === 0 ? 210 : 240) || (calc.grossMinutes || 0) >= (scheduledBreakMins === 0 ? 210 : 240)) ? 'Present' : 'Half Day';
         } else {
           effectiveStatus = calc.status;
         }
@@ -900,7 +907,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         last_check_out: lastOut,
         gross_working_minutes: liveGrossMins,
         net_working_minutes: liveNetMins,
-        total_break_minutes: resolvedRecord?.total_break_minutes || 0,
+        total_break_minutes: calc.breakMinutes ?? (resolvedRecord?.total_break_minutes || 0),
         late_minutes: calc.lateMinutes,
         early_checkout_minutes: lastOut ? calc.earlyMinutes : 0,
         early_arrival_minutes: calc.earlyArrivalMinutes || 0,

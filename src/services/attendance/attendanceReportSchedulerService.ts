@@ -22,6 +22,7 @@ import {
   timeStringToMinutes,
   processAttendanceStatus,
   DEFAULT_ATTENDANCE_POLICY,
+  getShiftScheduledBreakMinutes,
 } from '../../lib/attendance/attendanceEngine';
 import { AttendanceDaily, PunchSource } from '../../types/attendance';
 
@@ -903,7 +904,12 @@ class AttendanceReportSchedulerService {
           const outMins = timeStringToMinutes(lastOut);
           const expIn = timeStringToMinutes(effectiveShift.start_time) || 540;
           const expOut = timeStringToMinutes(effectiveShift.end_time) || 1080;
-          const calc = processAttendanceStatus(inMins, outMins, expIn, expOut, DEFAULT_ATTENDANCE_POLICY, false, false, false, dateStr);
+          const scheduledBreakMins = getShiftScheduledBreakMinutes(
+            effectiveShift.shift_code || (effectiveShift as any).code,
+            Boolean((effectiveShift as any).is_overnight || effectiveShift.cross_midnight),
+            targetOrg
+          );
+          const calc = processAttendanceStatus(inMins, outMins, expIn, expOut, DEFAULT_ATTENDANCE_POLICY, false, false, false, dateStr, undefined, scheduledBreakMins);
 
           const liveGrossMins = lastOut
             ? calc.grossMinutes

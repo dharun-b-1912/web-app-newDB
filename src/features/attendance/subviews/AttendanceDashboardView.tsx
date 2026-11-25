@@ -414,7 +414,17 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
           present++;
           if (isLate) late++;
           if (isEarlyOut) earlyOut++;
-          if (record.status === 'Half Day') halfDay++;
+          const isNight = String(record.shift_name || '').toUpperCase().includes('SHIFT 3') ||
+            String(record.shift_name || '').toUpperCase().includes('SHIFT-3');
+          const halfDayCutoff = isNight ? 210 : 240;
+          const isActuallyHalfDay = Boolean(
+            record.last_check_out &&
+            record.net_working_minutes > 0 &&
+            record.net_working_minutes < halfDayCutoff
+          );
+          if (isActuallyHalfDay || ((record.status === 'Half Day' || (record.status as string) === 'HALF_DAY') && (!record.net_working_minutes || record.net_working_minutes < halfDayCutoff))) {
+            halfDay++;
+          }
           if (isMissing) missingPunch++;
           if ((record.overtime_minutes || 0) > 0 || record.status === 'Overtime') overtime++;
         } else if (record.status === 'On Leave') {
@@ -1263,20 +1273,32 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
                   {formatMinutesToHoursStr(r.net_working_minutes)}
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    variant={
-                      r.status === 'Present' || r.status === 'Checked Out'
-                        ? 'emerald'
-                        : r.status === 'Late' || r.status === 'Early Checkout'
-                        ? 'amber'
-                        : r.status === 'Absent' || r.status === 'Missing Punch'
-                        ? 'rose'
-                        : 'gray'
-                    }
-                    size="sm"
-                  >
-                    {r.status}
-                  </Badge>
+                  {(() => {
+                    const isNight = String(r.shift_name || '').toUpperCase().includes('SHIFT 3') ||
+                      String(r.shift_name || '').toUpperCase().includes('SHIFT-3');
+                    const halfCutoff = isNight ? 210 : 240;
+                    const displayStatus =
+                      (r.status === 'Half Day' || (r.status as string) === 'HALF_DAY') &&
+                      r.net_working_minutes >= halfCutoff
+                        ? 'Present'
+                        : r.status;
+                    return (
+                      <Badge
+                        variant={
+                          displayStatus === 'Present' || displayStatus === 'Checked Out'
+                            ? 'emerald'
+                            : displayStatus === 'Late' || displayStatus === 'Early Checkout'
+                            ? 'amber'
+                            : displayStatus === 'Absent' || displayStatus === 'Missing Punch'
+                            ? 'rose'
+                            : 'gray'
+                        }
+                        size="sm"
+                      >
+                        {displayStatus}
+                      </Badge>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-semibold border border-gray-200">

@@ -895,7 +895,9 @@ export const attendanceApi = {
           } else if (dbStatusUpper === 'MISSING_PUNCH' || calc.status === 'Missing Punch') {
             resolvedStatus = 'Missing Punch';
           } else if (dbStatusUpper === 'HALF_DAY' || calc.status === 'Half Day') {
-            resolvedStatus = 'Half Day';
+            resolvedStatus = (hasAnyPunch && rawLastOut && calc.status !== 'Half Day' && netMins >= 210)
+              ? (calc.status || 'Present')
+              : 'Half Day';
           } else if (dbStatusUpper === 'PRESENT' || rawFirstIn) {
             resolvedStatus = (calc.status === 'Absent' && dbStatusUpper === 'PRESENT') ? 'Present' : (calc.status || 'Present');
           } else if (dbStatusUpper === 'ABSENT' || calc.status === 'Absent') {
