@@ -498,28 +498,18 @@ serve(async (req: Request) => {
             }]);
             */
 
-            // Dispatch push notification
-            await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+            // Flush outbox via authoritative notification-dispatcher
+            fetch(`${supabaseUrl}/functions/v1/notification-dispatcher`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${supabaseServiceKey}`,
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                employee_id: managerId,
-                title,
-                body,
-                route: 'attendance',
-                data: {
-                  route: 'attendance',
-                  eventType: isOut ? 'attendance.check_out.accepted' : 'attendance.check_in.accepted',
-                  employeeId: emp.id,
-                  employeeName: empName,
-                  source: 'BIOMETRIC',
-                  timestamp: String(Date.now()),
-                },
+                organization_id: organizationId,
+                limit: 10,
               }),
-            });
+            }).catch((e: any) => console.warn('[biometric-punch-ingestion] Dispatcher async notice:', e?.message || e));
           }
         }
       } catch (errNotif) {

@@ -26,6 +26,7 @@ import { PayrollInputsView } from './subviews/PayrollInputsView';
 import { AuditControlView } from './subviews/AuditControlView';
 import { AdaptiveShiftManagementView } from './subviews/AdaptiveShiftManagementView';
 import { PermissionGovernanceView } from './subviews/PermissionGovernanceView';
+import { MobilePunchPolicyView } from './subviews/MobilePunchPolicyView';
 import { EmployeeAttendanceProfileDrawer } from './components/EmployeeAttendanceProfileDrawer';
 
 const WorkOvertimeMasterModule = lazy(() => import('../work/WorkOvertimeMasterModule').then(m => ({ default: m.WorkOvertimeMasterModule })));
@@ -217,6 +218,18 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       subPath === '/rules-engine'
     ) {
       return 'attendance-rules';
+    }
+    if (
+      subPath === 'mobile-punch-policy' ||
+      subPath === '/mobile-punch-policy' ||
+      subPath === 'punch-policy' ||
+      subPath === '/punch-policy' ||
+      subPath === 'biometric/punch-policy' ||
+      subPath === '/biometric/punch-policy' ||
+      subPath === 'attendance-mode' ||
+      subPath === '/attendance-mode'
+    ) {
+      return 'mobile-punch-policy';
     }
     if (
       subPath === 'biometric' ||
@@ -660,6 +673,15 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       case 'biometric-rules':
       case 'rules-engine':
         return <AttendanceRulesView onNavigateSubPath={sub => handleSelectTab(sub)} />;
+      case 'mobile-punch-policy':
+      case 'punch-policy':
+      case 'attendance-mode':
+        return (
+          <MobilePunchPolicyView
+            onBack={() => handleSelectTab('gps')}
+            onNavigateSubPath={sub => handleSelectTab(sub)}
+          />
+        );
       case 'biometric':
       case 'biometric-devices':
       case 'device-enrollment':

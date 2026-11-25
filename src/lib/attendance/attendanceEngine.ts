@@ -119,7 +119,10 @@ export function processAttendanceStatus(
     };
   }
 
-  if (isLeave) {
+  // Case: Leave
+  // If isLeave is set, but employee actually punched in (checkInMinutes !== null || checkOutMinutes !== null),
+  // physical punches take absolute precedence over uncancelled or stale leave records!
+  if (isLeave && checkInMinutes === null && checkOutMinutes === null) {
     return {
       status: 'On Leave',
       grossMinutes: 0,

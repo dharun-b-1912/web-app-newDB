@@ -108,6 +108,7 @@ export const APP_ROUTES = {
   devices: {
     biometric: '/biometric',
     rules: '/biometric/rules',
+    mobilePunchPolicy: '/biometric/punch-policy',
     gps: '/biometric/gps',
     face: '/biometric/face',
     geofences: '/biometric/geofences',
@@ -338,6 +339,7 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
   { id: 'terminal-ledger', label: 'Terminal Event Ledger', canonicalPath: '/biometric/terminal-ledger', section: 'CLOCKING & DEVICES', aliases: ['/terminal-ledger', '/terminal-logs', '/biometric-ledger', '/biometric/ledger', '/biometric/terminal-logs', '/device-logs', '/raw-logs'] },
   { id: 'enrolment', label: 'Biometric Enrolment Directory', canonicalPath: '/biometric/enrolment', section: 'CLOCKING & DEVICES', aliases: ['/enrolment', '/enrollment', '/enrolment-directory', '/biometric-enrolment', '/biometric/enrollment', '/biometric/enrolment-directory'] },
   { id: 'attendance-rules', label: 'Biometric Rules & Automation', canonicalPath: '/biometric/rules', section: 'CLOCKING & DEVICES', aliases: ['/attendance-rules', '/biometric-rules', '/rules-engine'] },
+  { id: 'mobile-punch-policy', label: 'Mobile Punch Controls', canonicalPath: '/biometric/punch-policy', section: 'CLOCKING & DEVICES', aliases: ['/mobile-punch-policy', '/punch-policy', '/attendance-mode', '/mobile-policy'] },
   { id: 'gps', label: 'GPS & Mobile Channel', canonicalPath: '/biometric/gps', section: 'CLOCKING & DEVICES', aliases: ['/gps', '/gps-attendance'] },
   { id: 'gps-travel-fare', label: 'Field Travel & KM Fare Config', canonicalPath: '/gps-travel-fare', section: 'CLOCKING & DEVICES', aliases: ['/gps-travel-fare', '/travel-fare', '/km-fare', '/fare-config'] },
   { id: 'face-attendance', label: 'Face Recognition', canonicalPath: '/biometric/face', section: 'CLOCKING & DEVICES', aliases: ['/face-attendance', '/face-recognition'] },

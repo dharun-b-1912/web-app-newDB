@@ -803,7 +803,16 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       const expOut = timeStringToMinutes(shift.end_time) || 1080;
       const isShiftCrossMidnight = Boolean(shift.cross_midnight || expOut < expIn);
 
-      const isLeave = (resolvedRecord?.status as any) === 'ON_LEAVE' || (resolvedRecord?.status as any) === 'HALF_DAY' || resolvedRecord?.status === 'On Leave' || resolvedRecord?.status === 'Half Day';
+      const hasBothPunches = Boolean(firstIn && lastOut);
+      const hasAnyPunch = Boolean(firstIn || lastOut);
+
+      // Physical biometric punches take absolute precedence over leave records:
+      // If an employee clocked in or out, they physically attended work.
+      const isLeave = !hasAnyPunch && Boolean(
+        (resolvedRecord?.status as any) === 'ON_LEAVE' ||
+        (resolvedRecord?.status as any) === 'LEAVE' ||
+        resolvedRecord?.status === 'On Leave'
+      );
       const isWfh = resolvedRecord?.status === 'WFH';
       const calc = processAttendanceStatus(
         inMins,
@@ -818,7 +827,6 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       );
 
       const isShiftEnded = checkIsShiftEnded(shift.start_time, shift.end_time, isShiftCrossMidnight, selectedDate);
-      const hasBothPunches = Boolean(firstIn && lastOut);
       const isMissingPunch = Boolean(
         !hasBothPunches && (
           calc.status === 'Missing Punch' ||
@@ -833,7 +841,14 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       let effectiveStatus = calc.status;
       if (hasBothPunches) {
         // When both check-in and check-out are present, status is authoritative Present (or Half Day / Late)
-        if (calc.status === 'Missing Punch' || resolvedRecord?.status === 'Missing Punch') {
+        if (
+          calc.status === 'Missing Punch' ||
+          resolvedRecord?.status === 'Missing Punch' ||
+          calc.status === 'On Leave' ||
+          resolvedRecord?.status === 'On Leave' ||
+          (resolvedRecord?.status as any) === 'ON_LEAVE' ||
+          (resolvedRecord?.status as any) === 'LEAVE'
+        ) {
           effectiveStatus = (calc.netMinutes >= 240 || (calc.grossMinutes || 0) >= 240) ? 'Present' : 'Half Day';
         } else {
           effectiveStatus = calc.status;
@@ -846,6 +861,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         effectiveStatus = 'Holiday';
       } else if (isOff && !firstIn && !lastOut) {
         effectiveStatus = 'Weekly Off';
+      } else if (isLeave) {
+        effectiveStatus = 'On Leave';
       }
 
       const outSrc = checkOutSrc || (lastOut ? (inSrc || 'MOBILE') : undefined);
@@ -1068,7 +1085,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   const lateCount = safeFilteredData.filter(d => ((d?.record?.late_minutes || 0) > 0 || d?.record?.status === 'Late') && !isRowWorking(d)).length;
   const halfDayCount = safeFilteredData.filter(d => d?.record?.status === 'Half Day').length;
   const absentCount = safeFilteredData.filter(d => d?.record?.status === 'Absent').length;
-  const onLeaveCount = safeFilteredData.filter(d => d?.record?.status === 'On Leave').length;
+  const onLeaveCount = safeFilteredData.filter(
+    d => (d?.record?.status === 'On Leave' || (d?.record?.status as any) === 'ON_LEAVE') &&
+         !d?.record?.first_check_in &&
+         !d?.record?.last_check_out &&
+         !isRowWorking(d)
+  ).length;
   const holidayCount = safeFilteredData.filter(
     d => d?.record?.status === 'Holiday' || (d?.record?.status as any) === 'HOLIDAY' || (isHolidayDate && !d?.record?.first_check_in)
   ).length;

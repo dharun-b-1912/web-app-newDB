@@ -36,6 +36,7 @@ import {
   Car,
 } from 'lucide-react';
 import { FieldTravelKmFareTab } from './FieldTravelKmFareTab';
+import { MobilePunchPolicyView } from './MobilePunchPolicyView';
 import { cn } from '../../../lib/utils';
 import { useToast } from '../../../components/ui/Toast';
 import { useTenant } from '../../../hooks/useTenant';
@@ -1333,32 +1334,36 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
 
       {/* 5. MOBILE POLICY TAB */}
       {activeSubTab === 'mobile' && (
-        <div className="p-5 bg-white border border-gray-200/80 rounded-2xl shadow-2xs text-xs space-y-4">
-          <h3 className="text-sm font-bold text-gray-900">Mobile Attendance Security & Fraud Rules</h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 border border-gray-200 rounded-xl space-y-2 bg-gray-50/50">
-              <h4 className="font-bold text-gray-900 flex items-center gap-1.5">
-                <Lock className="w-4 h-4 text-emerald-600" /> Anti-Spoof Detection
-              </h4>
-              <p className="text-gray-500 text-[11px]">Strictly rejects developer option fake GPS apps and jailbroken iOS mock coordinates.</p>
-              <Badge variant="emerald">ENFORCED (BLOCK CLOCK-IN)</Badge>
-            </div>
+        <div className="space-y-6">
+          <MobilePunchPolicyView onNavigateSubPath={onNavigateSubPath} />
 
-            <div className="p-4 border border-gray-200 rounded-xl space-y-2 bg-gray-50/50">
-              <h4 className="font-bold text-gray-900 flex items-center gap-1.5">
-                <Compass className="w-4 h-4 text-blue-600" /> GPS Freshness Gate
-              </h4>
-              <p className="text-gray-500 text-[11px]">Rejects cached or old GPS fixes older than 60 seconds.</p>
-              <Badge variant="blue">MAX AGE: 60 SECONDS</Badge>
-            </div>
+          <div className="p-5 bg-white border border-gray-200/80 rounded-2xl shadow-2xs text-xs space-y-4">
+            <h3 className="text-sm font-bold text-gray-900">Mobile Attendance Security & Fraud Rules</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 border border-gray-200 rounded-xl space-y-2 bg-gray-50/50">
+                <h4 className="font-bold text-gray-900 flex items-center gap-1.5">
+                  <Lock className="w-4 h-4 text-emerald-600" /> Anti-Spoof Detection
+                </h4>
+                <p className="text-gray-500 text-[11px]">Strictly rejects developer option fake GPS apps and jailbroken iOS mock coordinates.</p>
+                <Badge variant="emerald">ENFORCED (BLOCK CLOCK-IN)</Badge>
+              </div>
 
-            <div className="p-4 border border-gray-200 rounded-xl space-y-2 bg-gray-50/50">
-              <h4 className="font-bold text-gray-900 flex items-center gap-1.5">
-                <Radio className="w-4 h-4 text-purple-600" /> Idempotent Ingestion
-              </h4>
-              <p className="text-gray-500 text-[11px]">Unique attempt keys protect against network retry duplicate punches.</p>
-              <Badge variant="purple">ENABLED (SHA-256)</Badge>
+              <div className="p-4 border border-gray-200 rounded-xl space-y-2 bg-gray-50/50">
+                <h4 className="font-bold text-gray-900 flex items-center gap-1.5">
+                  <Compass className="w-4 h-4 text-blue-600" /> GPS Freshness Gate
+                </h4>
+                <p className="text-gray-500 text-[11px]">Rejects cached or old GPS fixes older than 60 seconds.</p>
+                <Badge variant="blue">MAX AGE: 60 SECONDS</Badge>
+              </div>
+
+              <div className="p-4 border border-gray-200 rounded-xl space-y-2 bg-gray-50/50">
+                <h4 className="font-bold text-gray-900 flex items-center gap-1.5">
+                  <Radio className="w-4 h-4 text-purple-600" /> Idempotent Ingestion
+                </h4>
+                <p className="text-gray-500 text-[11px]">Unique attempt keys protect against network retry duplicate punches.</p>
+                <Badge variant="purple">ENABLED (SHA-256)</Badge>
+              </div>
             </div>
           </div>
         </div>

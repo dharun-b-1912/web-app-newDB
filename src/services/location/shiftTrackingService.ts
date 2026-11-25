@@ -219,14 +219,6 @@ class ShiftTrackingService {
           ? new Date(pingTime).toDateString() === now.toDateString()
           : false;
 
-        // Check if employee is on approved or pending leave today
-        const leaveStatus = (leaveRecord?.status || '').toString().toUpperCase();
-        const dailyStatus = (dailyRecord?.status || '').toString().toUpperCase();
-        const isOnLeave = Boolean(
-          (leaveRecord && (leaveStatus === 'APPROVED' || leaveStatus === 'PENDING')) ||
-          (dailyRecord && (dailyStatus === 'ON_LEAVE' || dailyStatus === 'LEAVE'))
-        );
-
         // Check if employee has clocked out today
         const isClockedOutToday = Boolean(
           (dailyRecord && dailyRecord.last_check_out) ||
@@ -237,6 +229,14 @@ class ShiftTrackingService {
         const hasDailyCheckInToday = Boolean(
           (dailyRecord && (dailyRecord.first_check_in || dailyRecord.status === 'PRESENT')) ||
           (isPunchToday && latestPunch && !String(latestPunch.punch_type || '').toUpperCase().includes('OUT'))
+        );
+
+        // Check if employee is on approved or pending leave today (only if no punches logged today)
+        const leaveStatus = (leaveRecord?.status || '').toString().toUpperCase();
+        const dailyStatus = (dailyRecord?.status || '').toString().toUpperCase();
+        const isOnLeave = !hasDailyCheckInToday && !isClockedOutToday && Boolean(
+          (leaveRecord && (leaveStatus === 'APPROVED' || leaveStatus === 'PENDING')) ||
+          (dailyRecord && (dailyStatus === 'ON_LEAVE' || dailyStatus === 'LEAVE'))
         );
 
         // Historical fallback coordinates (strictly for profile inspection when offline, never plotted on fleet radar)

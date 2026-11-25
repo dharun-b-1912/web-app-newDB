@@ -62,15 +62,17 @@ export const workforceStatusEngine = {
     );
 
     scopedEmps.forEach((emp) => {
-      const isLeave = leaveEmpIds.has(emp.id.toLowerCase()) || (emp.status || '').toLowerCase() === 'on leave';
+      const rec = attMap.get(emp.id.toLowerCase()) || attMap.get((emp.employee_code || '').toLowerCase());
+      const hasRealPunch = Boolean(rec && (rec.first_check_in || rec.last_check_out));
+
+      const isLeave = !hasRealPunch && (leaveEmpIds.has(emp.id.toLowerCase()) || (emp.status || '').toLowerCase() === 'on leave');
       if (isLeave) {
         onLeaveMatches++;
         return;
       }
 
-      const rec = attMap.get(emp.id.toLowerCase()) || attMap.get((emp.employee_code || '').toLowerCase());
       if (rec) {
-        if (rec.status === 'On Leave') {
+        if (rec.status === 'On Leave' && !hasRealPunch) {
           onLeaveMatches++;
         } else if (rec.status === 'WFH') {
           wfhCount++;

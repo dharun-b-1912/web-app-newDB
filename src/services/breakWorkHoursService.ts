@@ -502,7 +502,7 @@ class BreakWorkHoursService {
 
       const activeBreak = empBreaks.find((b) => b.status === 'ACTIVE' && !b.ended_at);
       let workState: DailyBreakLedgerRow['work_state'] = 'NOT_CHECKED_IN';
-      if (dbStatus === 'ON_LEAVE' || dbStatus === 'LEAVE') {
+      if ((dbStatus === 'ON_LEAVE' || dbStatus === 'LEAVE') && !checkInAt && !checkOutAt) {
         workState = 'ON_LEAVE';
       } else if (checkInAt && !checkOutAt) {
         workState = activeBreak ? 'ON_BREAK' : 'WORKING';

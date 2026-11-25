@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -40,7 +40,9 @@ import { AttendanceNotificationDiagnosticModal } from '../components/AttendanceN
 import { workLocationService } from '../../../services/location/workLocationService';
 import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
-import { formatMinutesToHoursStr, formatCleanTime } from '../../../lib/attendance/attendanceEngine';
+import { formatMinutesToHoursStr, formatCleanTime, timeStringToMinutes } from '../../../lib/attendance/attendanceEngine';
+import { smartShiftResolutionService, DEFAULT_SHIFTS, ELECTRA_EV_SHIFTS } from '../../../services/attendance/smartShiftResolutionService';
+import { biometricGatewayService } from '../../../services/attendance/biometricGatewayService';
 import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
 import { hrEventBus } from '../../../services/hrEventBus';
@@ -86,6 +88,10 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
   const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState(false);
   const [shifts, setShifts] = useState<any[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString());
+  const [selectedChannel, setSelectedChannel] = useState<'ALL' | 'BIOMETRIC' | 'FACE' | 'MOBILE' | 'WEB'>('ALL');
+
+  const isLoadingRef = useRef<boolean>(false);
+  const debounceTimerRef = useRef<any>(null);
 
   // Current logged in user clocking state
   const currentEmpId = user?.employee_id || user?.id || 'WF-1001';
@@ -131,45 +137,64 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
   };
 
   const loadData = useCallback(() => {
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
+
     const activeComp = api.getActiveCompany();
-    api.getEmployees(activeComp?.id).then(emps => {
-      const accessible = filterAccessibleEmployees ? filterAccessibleEmployees(emps) : (emps || []);
-      setEmployees(accessible || []);
+    const effectiveTenantId = activeComp?.organization_id || activeComp?.id || 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
 
-      const realVendors = Array.from(
-        new Set(
-          (accessible || [])
-            .map(e => e.vendor_name?.trim())
-            .filter(v => v && v.toLowerCase() !== 'direct payroll' && !v.toLowerCase().includes('joy corporate'))
-        )
-      ) as string[];
+    Promise.allSettled([
+      api.getEmployees(activeComp?.id),
+      api.getDepartments(activeComp?.id),
+      attendanceRosterService.fetchShiftsFromDb(effectiveTenantId),
+      attendanceApi.getDailyAttendanceAsync(selectedDate, deptFilter, undefined, searchQuery, effectiveTenantId),
+      biometricGatewayService.syncPunchesFromSupabase(1000, effectiveTenantId),
+    ]).then(([empRes, deptRes, shiftRes, dailyRes]) => {
+      if (empRes.status === 'fulfilled' && empRes.value) {
+        const accessible = filterAccessibleEmployees ? filterAccessibleEmployees(empRes.value) : (empRes.value || []);
+        setEmployees(accessible || []);
 
-      setVendors(['Direct Payroll', ...realVendors]);
-    }).catch(() => {});
+        const realVendors = Array.from(
+          new Set(
+            (accessible || [])
+              .map(e => e.vendor_name?.trim())
+              .filter(v => v && v.toLowerCase() !== 'direct payroll' && !v.toLowerCase().includes('joy corporate'))
+          )
+        ) as string[];
 
-    api.getDepartments(activeComp?.id).then(depts => {
-      if (depts && depts.length > 0) {
-        setDepartments(depts.map(d => d.name));
+        setVendors(['Direct Payroll', ...realVendors]);
       }
-    }).catch(() => {});
 
-    const loadedShifts = attendanceRosterService.getShifts();
-    setShifts(loadedShifts);
+      if (deptRes.status === 'fulfilled' && deptRes.value && deptRes.value.length > 0) {
+        setDepartments(deptRes.value.map(d => d.name));
+      }
 
-    const records = attendanceApi.getDailyAttendance(selectedDate, deptFilter, undefined, searchQuery);
-    setDailyRecords(records);
-    setLastSyncTime(new Date().toLocaleTimeString());
+      if (shiftRes.status === 'fulfilled' && shiftRes.value && shiftRes.value.length > 0) {
+        setShifts(shiftRes.value);
+      } else {
+        setShifts(attendanceRosterService.getShifts(effectiveTenantId));
+      }
 
-    // Live query Supabase attendance_daily to catch mobile app punches immediately
-    if (isSupabaseEnabled) {
-      attendanceApi.getDailyAttendanceAsync(selectedDate, deptFilter, undefined, searchQuery).then(freshRecords => {
-        if (freshRecords && freshRecords.length > 0) {
-          setDailyRecords(freshRecords);
-          setLastSyncTime(new Date().toLocaleTimeString());
+      if (dailyRes.status === 'fulfilled' && dailyRes.value && dailyRes.value.length > 0) {
+        setDailyRecords(dailyRes.value);
+      } else {
+        const fallback = attendanceApi.getDailyAttendance(selectedDate, deptFilter, undefined, searchQuery);
+        if (fallback && fallback.length > 0) {
+          setDailyRecords(fallback);
         }
-      }).catch(() => {});
-    }
+      }
+      setLastSyncTime(new Date().toLocaleTimeString());
+    }).catch(() => {}).finally(() => {
+      isLoadingRef.current = false;
+    });
   }, [filterAccessibleEmployees, selectedDate, deptFilter, searchQuery]);
+
+  const triggerDebouncedLoad = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      loadData();
+    }, 1500);
+  }, [loadData]);
 
   useEffect(() => {
     loadData();
@@ -180,35 +205,37 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
     if (!isSupabaseEnabled) return;
     const unsubDaily = realtimeChannelManager.subscribeToTable('attendance_daily', () => {
       attendanceApi.invalidateCache();
-      loadData();
+      triggerDebouncedLoad();
     });
     const unsubPunches = realtimeChannelManager.subscribeToTable('attendance_punches', () => {
       attendanceApi.invalidateCache();
-      loadData();
+      triggerDebouncedLoad();
     });
 
     return () => {
       unsubDaily();
       unsubPunches();
     };
-  }, [selectedDate, loadData]);
+  }, [selectedDate, triggerDebouncedLoad]);
 
   useEffect(() => {
     const unsub = hrEventBus.subscribe('attendance.*', () => {
-      loadData();
+      triggerDebouncedLoad();
     });
     return () => unsub();
-  }, [loadData]);
+  }, [triggerDebouncedLoad]);
 
-  // Continuous auto polling for zero drift live dashboard
+  // Calm auto-polling for zero-drift live dashboard (15 seconds, prevents render flickering and network thrashing)
   useEffect(() => {
     const timer = setInterval(() => {
       loadData();
-    }, 3500);
+    }, 15000);
     return () => clearInterval(timer);
   }, [loadData]);
 
   const refreshData = () => {
+    isLoadingRef.current = false;
+    attendanceApi.invalidateCache();
     loadData();
     showToast('✓ Real-time attendance synced with Biometric LAN Gateway & Web records.');
   };
@@ -259,14 +286,37 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
   // ==========================================================================
   // MATHEMATICALLY CONSISTENT WORKFORCE KPI CALCULATION
   // ==========================================================================
+  const isElectraEv = useMemo(() => {
+    return Boolean(
+      activeCompany?.id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ||
+      activeCompany?.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ||
+      activeCompany?.id === 'c0bbfb28-1500-4ebb-aba8-453b3681f342' ||
+      String(activeCompany?.name || '').toLowerCase().includes('electra')
+    );
+  }, [activeCompany]);
+
+  const activeShiftsList = useMemo(() => {
+    if (isElectraEv) return ELECTRA_EV_SHIFTS;
+    return shifts && shifts.length > 0 ? shifts : DEFAULT_SHIFTS;
+  }, [isElectraEv, shifts]);
+
   const scopedEmployees = useMemo(() => {
+    const activeComp = api.getActiveCompany();
+    const effectiveTenantId = activeComp?.organization_id || activeComp?.id;
+
     return employees.filter(emp => {
+      // Multi-tenant strict isolation check
+      if (effectiveTenantId && emp.organization_id && emp.organization_id !== effectiveTenantId) {
+        if (!isElectraEv || !String(emp.company_name || '').toLowerCase().includes('electra')) {
+          return false;
+        }
+      }
       const matchDept = deptFilter === 'ALL' || (emp.department_name || emp.department || '').toLowerCase() === deptFilter.toLowerCase();
       const matchLoc = locationFilter === 'ALL' || (emp.branch_name || emp.location || '').toLowerCase() === locationFilter.toLowerCase();
       const matchVendor = vendorFilter === 'ALL' || (emp.vendor_name || 'Direct Payroll').toLowerCase() === vendorFilter.toLowerCase();
       return matchDept && matchLoc && matchVendor;
     });
-  }, [employees, deptFilter, locationFilter, vendorFilter]);
+  }, [employees, deptFilter, locationFilter, vendorFilter, activeCompany, isElectraEv]);
 
   const totalHeadcount = scopedEmployees.length;
 
@@ -292,8 +342,53 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
 
       const record = dailyRecords.find(r => 
         (r.employee_id && emp.id && r.employee_id.toLowerCase() === emp.id.toLowerCase()) ||
-        (r.employee_code && emp.employee_code && r.employee_code.toLowerCase() === emp.employee_code.toLowerCase())
+        (r.employee_code && emp.employee_code && r.employee_code.toLowerCase() === emp.employee_code.toLowerCase()) ||
+        (r.employee_code && emp.id && r.employee_code.toLowerCase() === emp.id.toLowerCase())
       );
+
+      const firstIn = record?.first_check_in;
+      const lastOut = record?.last_check_out;
+      const hasPunch = Boolean(firstIn || lastOut);
+
+      // Determine deterministic shift using smartShiftResolutionService for accurate late calculation
+      const shiftDef = attendanceRosterService.getShiftById(roster?.shift_id, emp.organization_id);
+      let isLate = false;
+      let isEarlyOut = false;
+
+      if (firstIn) {
+        const adaptiveRes = smartShiftResolutionService.resolveShiftDeterministic({
+          assignedShift: shiftDef,
+          activeShifts: activeShiftsList,
+          firstPunchTime: firstIn,
+          lastPunchTime: lastOut,
+          mode: 'ADAPTIVE_SHIFT',
+        });
+
+        const shiftStartTime = adaptiveRes?.startTime || shiftDef?.start_time || '09:00';
+        const shiftEndTime = adaptiveRes?.endTime || shiftDef?.end_time || '18:00';
+        const graceEntry = adaptiveRes?.graceEntryMinutes ?? 15;
+        const graceExit = adaptiveRes?.graceExitMinutes ?? 15;
+
+        const inMins = timeStringToMinutes(firstIn);
+        const shiftStartMins = timeStringToMinutes(shiftStartTime);
+        const shiftEndMins = timeStringToMinutes(shiftEndTime);
+
+        if (inMins !== null && shiftStartMins !== null) {
+          if (inMins > shiftStartMins + graceEntry) {
+            isLate = true;
+          }
+        }
+
+        if (lastOut && shiftEndMins !== null) {
+          const outMins = timeStringToMinutes(lastOut);
+          if (outMins !== null && outMins < shiftEndMins - graceExit) {
+            isEarlyOut = true;
+          }
+        }
+      } else if (record) {
+        isLate = (record.late_minutes || 0) > 0 || record.status === 'Late';
+        isEarlyOut = (record.early_checkout_minutes || 0) > 0 || record.status === 'Early Checkout';
+      }
 
       if (record) {
         const now = new Date();
@@ -301,18 +396,19 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
         const isPastDate = selectedDate < todayStr;
         const isMissing = !record.last_check_out && (record.status === 'Missing Punch' || (Boolean(record.first_check_in) && isPastDate));
 
-        if (record.status === 'On Leave') {
+        // Attendance Precedence Rule: Physical biometric or web punches take absolute precedence over leaves
+        if (hasPunch) {
+          present++;
+          if (isLate) late++;
+          if (isEarlyOut) earlyOut++;
+          if (record.status === 'Half Day') halfDay++;
+          if (isMissing) missingPunch++;
+          if ((record.overtime_minutes || 0) > 0 || record.status === 'Overtime') overtime++;
+        } else if (record.status === 'On Leave') {
           onLeave++;
         } else if (record.status === 'WFH') {
           wfh++;
           present++;
-        } else if (record.status === 'Present' || record.status === 'Checked Out' || record.first_check_in) {
-          present++;
-          if (record.late_minutes > 0 || record.status === 'Late') late++;
-          if (record.early_checkout_minutes > 0 || record.status === 'Early Checkout') earlyOut++;
-          if (record.status === 'Half Day') halfDay++;
-          if (isMissing) missingPunch++;
-          if (record.overtime_minutes > 0 || record.status === 'Overtime') overtime++;
         } else if (record.status === 'Absent') {
           absent++;
         } else {
@@ -341,7 +437,46 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
       attendancePct,
       absentPct,
     };
-  }, [scopedEmployees, dailyRecords, selectedDate]);
+  }, [scopedEmployees, dailyRecords, selectedDate, activeShiftsList]);
+
+  const channelCounts = useMemo(() => {
+    let bioCount = 0;
+    let faceCount = 0;
+    let mobileCount = 0;
+    let webCount = 0;
+
+    for (const r of dailyRecords) {
+      const src = (r.source || '').toUpperCase();
+      if (src === 'BIOMETRIC' || src === 'HARDWARE_TERMINAL') {
+        bioCount++;
+      } else if (src.includes('FACE')) {
+        faceCount++;
+      } else if (src === 'MOBILE' || src === 'MOBILE_GPS' || src === 'MOBILE_GPS_FACE') {
+        mobileCount++;
+      } else if (src === 'WEB' || src === 'MANUAL' || src === 'SYSTEM') {
+        webCount++;
+      }
+    }
+
+    return { bioCount, faceCount, mobileCount, webCount };
+  }, [dailyRecords]);
+
+  const displayedRecords = useMemo(() => {
+    let filtered = dailyRecords;
+    if (selectedChannel === 'BIOMETRIC') {
+      filtered = filtered.filter(r => (r.source || '').toUpperCase() === 'BIOMETRIC' || (r.source || '').toUpperCase() === 'HARDWARE_TERMINAL');
+    } else if (selectedChannel === 'FACE') {
+      filtered = filtered.filter(r => (r.source || '').toUpperCase().includes('FACE'));
+    } else if (selectedChannel === 'MOBILE') {
+      filtered = filtered.filter(r => (r.source || '').toUpperCase().includes('MOBILE'));
+    } else if (selectedChannel === 'WEB') {
+      filtered = filtered.filter(r => {
+        const s = (r.source || '').toUpperCase();
+        return s === 'WEB' || s === 'MANUAL' || s === 'SYSTEM';
+      });
+    }
+    return filtered;
+  }, [dailyRecords, selectedChannel]);
 
   // ==========================================================================
   // CENTRALIZED TILE DEFINITION MODEL & SEMANTIC ROUTING MAP
@@ -748,76 +883,122 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
       </Card>
 
       {/* 3. UNIFIED CLOCKING CHANNELS & TELEMETRY ALERT STRIP */}
-      <div className="p-3 bg-white border border-gray-200/90 rounded-xl shadow-xs space-y-2.5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Clocking Channels:</span>
-            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+      <div className="bg-white border border-gray-200/90 rounded-2xl shadow-xs p-3.5 space-y-3">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+          {/* Left: Clocking Channels Filter Bar */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-gray-500 uppercase tracking-wider pr-1">
+              <Activity className="w-3.5 h-3.5 text-[#07563D]" />
+              <span>Clocking Channels:</span>
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 flex-wrap">
               <button
                 onClick={() => {
-                  if (onFilterChange && filterState) onFilterChange({ ...filterState, searchQuery: '' });
+                  setSelectedChannel('ALL');
                   showToast('Showing all unified clocking channels.');
                 }}
-                className="px-2.5 py-1 bg-[#07563D] text-white font-bold rounded-lg text-xs hover:bg-[#064e37] transition-all"
+                className={cn(
+                  "px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap",
+                  selectedChannel === 'ALL'
+                    ? "bg-[#07563D] text-white shadow-xs"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                )}
               >
-                All Channels ({totalHeadcount})
+                <Layers className="w-3 h-3" />
+                <span>All Channels ({totalHeadcount})</span>
               </button>
-              {(() => {
-                const bioCount = dailyRecords.filter((r) => r.source === 'BIOMETRIC' || (r.source as string) === 'HARDWARE_TERMINAL').length;
-                const faceCount = dailyRecords.filter((r) => r.source?.includes('FACE')).length;
-                const mobileCount = dailyRecords.filter((r) => r.source === 'MOBILE' || (r.source as string) === 'MOBILE_GPS' || (r.source as string) === 'MOBILE_GPS_FACE').length;
-                const webCount = dailyRecords.filter((r) => r.source === 'WEB' || r.source === 'MANUAL' || r.source === 'SYSTEM').length;
 
-                return (
-                  <>
-                    <button
-                      onClick={() => showToast('Filtered by Biometric Device Gateway punches.')}
-                      className="px-2.5 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 font-semibold rounded-lg text-xs border border-purple-200 transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <Cpu className="w-3 h-3" /> Biometric Gateways ({bioCount})
-                    </button>
-                    <button
-                      onClick={() => showToast('Filtered by AI Optical Face Recognition punches.')}
-                      className="px-2.5 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold rounded-lg text-xs border border-emerald-200 transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <ScanFace className="w-3 h-3" /> Face Recognition ({faceCount})
-                    </button>
-                    <button
-                      onClick={() => showToast('Filtered by Mobile GPS Geofence clock-ins.')}
-                      className="px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold rounded-lg text-xs border border-blue-200 transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <MapPin className="w-3 h-3" /> Mobile / GPS ({mobileCount})
-                    </button>
-                    <button
-                      onClick={() => showToast('Filtered by Web Check-In / Manual punches.')}
-                      className="px-2.5 py-1 bg-gray-50 text-gray-700 hover:bg-gray-100 font-semibold rounded-lg text-xs border border-gray-200 transition-all cursor-pointer"
-                    >
-                      Web / Manual ({webCount})
-                    </button>
-                  </>
-                );
-              })()}
+              <button
+                onClick={() => {
+                  setSelectedChannel('BIOMETRIC');
+                  showToast('Filtered by Biometric Device Gateway punches.');
+                }}
+                className={cn(
+                  "px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
+                  selectedChannel === 'BIOMETRIC'
+                    ? "bg-purple-700 text-white border-purple-700 shadow-xs"
+                    : "bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200"
+                )}
+              >
+                <Cpu className="w-3 h-3" />
+                <span>Biometric Gateways ({channelCounts.bioCount})</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setSelectedChannel('FACE');
+                  showToast('Filtered by AI Optical Face Recognition punches.');
+                }}
+                className={cn(
+                  "px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
+                  selectedChannel === 'FACE'
+                    ? "bg-emerald-700 text-white border-emerald-700 shadow-xs"
+                    : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200"
+                )}
+              >
+                <ScanFace className="w-3 h-3" />
+                <span>Face Recognition ({channelCounts.faceCount})</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setSelectedChannel('MOBILE');
+                  showToast('Filtered by Mobile GPS Geofence clock-ins.');
+                }}
+                className={cn(
+                  "px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
+                  selectedChannel === 'MOBILE'
+                    ? "bg-blue-700 text-white border-blue-700 shadow-xs"
+                    : "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
+                )}
+              >
+                <MapPin className="w-3 h-3" />
+                <span>Mobile / GPS ({channelCounts.mobileCount})</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setSelectedChannel('WEB');
+                  showToast('Filtered by Web Check-In / Manual punches.');
+                }}
+                className={cn(
+                  "px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
+                  selectedChannel === 'WEB'
+                    ? "bg-gray-800 text-white border-gray-800 shadow-xs"
+                    : "bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-200"
+                )}
+              >
+                <Laptop className="w-3 h-3" />
+                <span>Web / Manual ({channelCounts.webCount})</span>
+              </button>
             </div>
           </div>
 
+          {/* Right: Hardware Gateway Health & Telemetry Strip */}
           {(() => {
             const gpsViolations = workLocationService.getViolationsCount(undefined, selectedDate);
             const faceMismatches = workLocationService.getFaceMismatchesCount(undefined, selectedDate);
             return (
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+              <div className="flex items-center gap-2 flex-wrap xl:justify-end border-t xl:border-t-0 pt-2.5 xl:pt-0 border-gray-100 text-xs">
                 <span className={cn(
-                  "px-2 py-0.5 font-semibold rounded border",
-                  gpsViolations > 0 ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  "px-2.5 py-1 font-semibold rounded-lg border text-xs flex items-center gap-1.5 whitespace-nowrap",
+                  gpsViolations > 0 ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"
                 )}>
-                  {gpsViolations > 0 ? `⚠ GPS Violations: ${gpsViolations}` : '✓ GPS Violations: 0'}
+                  <span className={cn("w-1.5 h-1.5 rounded-full", gpsViolations > 0 ? "bg-rose-500 animate-ping" : "bg-emerald-500")} />
+                  {gpsViolations > 0 ? `GPS Violations: ${gpsViolations}` : '✓ GPS Violations: 0'}
                 </span>
+
                 <span className={cn(
-                  "px-2 py-0.5 font-semibold rounded border",
-                  faceMismatches > 0 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  "px-2.5 py-1 font-semibold rounded-lg border text-xs flex items-center gap-1.5 whitespace-nowrap",
+                  faceMismatches > 0 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"
                 )}>
-                  {faceMismatches > 0 ? `⚠ Face Mismatches: ${faceMismatches}` : '✓ Face Mismatches: 0'}
+                  <span className={cn("w-1.5 h-1.5 rounded-full", faceMismatches > 0 ? "bg-amber-500" : "bg-emerald-500")} />
+                  {faceMismatches > 0 ? `Face Mismatches: ${faceMismatches}` : '✓ Face Mismatches: 0'}
                 </span>
-                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-semibold rounded border border-emerald-200">
+
+                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 font-semibold rounded-lg border border-emerald-200 text-xs flex items-center gap-1.5 whitespace-nowrap">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   ✓ Devices Online: 4/4
                 </span>
               </div>
@@ -1000,7 +1181,14 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
             </TableRow>
           </TableHeader>
           <TableBody>
-            {dailyRecords.slice(0, 10).map(r => (
+            {displayedRecords.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9} className="text-center py-8 text-gray-400 text-xs font-medium">
+                  No attendance records found for channel: {selectedChannel}
+                </TableCell>
+              </TableRow>
+            ) : (
+              displayedRecords.slice(0, 10).map(r => (
               <TableRow key={r.id} className="hover:bg-gray-50/80">
                 <TableCell>
                   <div className="font-bold text-gray-900 text-xs">{r.employee_name}</div>
@@ -1069,7 +1257,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
                   </Button>
                 </TableCell>
               </TableRow>
-            ))}
+            )))}
           </TableBody>
         </Table>
       </Card>

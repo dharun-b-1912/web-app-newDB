@@ -149,11 +149,26 @@ serve(async (req) => {
     const organizationId = body.organization_id ? String(body.organization_id) : null;
     const limit = Math.min(50, Math.max(1, Number(body.limit || 25)));
 
+    const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+
+    // 1. Auto-expire any stale outbox items older than 4 hours to prevent unexpected notification dumps
+    await supabase
+      .from("notification_outbox")
+      .update({
+        delivery_status: "SKIPPED",
+        error_details: "Auto-expired due to TTL (>4h)",
+        updated_at: new Date().toISOString(),
+      })
+      .in("delivery_status", ["PENDING", "FAILED"])
+      .lt("created_at", fourHoursAgo);
+
+    // 2. Fetch fresh pending items ordered newest first for immediate real-time delivery
     let query = supabase
       .from("notification_outbox")
       .select("*")
       .in("delivery_status", ["PENDING", "FAILED"])
-      .order("created_at", { ascending: true })
+      .gte("created_at", fourHoursAgo)
+      .order("created_at", { ascending: false })
       .limit(limit);
 
     if (organizationId) {
@@ -229,16 +244,46 @@ serve(async (req) => {
         continue;
       }
 
-      // Lookup active FCM tokens for recipient_user_id or employee_id
-      const { data: tokenRows } = await supabase
+      // Lookup active FCM tokens STRICTLY for the intended recipient
+      const recipientUserId = item.recipient_user_id;
+      if (!recipientUserId) {
+        await supabase
+          .from("notification_outbox")
+          .update({
+            delivery_status: "SKIPPED",
+            last_attempt_at: nowIso,
+            error_details: "No recipient_user_id specified",
+            updated_at: nowIso,
+          })
+          .eq("id", item.id);
+        skipped++;
+        continue;
+      }
+
+      // Resolve recipient's employee id (if any) to check both auth_user_id and employee_id of the RECIPIENT
+      let recipientEmployeeId: string | null = null;
+      const { data: recEmp } = await supabase
+        .from("employees")
+        .select("id")
+        .or(`user_id.eq.${recipientUserId},id.eq.${recipientUserId}`)
+        .maybeSingle();
+
+      if (recEmp?.id) {
+        recipientEmployeeId = recEmp.id;
+      }
+
+      let tokenQuery = supabase
         .from("employee_device_tokens")
         .select("id, fcm_token")
-        .eq("token_status", "ACTIVE")
-        .or(
-          item.employee_id
-            ? `auth_user_id.eq.${item.recipient_user_id},employee_id.eq.${item.employee_id}`
-            : `auth_user_id.eq.${item.recipient_user_id}`
-        );
+        .eq("token_status", "ACTIVE");
+
+      if (recipientEmployeeId) {
+        tokenQuery = tokenQuery.or(`auth_user_id.eq.${recipientUserId},employee_id.eq.${recipientEmployeeId}`);
+      } else {
+        tokenQuery = tokenQuery.or(`auth_user_id.eq.${recipientUserId},employee_id.eq.${recipientUserId}`);
+      }
+
+      const { data: tokenRows } = await tokenQuery;
 
       const uniqueTokens = Array.from(
         new Map((tokenRows || []).map((t: any) => [t.fcm_token, t])).values()

@@ -184,65 +184,20 @@ export async function processPunchRecord(punch) {
     }
     */
 
-    // 8. Dispatch FCM Push Notifications to Supervisor Tray
-    if (devTokens.length > 0) {
-      for (const t of devTokens) {
-        if (!t.fcm_token) continue;
-        try {
-          const pushUrl = `${SUPABASE_URL}/functions/v1/send-push`;
-          const pushRes = await fetch(pushUrl, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${SERVICE_KEY || SUPABASE_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              token: t.fcm_token,
-              employee_id: mgr.id,
-              auth_user_id: recipientAuthId,
-              title,
-              body: message,
-              route: 'attendance',
-              data: {
-                route: 'attendance',
-                eventType,
-                punchId: punch.id,
-                employeeId: punch.employee_id,
-              },
-            }),
-          });
-
-          const pushData = await pushRes.json().catch(() => ({}));
-          const isDelivered = pushRes.ok && (pushData.success !== false);
-          const providerMsgId = pushData.messageId || (pushData.results && pushData.results[0]?.messageId) || 'live-fcm';
-
-          console.log(`[AttendanceDaemon] ✓ Live Push sent to supervisor ${mgr.first_name} ${mgr.last_name} (${t.platform}): ${providerMsgId}`);
-
-          // 9. Record in communication_dispatch_logs
-          await sbFetch('communication_dispatch_logs', {
-            method: 'POST',
-            body: [{
-              organization_id: orgId,
-              employee_id: emp.id,
-              channel: 'PUSH',
-              provider: 'FCM',
-              recipient_phone: mgr.phone || 'APP_PUSH',
-              template_key: eventType,
-              message_content: JSON.stringify({ title, body: message, route: 'attendance' }),
-              dynamic_payload: { route: 'attendance', eventType, punchId: punch.id },
-              provider_message_id: providerMsgId,
-              status: isDelivered ? 'DELIVERED' : 'FAILED',
-              error_code: isDelivered ? null : 'FCM_ERROR',
-              error_message: isDelivered ? null : JSON.stringify(pushData),
-              cost_inr: 0.45,
-            }],
-          });
-        } catch (pushErr) {
-          console.error('[AttendanceDaemon] Push dispatch network notice:', pushErr.message);
-        }
-      }
-    } else {
-      console.log(`[AttendanceDaemon] Supervisor ${mgr.first_name} ${mgr.last_name} has no registered FCM tokens.`);
+    // 8. Trigger Authoritative Notification Dispatcher to flush outbox
+    try {
+      const pushUrl = `${SUPABASE_URL}/functions/v1/notification-dispatcher`;
+      fetch(pushUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${SERVICE_KEY || SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ organization_id: orgId, limit: 10 }),
+      }).catch(e => console.warn('[AttendanceDaemon] Dispatcher async notice:', e.message));
+      console.log(`[AttendanceDaemon] ✓ Outbox dispatcher triggered for punch ${punch.id}`);
+    } catch (e) {
+      console.warn('[AttendanceDaemon] Push dispatcher trigger notice:', e.message);
     }
   } catch (err) {
     console.error('[AttendanceDaemon] Error processing punch record:', err.message);

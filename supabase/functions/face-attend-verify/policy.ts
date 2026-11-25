@@ -65,7 +65,7 @@ export const DEFAULT_FACEATTEND_POLICY: FaceAttendPolicyConfig = {
   self_enrolment_requires_approval: false,
   match_threshold: 88.0,
   liveness_threshold: 80.0,
-  max_gps_accuracy_meters: 80.0,
+  max_gps_accuracy_meters: 150.0,
   gps_freshness_seconds: 60,
   retention_days_images: 90,
   consent_version_required: 'v1.0',

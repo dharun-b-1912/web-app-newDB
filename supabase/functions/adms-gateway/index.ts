@@ -245,35 +245,21 @@ async function notifyReportingManager(
     }
     */
 
-    // 2. Dispatch FCM Push Notification using send-push edge function
+    // 2. Trigger Authoritative Notification Dispatcher to flush outbox immediately
     try {
       const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SECRET_KEY') || '';
-      await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+      fetch(`${supabaseUrl}/functions/v1/notification-dispatcher`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${supabaseKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          employee_id: mgr.id,
-          auth_user_id: authUserId,
-          title,
-          body,
-          route: 'attendance',
-          data: {
-            route: 'attendance',
-            eventType: isOut ? 'attendance.check_out.accepted' : 'attendance.check_in.accepted',
-            employeeId: emp.id,
-            employeeName: empName,
-            source: 'BIOMETRIC',
-            timestamp: String(Date.now()),
-          },
-        }),
-      });
-      console.log(`[ADMS-EDGE] ✓ Biometric alert sent to manager ${mgr.first_name} (${mgr.employee_code}) for ${empName}`);
+        body: JSON.stringify({ organization_id: organizationId, limit: 10 }),
+      }).catch((e: any) => console.warn('[ADMS-EDGE] Dispatcher async notice:', e?.message || e));
+      console.log(`[ADMS-EDGE] ✓ Flushed notification dispatcher for ${empName} (${emp.employee_code})`);
     } catch (e: any) {
-      console.warn('[ADMS-EDGE] Push notification error:', e?.message || e);
+      console.warn('[ADMS-EDGE] Push notification trigger notice:', e?.message || e);
     }
   } catch (err: any) {
     console.warn('[ADMS-EDGE] Manager notification notice:', err?.message || err);

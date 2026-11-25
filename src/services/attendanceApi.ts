@@ -376,6 +376,7 @@ export const attendanceApi = {
           const punchInfo = punchMap.get(d.employee_id);
           const rawFirstIn = d.first_check_in || punchInfo?.firstInIso;
           const rawLastOut = d.last_check_out || punchInfo?.lastOutIso;
+          const hasAnyPunch = Boolean(rawFirstIn || rawLastOut);
 
           const checkInSource: PunchSource | undefined = punchInfo?.checkInSource
             || d.check_in_source
@@ -392,6 +393,8 @@ export const attendanceApi = {
           // Compute late minutes and working minutes accurately based on shift if available
           const inMins = formattedIn ? timeStringToMinutes(formattedIn) : null;
           const outMins = formattedOut ? timeStringToMinutes(formattedOut) : null;
+          const isLeaveStatus = !hasAnyPunch && (d.status === 'ON_LEAVE' || d.status === 'Leave' || d.status === 'On Leave');
+          const isHolidayStatus = !hasAnyPunch && (d.status === 'HOLIDAY' || d.status === 'Holiday');
           const shiftObj = d.shifts || (d.shift_id === '5f36464f-1920-45b4-b692-0d49294a76fa' ? { id: '5f36464f-1920-45b4-b692-0d49294a76fa', code: 'NS-01', name: 'Night Shift (7:30 PM - 7:30 AM)', start_time: '19:30:00', end_time: '07:30:00', is_overnight: true } : null);
           const shiftStartMins = shiftObj?.start_time ? timeStringToMinutes(shiftObj.start_time) : null;
           const shiftEndMins = shiftObj?.end_time ? timeStringToMinutes(shiftObj.end_time) : null;
@@ -401,7 +404,7 @@ export const attendanceApi = {
           const shiftNameResolved = shiftObj?.name || (isOvernightRow ? 'Night Shift (7:30 PM - 7:30 AM)' : 'General Shift');
           const expInMins = shiftStartMins ?? (isOvernightRow ? 1170 : 540);
           const expOutMins = shiftEndMins ?? (isOvernightRow ? 450 : 1080);
-          const calc = processAttendanceStatus(inMins, outMins, expInMins, expOutMins, DEFAULT_ATTENDANCE_POLICY, false, false, false, d.attendance_date);
+          const calc = processAttendanceStatus(inMins, outMins, expInMins, expOutMins, DEFAULT_ATTENDANCE_POLICY, isLeaveStatus, false, isHolidayStatus, d.attendance_date);
 
           const expectedCheckInFormatted = shiftStartMins !== null ? minutesToTimeString(shiftStartMins) : (isOvernightRow ? '07:30 PM' : '09:00 AM');
           const expectedCheckOutFormatted = shiftEndMins !== null ? minutesToTimeString(shiftEndMins) : (isOvernightRow ? '07:30 AM' : '06:00 PM');
@@ -440,7 +443,11 @@ export const attendanceApi = {
             overnight_work_date: d.overnight_work_date,
             expected_check_in: expectedCheckInFormatted,
             expected_check_out: expectedCheckOutFormatted,
-            status: d.status ? (d.status === 'PRESENT' ? 'Present' : d.status) : calc.status,
+            status: d.status
+              ? (hasAnyPunch && (d.status === 'ON_LEAVE' || d.status === 'Leave' || d.status === 'On Leave')
+                  ? (calc.status === 'Absent' ? 'Present' : calc.status)
+                  : (d.status === 'PRESENT' ? 'Present' : d.status))
+              : calc.status,
             first_check_in: formattedIn,
             last_check_out: formattedOut,
             gross_working_minutes: grossMins,
@@ -835,8 +842,9 @@ export const attendanceApi = {
 
           const inMins = formattedIn ? timeStringToMinutes(formattedIn) : null;
           const outMins = formattedOut ? timeStringToMinutes(formattedOut) : null;
-          const isLeaveStatus = d.status === 'ON_LEAVE' || d.status === 'Leave' || d.status === 'On Leave';
-          const isHolidayStatus = d.status === 'HOLIDAY' || d.status === 'Holiday';
+          const hasAnyPunch = Boolean(rawFirstIn || rawLastOut);
+          const isLeaveStatus = !hasAnyPunch && (d.status === 'ON_LEAVE' || d.status === 'Leave' || d.status === 'On Leave');
+          const isHolidayStatus = !hasAnyPunch && (d.status === 'HOLIDAY' || d.status === 'Holiday');
 
           const shiftObj = d.shifts || (d.shift_id === '5f36464f-1920-45b4-b692-0d49294a76fa' ? { id: '5f36464f-1920-45b4-b692-0d49294a76fa', code: 'NS-01', name: 'Night Shift (7:30 PM - 7:30 AM)', start_time: '19:30:00', end_time: '07:30:00', is_overnight: true } : null);
           const shiftStartMins = shiftObj?.start_time ? timeStringToMinutes(shiftObj.start_time) : null;
@@ -868,8 +876,10 @@ export const attendanceApi = {
 
           let resolvedStatus = calc.status;
           const dbStatusUpper = String(d.status || '').trim().toUpperCase();
-          if (isLeaveStatus || dbStatusUpper === 'ON_LEAVE' || dbStatusUpper === 'LEAVE') {
+          if (isLeaveStatus || (!hasAnyPunch && (dbStatusUpper === 'ON_LEAVE' || dbStatusUpper === 'LEAVE'))) {
             resolvedStatus = 'On Leave';
+          } else if (hasAnyPunch && (dbStatusUpper === 'ON_LEAVE' || dbStatusUpper === 'LEAVE' || isLeaveStatus)) {
+            resolvedStatus = calc.status === 'Absent' ? 'Present' : calc.status;
           } else if (isHolidayStatus || dbStatusUpper === 'HOLIDAY') {
             resolvedStatus = 'Holiday';
           } else if (dbStatusUpper === 'WEEKLY_OFF' || dbStatusUpper === 'WEEK_OFF' || dbStatusUpper === 'REST_DAY') {
@@ -1059,7 +1069,11 @@ export const attendanceApi = {
               const expectedInMins = timeStringToMinutes(shiftStart) || 570;
               const expectedOutMins = timeStringToMinutes(shiftEnd) || 1110;
               const calc = processAttendanceStatus(inMins, outMins, expectedInMins, expectedOutMins);
-              const resolvedStatus = hasPunch ? (item.status || calc.status || 'Present') : (roster.is_weekly_off ? 'Weekly Off' : item.status || 'Not Checked In');
+              const resolvedStatus = hasPunch
+                ? ((item.status === 'On Leave' || item.status === 'ON_LEAVE' || item.status === 'Leave')
+                    ? (calc.status === 'Absent' ? 'Present' : calc.status)
+                    : (item.status || calc.status || 'Present'))
+                : (roster.is_weekly_off ? 'Weekly Off' : item.status || 'Not Checked In');
 
               cleaned.push({
                 ...item,
