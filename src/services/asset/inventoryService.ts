@@ -3,13 +3,22 @@ import { api } from '../api';
 import { hrEventBus } from '../hrEventBus';
 import { assetAuditService } from './assetAuditService';
 
-const INVENTORY_ITEMS_KEY = 'workforce_inventory_items_v1';
-const INVENTORY_TX_KEY = 'workforce_inventory_transactions_v1';
+function getTargetOrg(orgId?: string): string {
+  if (orgId && orgId.trim()) return orgId.trim();
+  const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+  if (activeComp?.organization_id) return activeComp.organization_id;
+  try {
+    const user = api.getCurrentUser?.();
+    if (user?.organization_id) return user.organization_id;
+  } catch (_) {}
+  return 'default';
+}
 
 class InventoryService {
-  private getItems(): InventoryItem[] {
+  private getItems(orgId?: string): InventoryItem[] {
     try {
-      const data = localStorage.getItem(INVENTORY_ITEMS_KEY);
+      const key = `workforce_inventory_items_${getTargetOrg(orgId)}_v1`;
+      const data = localStorage.getItem(key);
       if (!data) return [];
       return JSON.parse(data);
     } catch {
@@ -17,17 +26,19 @@ class InventoryService {
     }
   }
 
-  private setItems(items: InventoryItem[]): void {
+  private setItems(items: InventoryItem[], orgId?: string): void {
     try {
-      localStorage.setItem(INVENTORY_ITEMS_KEY, JSON.stringify(items));
+      const key = `workforce_inventory_items_${getTargetOrg(orgId)}_v1`;
+      localStorage.setItem(key, JSON.stringify(items));
     } catch (e) {
       console.warn('[InventoryService] Failed to persist inventory items:', e);
     }
   }
 
-  private getTxStore(): InventoryTransaction[] {
+  private getTxStore(orgId?: string): InventoryTransaction[] {
     try {
-      const data = localStorage.getItem(INVENTORY_TX_KEY);
+      const key = `workforce_inventory_transactions_${getTargetOrg(orgId)}_v1`;
+      const data = localStorage.getItem(key);
       if (!data) return [];
       return JSON.parse(data);
     } catch {
@@ -35,9 +46,10 @@ class InventoryService {
     }
   }
 
-  private setTransactions(txs: InventoryTransaction[]): void {
+  private setTransactions(txs: InventoryTransaction[], orgId?: string): void {
     try {
-      localStorage.setItem(INVENTORY_TX_KEY, JSON.stringify(txs));
+      const key = `workforce_inventory_transactions_${getTargetOrg(orgId)}_v1`;
+      localStorage.setItem(key, JSON.stringify(txs));
     } catch (e) {
       console.warn('[InventoryService] Failed to persist inventory transactions:', e);
     }

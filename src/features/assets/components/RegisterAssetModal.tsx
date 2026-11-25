@@ -32,12 +32,16 @@ interface RegisterAssetModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  organizationId?: string;
+  companyId?: string;
 }
 
 export const RegisterAssetModal: React.FC<RegisterAssetModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  organizationId,
+  companyId,
 }) => {
   const { showToast } = useToast();
 
@@ -65,6 +69,8 @@ export const RegisterAssetModal: React.FC<RegisterAssetModalProps> = ({
       await assetService.createAsset({
         assetName: assetName.trim(),
         categoryCode,
+        organizationId,
+        companyId,
         assetCode: assetCode.trim() || undefined,
         serialNumber: serialNumber.trim() || undefined,
         purchaseCost: Number(purchaseCost) || 0,

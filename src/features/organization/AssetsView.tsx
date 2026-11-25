@@ -35,6 +35,7 @@ import { assetMaintenanceService } from '../../services/asset/assetMaintenanceSe
 import { assetAuditService } from '../../services/asset/assetAuditService';
 import { hrEventBus } from '../../services/hrEventBus';
 import { api } from '../../services/api';
+import { useTenant } from '../../hooks/useTenant';
 import {
   UniversalAsset,
   AssetCategory,
@@ -56,6 +57,9 @@ import { AssetDetailDrawer } from '../assets/components/AssetDetailDrawer';
 
 export const AssetsView: React.FC = () => {
   const { showToast } = useToast();
+  const { organization, activeLegalEntity } = useTenant();
+  const activeOrgId = organization?.id || activeLegalEntity?.organization_id || '';
+  const activeCompanyId = activeLegalEntity?.id || '';
 
   // Operational Tabs
   const [activeTab, setActiveTab] = useState<
@@ -98,14 +102,14 @@ export const AssetsView: React.FC = () => {
 
   const loadData = async (forceDb = false) => {
     try {
-      // 1. Fetch live assets from Supabase
-      const liveAssets = await assetService.fetchAssetsFromDb(forceDb);
-      const liveAssignments = await assetAssignmentService.fetchAssignmentsFromDb(forceDb);
+      // 1. Fetch live assets from Supabase strictly isolated by active organization
+      const liveAssets = await assetService.fetchAssetsFromDb(activeOrgId, forceDb);
+      const liveAssignments = await assetAssignmentService.fetchAssignmentsFromDb(activeOrgId, forceDb);
 
-      // 2. Fetch live employees roster
+      // 2. Fetch live employees roster strictly isolated by active organization
       let empList: Employee[] = [];
       try {
-        const rawEmps = await api.getEmployees();
+        const rawEmps = await api.getEmployees({ organizationId: activeOrgId, companyId: activeCompanyId });
         empList = Array.isArray(rawEmps) ? rawEmps : [];
         setEmployees(empList);
       } catch {
@@ -116,7 +120,7 @@ export const AssetsView: React.FC = () => {
       const cats = assetService.getCategories();
       setCategories(cats);
 
-      const summary = assetService.getSummaryMetrics();
+      const summary = assetService.getSummaryMetrics(activeOrgId);
       setMetrics(summary);
 
       // 4. Assignments & Secondary tables
@@ -181,7 +185,7 @@ export const AssetsView: React.FC = () => {
 
   useEffect(() => {
     loadData(false);
-  }, [activeTab, searchQuery, selectedCategory, selectedStatus, selectedCondition, returnableFilter, currentPage]);
+  }, [activeOrgId, activeCompanyId, activeTab, searchQuery, selectedCategory, selectedStatus, selectedCondition, returnableFilter, currentPage]);
 
   // Realtime Event Mesh Subscription
   useEffect(() => {
@@ -985,6 +989,8 @@ export const AssetsView: React.FC = () => {
         isOpen={isRegisterModalOpen}
         onClose={() => setIsRegisterModalOpen(false)}
         onSuccess={() => loadData(true)}
+        organizationId={activeOrgId}
+        companyId={activeCompanyId}
       />
 
       {/* Assign Asset Modal */}
@@ -993,6 +999,8 @@ export const AssetsView: React.FC = () => {
         onClose={() => setIsAssignModalOpen(false)}
         onSuccess={() => loadData(true)}
         asset={activeAsset}
+        organizationId={activeOrgId}
+        companyId={activeCompanyId}
       />
 
       {/* Return Asset & Clearance Modal */}

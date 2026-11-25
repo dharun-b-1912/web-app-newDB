@@ -3,13 +3,22 @@ import { api } from '../api';
 import { hrEventBus } from '../hrEventBus';
 import { assetAuditService } from './assetAuditService';
 
-const ASSET_TRANSFERS_KEY = 'workforce_asset_transfers_v1';
-const ASSETS_KEY = 'workforce_assets_master_v1';
+function getTargetOrg(orgId?: string): string {
+  if (orgId && orgId.trim()) return orgId.trim();
+  const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+  if (activeComp?.organization_id) return activeComp.organization_id;
+  try {
+    const user = api.getCurrentUser?.();
+    if (user?.organization_id) return user.organization_id;
+  } catch (_) {}
+  return 'default';
+}
 
 class AssetTransferService {
-  private getStore(): AssetTransfer[] {
+  private getStore(orgId?: string): AssetTransfer[] {
     try {
-      const data = localStorage.getItem(ASSET_TRANSFERS_KEY);
+      const key = `workforce_asset_transfers_${getTargetOrg(orgId)}_v1`;
+      const data = localStorage.getItem(key);
       if (!data) return [];
       return JSON.parse(data);
     } catch {
@@ -17,17 +26,19 @@ class AssetTransferService {
     }
   }
 
-  private setTransfers(items: AssetTransfer[]): void {
+  private setTransfers(items: AssetTransfer[], orgId?: string): void {
     try {
-      localStorage.setItem(ASSET_TRANSFERS_KEY, JSON.stringify(items));
+      const key = `workforce_asset_transfers_${getTargetOrg(orgId)}_v1`;
+      localStorage.setItem(key, JSON.stringify(items));
     } catch (e) {
       console.warn('[AssetTransferService] Failed to persist transfers:', e);
     }
   }
 
-  private getAssets(): UniversalAsset[] {
+  private getAssets(orgId?: string): UniversalAsset[] {
     try {
-      const data = localStorage.getItem(ASSETS_KEY);
+      const key = `workforce_assets_master_${getTargetOrg(orgId)}_v1`;
+      const data = localStorage.getItem(key);
       if (!data) return [];
       return JSON.parse(data);
     } catch {
@@ -35,9 +46,10 @@ class AssetTransferService {
     }
   }
 
-  private setAssets(assets: UniversalAsset[]): void {
+  private setAssets(assets: UniversalAsset[], orgId?: string): void {
     try {
-      localStorage.setItem(ASSETS_KEY, JSON.stringify(assets));
+      const key = `workforce_assets_master_${getTargetOrg(orgId)}_v1`;
+      localStorage.setItem(key, JSON.stringify(assets));
     } catch (e) {
       console.warn('[AssetTransferService] Failed to persist assets:', e);
     }

@@ -12,8 +12,20 @@ import { api } from '../api';
 
 const DEFAULT_ORG_ID = '0c621892-e938-4707-9957-13534ea32c19';
 
+function resolveTargetOrg(explicitOrgId?: string): string {
+  if (explicitOrgId && explicitOrgId.trim()) return explicitOrgId.trim();
+  const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+  if (activeComp?.organization_id) return activeComp.organization_id;
+  try {
+    const user = api.getCurrentUser?.();
+    if (user?.organization_id) return user.organization_id;
+  } catch (_) {}
+  return DEFAULT_ORG_ID;
+}
+
 class AssetAssignmentService {
   private _cachedAssignments: AssetAssignment[] = [];
+  private _assignmentsByOrg: Map<string, AssetAssignment[]> = new Map();
   private _inFlightFetch: Promise<AssetAssignment[]> | null = null;
 
   constructor() {
@@ -21,22 +33,29 @@ class AssetAssignmentService {
   }
 
   /**
-   * Fetch all assignment records live from Supabase PostgreSQL
+   * Fetch all assignment records live from Supabase PostgreSQL strictly isolated by organization
    */
-  async fetchAssignmentsFromDb(force = false): Promise<AssetAssignment[]> {
+  async fetchAssignmentsFromDb(orgId?: string, force = false): Promise<AssetAssignment[]> {
+    const targetOrg = resolveTargetOrg(orgId);
     if (this._inFlightFetch && !force) return this._inFlightFetch;
 
     this._inFlightFetch = (async () => {
       try {
         const client = isSupabaseEnabled ? supabaseAdmin : supabase;
-        const { data, error } = await client
+        let query = client
           .from('asset_assignments')
           .select('*')
           .order('created_at', { ascending: false });
 
+        if (targetOrg && targetOrg !== 'platform-root') {
+          query = query.eq('organization_id', targetOrg);
+        }
+
+        const { data, error } = await query;
+
         if (error) {
           console.warn('[AssetAssignmentService] Supabase fetch warning:', error.message);
-          return this._cachedAssignments;
+          return this._assignmentsByOrg.get(targetOrg) || [];
         }
 
         const mapped: AssetAssignment[] = (data || []).map((row: any) => {
@@ -89,11 +108,12 @@ class AssetAssignmentService {
           };
         });
 
+        this._assignmentsByOrg.set(targetOrg, mapped);
         this._cachedAssignments = mapped;
         return mapped;
       } catch (err: any) {
         console.error('[AssetAssignmentService] Database error:', err.message);
-        return this._cachedAssignments;
+        return this._assignmentsByOrg.get(targetOrg) || [];
       } finally {
         this._inFlightFetch = null;
       }
@@ -105,11 +125,13 @@ class AssetAssignmentService {
   /**
    * Synchronous getter for immediate UI view
    */
-  getAssignments(assetId?: string): AssetAssignment[] {
+  getAssignments(assetId?: string, orgId?: string): AssetAssignment[] {
+    const targetOrg = resolveTargetOrg(orgId);
+    const orgAssignments = this._assignmentsByOrg.get(targetOrg) || this._cachedAssignments;
     if (assetId) {
-      return this._cachedAssignments.filter(a => a.asset_id === assetId);
+      return orgAssignments.filter(a => a.asset_id === assetId);
     }
-    return this._cachedAssignments;
+    return orgAssignments;
   }
 
   /**
@@ -119,6 +141,7 @@ class AssetAssignmentService {
     assetId: string;
     employeeId: string;
     employeeName: string;
+    organizationId?: string;
     conditionAtAssign?: AssetCondition;
     assignedDate?: string;
     expectedReturnDate?: string;
@@ -131,11 +154,8 @@ class AssetAssignmentService {
     const now = new Date().toISOString();
     const assignedDate = params.assignedDate || now.split('T')[0];
 
-    let orgId = DEFAULT_ORG_ID;
-    try {
-      const user = api.getCurrentUser?.();
-      if (user?.organization_id) orgId = user.organization_id;
-    } catch (_) {}
+    const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+    const orgId = resolveTargetOrg(params.organizationId || activeComp?.organization_id);
 
     // Pack extended metadata into condition_on_assignment TEXT JSON
     const metaPayload = JSON.stringify({

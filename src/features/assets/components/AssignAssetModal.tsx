@@ -23,6 +23,8 @@ interface AssignAssetModalProps {
   onClose: () => void;
   onSuccess: () => void;
   asset: UniversalAsset | null;
+  organizationId?: string;
+  companyId?: string;
 }
 
 export const AssignAssetModal: React.FC<AssignAssetModalProps> = ({
@@ -30,6 +32,8 @@ export const AssignAssetModal: React.FC<AssignAssetModalProps> = ({
   onClose,
   onSuccess,
   asset,
+  organizationId,
+  companyId,
 }) => {
   const { showToast } = useToast();
 
@@ -50,7 +54,7 @@ export const AssignAssetModal: React.FC<AssignAssetModalProps> = ({
       const fetchEmps = async () => {
         setLoadingEmps(true);
         try {
-          const emps = await api.getEmployees();
+          const emps = await api.getEmployees({ organizationId, companyId });
           const list = Array.isArray(emps) ? emps : [];
           setEmployees(list);
           if (list.length > 0 && !selectedEmpId) {
@@ -90,6 +94,7 @@ export const AssignAssetModal: React.FC<AssignAssetModalProps> = ({
         assetId: asset.id,
         employeeId: emp.id,
         employeeName: empName,
+        organizationId,
         assignedDate,
         expectedReturnDate: expectedReturnDate || undefined,
         isReturnable,
