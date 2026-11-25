@@ -12,7 +12,33 @@ describe('Electra EV Smart Adaptive Shift Resolution', () => {
     expect(res.confidenceScore).toBeGreaterThanOrEqual(80);
   });
 
-  it('correctly matches GEN-01 for General Shift arrival (07:15 AM - 08:45 AM)', () => {
+  it('correctly matches SHIFT-1 for late morning arrivals (06:35 AM, 07:01 AM, 07:15 AM) and never maps to GEN-01', () => {
+    // Ajaivikram (06:35:29 AM) -> SHIFT-1, 35m late
+    const resAjaivikram = smartShiftResolutionService.resolveShiftDeterministic({
+      activeShifts: ELECTRA_EV_SHIFTS,
+      firstPunchTime: '2026-11-25T06:35:29+05:30',
+      mode: 'ADAPTIVE_SHIFT',
+    });
+    expect(resAjaivikram.shiftCode).toBe('SHIFT-1');
+
+    // Sakthivel (07:01:29 AM) -> SHIFT-1, ~1h late
+    const resSakthivel = smartShiftResolutionService.resolveShiftDeterministic({
+      activeShifts: ELECTRA_EV_SHIFTS,
+      firstPunchTime: '2026-11-25T07:01:29+05:30',
+      mode: 'ADAPTIVE_SHIFT',
+    });
+    expect(resSakthivel.shiftCode).toBe('SHIFT-1');
+
+    // Sujimitha (07:15:33 AM) -> SHIFT-1, ~1h 15m late
+    const resSujimitha = smartShiftResolutionService.resolveShiftDeterministic({
+      activeShifts: ELECTRA_EV_SHIFTS,
+      firstPunchTime: '2026-11-25T07:15:33+05:30',
+      mode: 'ADAPTIVE_SHIFT',
+    });
+    expect(resSujimitha.shiftCode).toBe('SHIFT-1');
+  });
+
+  it('correctly matches GEN-01 for General Shift arrival (07:45 AM - 08:45 AM)', () => {
     const res = smartShiftResolutionService.resolveShiftDeterministic({
       activeShifts: ELECTRA_EV_SHIFTS,
       firstPunchTime: '2026-11-24T08:30:10+05:30',

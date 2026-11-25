@@ -857,8 +857,8 @@ serve(async (req: Request) => {
           } else {
             // Case 1C: First arrival of the day!
             // Smart Adaptive Shift Resolution for Electra EV (supporting workers arriving 2 to 4 hours early):
-            // - 04:00 AM to 06:45 AM: SHIFT-1 (06:00 - 14:30)
-            // - 06:45 AM to 09:15 AM: GEN-01 (08:30 - 17:00)
+            // - 04:00 AM to 07:45 AM: SHIFT-1 (06:00 - 14:30) [includes late arrivals up to 07:45 AM]
+            // - 07:45 AM to 09:15 AM: GEN-01 (08:30 - 17:00)
             // - 09:15 AM to 18:00 PM: SHIFT-2 (14:30 - 23:00) [Workers arriving 2-4h early for Shift 2 arrive from 09:15 onwards]
             // - 18:00 PM to 04:00 AM: SHIFT-3 (23:00 - 06:00, Overnight)
             let adaptiveShiftId = '03af7148-163b-4263-b080-df44cd9f564d';
@@ -866,11 +866,11 @@ serve(async (req: Request) => {
             let adaptiveShiftStartHour = 6.0;
             const adaptiveGraceMins = 15;
 
-            if (eventIstHour >= 4.0 && eventIstHour < 6.75) {
+            if (eventIstHour >= 4.0 && eventIstHour < 7.75) {
               adaptiveShiftId = '03af7148-163b-4263-b080-df44cd9f564d';
               adaptiveShiftCode = 'SHIFT-1';
               adaptiveShiftStartHour = 6.0;
-            } else if (eventIstHour >= 6.75 && eventIstHour < 9.25) {
+            } else if (eventIstHour >= 7.75 && eventIstHour < 9.25) {
               adaptiveShiftId = '659ba299-eb9b-432b-ab42-e456fd630be0';
               adaptiveShiftCode = 'GEN-01';
               adaptiveShiftStartHour = 8.5;

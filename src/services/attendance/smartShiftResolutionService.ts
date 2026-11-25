@@ -695,10 +695,32 @@ class SmartShiftResolutionService {
       };
     }
 
+    // Manufacturing Plant Shift 1 vs General Shift Boundary (06:00 AM vs 08:30 AM):
+    // In plant operations, morning arrivals prior to 07:45 AM (465 mins) belong to Shift 1 (06:00 AM).
+    // General Shift check-ins only open at 07:45 AM (at most 45m before 08:30 AM start).
+    // Workers checking in between 06:01 AM and 07:45 AM are late for Shift 1, NOT arriving early for General Shift.
+    const isGeneralShift = (shift.code === 'GEN-01' || shift.shift_code === 'GEN-01' || scheduledStartMins === 510);
+    if (isGeneralShift && firstPunchMinutes < 465) {
+      return {
+        shiftId: shift.id,
+        shiftCode: shift.code || shift.shift_code || 'GEN-01',
+        shiftName: shift.name || shift.shift_name || 'General Shift',
+        scheduledStart: (shift.start_time || '08:30:00').substring(0, 5),
+        scheduledEnd: (shift.end_time || '17:00:00').substring(0, 5),
+        startDifferenceMinutes: diffMins,
+        inAttendanceWindow: false,
+        checkoutCompatibilityScore: 0,
+        totalScore: 0,
+        matchConfidence: 'UNMATCHED',
+      };
+    }
+
     // Permitted early window: up to 120 mins early for upcoming shift
-    // Permitted late grace: up to 60 mins late
+    // Permitted late grace: up to 105 mins late for Shift 1 (covering late arrivals up to 07:45 AM)
+    const isShift1 = (shift.code === 'SHIFT-1' || shift.shift_code === 'SHIFT-1' || scheduledStartMins === 360);
+    const maxLateWindow = isShift1 ? 105 : 60;
     const isEarlyEligible = signedDiff >= 0 && signedDiff <= 120;
-    const isLateEligible = signedDiff < 0 && Math.abs(signedDiff) <= 60;
+    const isLateEligible = signedDiff < 0 && Math.abs(signedDiff) <= maxLateWindow;
     const inAttendanceWindow = isEarlyEligible || isLateEligible;
 
     // Start-time Score (Max 70 points)
@@ -730,7 +752,9 @@ class SmartShiftResolutionService {
       } else if (lateMins <= 30) {
         startScore = 55; // Minor late
       } else if (lateMins <= 60) {
-        startScore = 40; // Moderate late
+        startScore = isShift1 ? 55 : 40; // Moderate late
+      } else if (lateMins <= 105 && isShift1) {
+        startScore = 48; // Plant Shift 1 late arrival window (07:01 AM - 07:45 AM)
       } else if (lateMins <= 90) {
         startScore = 22; // Significant late
       } else {

@@ -263,6 +263,11 @@ serve(async (req: Request) => {
           let bestCand = candidates[0];
           let bestScore = -999;
           for (const cand of candidates) {
+            // In plant operations, morning arrivals prior to 07:45 AM (465 min) belong to SHIFT-1 (06:00 AM)
+            if (cand.code === 'GEN-01' && punchMinutesFromMidnight < 465) {
+              continue;
+            }
+
             let signedDiff = cand.start - punchMinutesFromMidnight;
             if (signedDiff < -720) signedDiff += 1440;
             if (signedDiff > 720) signedDiff -= 1440;
@@ -279,7 +284,8 @@ serve(async (req: Request) => {
               const late = Math.abs(signedDiff);
               if (late <= 15) score = 65;
               else if (late <= 30) score = 55;
-              else if (late <= 60) score = 40;
+              else if (late <= 60) score = cand.code === 'SHIFT-1' ? 55 : 40;
+              else if (late <= 105 && cand.code === 'SHIFT-1') score = 48;
               else score = Math.max(0, 10 - Math.floor((late - 60) / 30));
             }
 
