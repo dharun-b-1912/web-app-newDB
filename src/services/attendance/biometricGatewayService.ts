@@ -766,21 +766,10 @@ class BiometricGatewayService {
         if (isSupabaseEnabled && supabase) {
           try {
             const targetOrg = getActiveOrgId();
-            let { data: cloudDevices } = await supabase
+            const { data: cloudDevices } = await supabase
               .from('biometric_devices')
               .select('id, serial_number, device_name, last_heartbeat_at, is_active, ip_address, organization_id')
               .eq('organization_id', targetOrg);
-
-            if (!cloudDevices || cloudDevices.length === 0) {
-              const { data: allDevs } = await supabase
-                .from('biometric_devices')
-                .select('id, serial_number, device_name, last_heartbeat_at, is_active, ip_address, organization_id')
-                .order('last_heartbeat_at', { ascending: false })
-                .limit(5);
-              if (allDevs && allDevs.length > 0) {
-                cloudDevices = allDevs;
-              }
-            }
 
             const activeDevice = (cloudDevices || []).find((cd: any) => {
               if (!cd.last_heartbeat_at) return false;

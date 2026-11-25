@@ -87,6 +87,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
   const [vendors, setVendors] = useState<string[]>(['Direct Payroll']);
   const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState(false);
   const [shifts, setShifts] = useState<any[]>([]);
+  const [biometricDevices, setBiometricDevices] = useState<any[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString());
   const [selectedChannel, setSelectedChannel] = useState<'ALL' | 'BIOMETRIC' | 'FACE' | 'MOBILE' | 'WEB'>('ALL');
 
@@ -141,15 +142,21 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
     isLoadingRef.current = true;
 
     const activeComp = api.getActiveCompany();
-    const effectiveTenantId = activeComp?.organization_id || activeComp?.id || 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
+    const effectiveTenantId = activeComp?.organization_id || activeComp?.id || '';
+
+    if (!effectiveTenantId || effectiveTenantId === 'platform-root') {
+      isLoadingRef.current = false;
+      return;
+    }
 
     Promise.allSettled([
       api.getEmployees(activeComp?.id),
       api.getDepartments(activeComp?.id),
       attendanceRosterService.fetchShiftsFromDb(effectiveTenantId),
       attendanceApi.getDailyAttendanceAsync(selectedDate, deptFilter, undefined, searchQuery, effectiveTenantId),
+      biometricGatewayService.syncDevicesFromSupabase(effectiveTenantId),
       biometricGatewayService.syncPunchesFromSupabase(1000, effectiveTenantId),
-    ]).then(([empRes, deptRes, shiftRes, dailyRes]) => {
+    ]).then(([empRes, deptRes, shiftRes, dailyRes, devsRes]) => {
       if (empRes.status === 'fulfilled' && empRes.value) {
         const accessible = filterAccessibleEmployees ? filterAccessibleEmployees(empRes.value) : (empRes.value || []);
         setEmployees(accessible || []);
@@ -173,6 +180,12 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
         setShifts(shiftRes.value);
       } else {
         setShifts(attendanceRosterService.getShifts(effectiveTenantId));
+      }
+
+      if (devsRes.status === 'fulfilled' && Array.isArray(devsRes.value)) {
+        setBiometricDevices(devsRes.value);
+      } else {
+        setBiometricDevices(biometricGatewayService.getBiometricDevices(effectiveTenantId));
       }
 
       if (dailyRes.status === 'fulfilled' && dailyRes.value && dailyRes.value.length > 0) {
@@ -883,127 +896,151 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
       </Card>
 
       {/* 3. UNIFIED CLOCKING CHANNELS & TELEMETRY ALERT STRIP */}
-      <div className="bg-white border border-gray-200/90 rounded-2xl shadow-xs p-3.5 space-y-3">
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-          {/* Left: Clocking Channels Filter Bar */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-gray-500 uppercase tracking-wider pr-1">
-              <Activity className="w-3.5 h-3.5 text-[#07563D]" />
-              <span>Clocking Channels:</span>
-            </div>
+      <div className="bg-white border border-gray-200/90 rounded-2xl shadow-xs p-3.5 space-y-2.5">
+        {/* Row 1: Header Label + Real-Time Tenant-Isolated Hardware & Security Telemetry */}
+        {(() => {
+          const activeTenantId = activeCompany?.organization_id || activeCompany?.id;
+          const gpsViolations = workLocationService.getViolationsCount(activeTenantId, selectedDate);
+          const faceMismatches = workLocationService.getFaceMismatchesCount(activeTenantId, selectedDate);
+          const totalDevices = biometricDevices.length;
+          const onlineDevices = biometricDevices.filter((d: any) => {
+            const statusStr = String(d.status || '').toLowerCase();
+            if (statusStr === 'online' || statusStr === 'connected') return true;
+            if (d.last_heartbeat_at) {
+              const diffMs = Date.now() - new Date(d.last_heartbeat_at).getTime();
+              if (!isNaN(diffMs) && diffMs < 15 * 60 * 1000) return true;
+            }
+            return Boolean(d.is_active && statusStr !== 'offline');
+          }).length;
 
-            <div className="inline-flex items-center gap-1.5 flex-wrap">
-              <button
-                onClick={() => {
-                  setSelectedChannel('ALL');
-                  showToast('Showing all unified clocking channels.');
-                }}
-                className={cn(
-                  "px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap",
-                  selectedChannel === 'ALL'
-                    ? "bg-[#07563D] text-white shadow-xs"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                )}
-              >
-                <Layers className="w-3 h-3" />
-                <span>All Channels ({totalHeadcount})</span>
-              </button>
+          return (
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-gray-100">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                <Activity className="w-3.5 h-3.5 text-[#07563D]" />
+                <span>Clocking Channels</span>
+              </div>
 
-              <button
-                onClick={() => {
-                  setSelectedChannel('BIOMETRIC');
-                  showToast('Filtered by Biometric Device Gateway punches.');
-                }}
-                className={cn(
-                  "px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
-                  selectedChannel === 'BIOMETRIC'
-                    ? "bg-purple-700 text-white border-purple-700 shadow-xs"
-                    : "bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200"
-                )}
-              >
-                <Cpu className="w-3 h-3" />
-                <span>Biometric Gateways ({channelCounts.bioCount})</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setSelectedChannel('FACE');
-                  showToast('Filtered by AI Optical Face Recognition punches.');
-                }}
-                className={cn(
-                  "px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
-                  selectedChannel === 'FACE'
-                    ? "bg-emerald-700 text-white border-emerald-700 shadow-xs"
-                    : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200"
-                )}
-              >
-                <ScanFace className="w-3 h-3" />
-                <span>Face Recognition ({channelCounts.faceCount})</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setSelectedChannel('MOBILE');
-                  showToast('Filtered by Mobile GPS Geofence clock-ins.');
-                }}
-                className={cn(
-                  "px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
-                  selectedChannel === 'MOBILE'
-                    ? "bg-blue-700 text-white border-blue-700 shadow-xs"
-                    : "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
-                )}
-              >
-                <MapPin className="w-3 h-3" />
-                <span>Mobile / GPS ({channelCounts.mobileCount})</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setSelectedChannel('WEB');
-                  showToast('Filtered by Web Check-In / Manual punches.');
-                }}
-                className={cn(
-                  "px-2.5 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
-                  selectedChannel === 'WEB'
-                    ? "bg-gray-800 text-white border-gray-800 shadow-xs"
-                    : "bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-200"
-                )}
-              >
-                <Laptop className="w-3 h-3" />
-                <span>Web / Manual ({channelCounts.webCount})</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Right: Hardware Gateway Health & Telemetry Strip */}
-          {(() => {
-            const gpsViolations = workLocationService.getViolationsCount(undefined, selectedDate);
-            const faceMismatches = workLocationService.getFaceMismatchesCount(undefined, selectedDate);
-            return (
-              <div className="flex items-center gap-2 flex-wrap xl:justify-end border-t xl:border-t-0 pt-2.5 xl:pt-0 border-gray-100 text-xs">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className={cn(
-                  "px-2.5 py-1 font-semibold rounded-lg border text-xs flex items-center gap-1.5 whitespace-nowrap",
+                  "px-2.5 py-0.5 font-semibold rounded-full border text-[11px] flex items-center gap-1.5 whitespace-nowrap",
                   gpsViolations > 0 ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"
                 )}>
                   <span className={cn("w-1.5 h-1.5 rounded-full", gpsViolations > 0 ? "bg-rose-500 animate-ping" : "bg-emerald-500")} />
-                  {gpsViolations > 0 ? `GPS Violations: ${gpsViolations}` : '✓ GPS Violations: 0'}
+                  {gpsViolations > 0 ? `GPS Violations: ${gpsViolations}` : 'GPS Violations: 0'}
                 </span>
 
                 <span className={cn(
-                  "px-2.5 py-1 font-semibold rounded-lg border text-xs flex items-center gap-1.5 whitespace-nowrap",
+                  "px-2.5 py-0.5 font-semibold rounded-full border text-[11px] flex items-center gap-1.5 whitespace-nowrap",
                   faceMismatches > 0 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"
                 )}>
                   <span className={cn("w-1.5 h-1.5 rounded-full", faceMismatches > 0 ? "bg-amber-500" : "bg-emerald-500")} />
-                  {faceMismatches > 0 ? `Face Mismatches: ${faceMismatches}` : '✓ Face Mismatches: 0'}
+                  {faceMismatches > 0 ? `Face Mismatches: ${faceMismatches}` : 'Face Mismatches: 0'}
                 </span>
 
-                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 font-semibold rounded-lg border border-emerald-200 text-xs flex items-center gap-1.5 whitespace-nowrap">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  ✓ Devices Online: 4/4
+                <span className={cn(
+                  "px-2.5 py-0.5 font-semibold rounded-full border text-[11px] flex items-center gap-1.5 whitespace-nowrap",
+                  totalDevices === 0
+                    ? "bg-gray-50 text-gray-600 border-gray-200"
+                    : onlineDevices > 0
+                    ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                    : "bg-rose-50 text-rose-700 border-rose-200"
+                )}>
+                  <span className={cn(
+                    "w-1.5 h-1.5 rounded-full",
+                    totalDevices === 0
+                      ? "bg-gray-400"
+                      : onlineDevices > 0
+                      ? "bg-emerald-500 animate-pulse"
+                      : "bg-rose-500"
+                  )} />
+                  Devices Online: {onlineDevices}/{totalDevices}
                 </span>
               </div>
-            );
-          })()}
+            </div>
+          );
+        })()}
+
+        {/* Row 2: Clean Single-Line Channel Filter Pills */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => {
+              setSelectedChannel('ALL');
+              showToast('Showing all unified clocking channels.');
+            }}
+            className={cn(
+              "px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap",
+              selectedChannel === 'ALL'
+                ? "bg-[#07563D] text-white shadow-xs"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            )}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>All Channels ({totalHeadcount})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setSelectedChannel('BIOMETRIC');
+              showToast('Filtered by Biometric Device Gateway punches.');
+            }}
+            className={cn(
+              "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
+              selectedChannel === 'BIOMETRIC'
+                ? "bg-purple-700 text-white border-purple-700 shadow-xs"
+                : "bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200"
+            )}
+          >
+            <Cpu className="w-3.5 h-3.5" />
+            <span>Biometric Gateways ({channelCounts.bioCount})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setSelectedChannel('FACE');
+              showToast('Filtered by AI Optical Face Recognition punches.');
+            }}
+            className={cn(
+              "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
+              selectedChannel === 'FACE'
+                ? "bg-emerald-700 text-white border-emerald-700 shadow-xs"
+                : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200"
+            )}
+          >
+            <ScanFace className="w-3.5 h-3.5" />
+            <span>Face Recognition ({channelCounts.faceCount})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setSelectedChannel('MOBILE');
+              showToast('Filtered by Mobile GPS Geofence clock-ins.');
+            }}
+            className={cn(
+              "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
+              selectedChannel === 'MOBILE'
+                ? "bg-blue-700 text-white border-blue-700 shadow-xs"
+                : "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
+            )}
+          >
+            <MapPin className="w-3.5 h-3.5" />
+            <span>Mobile / GPS ({channelCounts.mobileCount})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setSelectedChannel('WEB');
+              showToast('Filtered by Web Check-In / Manual punches.');
+            }}
+            className={cn(
+              "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border",
+              selectedChannel === 'WEB'
+                ? "bg-gray-800 text-white border-gray-800 shadow-xs"
+                : "bg-gray-50 text-gray-700 hover:bg-gray-100 border-gray-200"
+            )}
+          >
+            <Laptop className="w-3.5 h-3.5" />
+            <span>Web / Manual ({channelCounts.webCount})</span>
+          </button>
         </div>
       </div>
 

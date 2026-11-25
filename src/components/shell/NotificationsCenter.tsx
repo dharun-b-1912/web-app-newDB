@@ -36,12 +36,15 @@ import { useToast } from '../ui/Toast';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../hooks/useAuth';
 import { getPrimaryRole } from '../../lib/rbac/permissionEngine';
+import { api } from '../../services/api';
 
 type NotificationTab = 'all' | 'approvals' | 'alerts' | 'system';
 
 export const NotificationsCenter: React.FC = () => {
   const { showToast } = useToast();
   const { user } = useAuth();
+  const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+  const activeOrgId = activeComp?.organization_id || activeComp?.id || user?.organization_id || '';
   const currentRole = user ? getPrimaryRole(user) : '';
   const isPlatformContext = Boolean(
     (typeof window !== 'undefined' && (window.location.pathname.startsWith('/platform') || window.location.pathname.startsWith('/superadmin') || window.location.pathname.startsWith('/saas-'))) ||
@@ -99,17 +102,30 @@ export const NotificationsCenter: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch real data on mount and open
+  // Fetch real data on mount, open, or organization switch
   const loadData = async () => {
+    if (!activeOrgId || activeOrgId === 'platform-root') {
+      setNotifications([]);
+      setApprovals([]);
+      setUnreadCount(0);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const [notifRes, apprRes] = await Promise.all([
-        notificationService.getNotifications({ limit: 40 }),
-        (isVendorContext || isPlatformContext) ? Promise.resolve([]) : approvalService.getApprovalRequests({ status: 'Pending' }),
+        notificationService.getNotifications({ organizationId: activeOrgId, limit: 40 }),
+        (isVendorContext || isPlatformContext)
+          ? Promise.resolve([])
+          : approvalService.getApprovalRequests({ status: 'Pending', organizationId: activeOrgId }),
       ]);
 
-      // Scoped role filtering
+      // Scoped role & strict tenant filtering barrier
       let relevant = notifRes.items.filter((item) => {
+        const itemOrgId = item.metadata?.organizationId;
+        if (itemOrgId && activeOrgId && itemOrgId !== activeOrgId) {
+          return false;
+        }
         const isNoticeForVendor = isVendorNotice(item);
         if (isVendorContext) {
           return isNoticeForVendor;
@@ -172,12 +188,18 @@ export const NotificationsCenter: React.FC = () => {
   };
 
   useEffect(() => {
+    setNotifications([]);
+    setApprovals([]);
+    setUnreadCount(0);
     loadData();
-  }, [isOpen, isVendorContext]);
+  }, [isOpen, isVendorContext, activeOrgId]);
 
-  // Subscribe to live Realtime Events
+  // Subscribe to live Realtime Events (with strict multi-tenant barrier)
   useEffect(() => {
     const unsubscribe = notificationRealtimeEngine.subscribe((event: WorkForceEvent) => {
+      if (event.organizationId && activeOrgId && event.organizationId !== activeOrgId) {
+        return; // Strict multi-tenant barrier: drop cross-org realtime events
+      }
       const isNoticeForVendor = isVendorNotice(event);
 
       // If notification is targeted for VENDOR, do not display in Company HR inbox!
@@ -214,7 +236,7 @@ export const NotificationsCenter: React.FC = () => {
       setUnreadCount((prev) => prev + 1);
 
       if (event.category === 'APPROVAL' && !isVendorContext && !isPlatformContext) {
-        approvalService.getApprovalRequests({ status: 'Pending' }).then(setApprovals);
+        approvalService.getApprovalRequests({ status: 'Pending', organizationId: activeOrgId }).then(setApprovals);
       }
 
       // Show toast if high severity
@@ -224,7 +246,7 @@ export const NotificationsCenter: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [showToast, isVendorContext]);
+  }, [showToast, isVendorContext, activeOrgId]);
 
   // Filter items by tab
   const filteredNotifications = useMemo(() => {

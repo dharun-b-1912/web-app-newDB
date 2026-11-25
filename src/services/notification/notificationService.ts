@@ -12,14 +12,20 @@ import {
   NotificationTelemetryMetrics,
 } from '../../types/notification';
 import { notificationRealtimeEngine } from './notificationRealtimeEngine';
+import { getActiveOrgId } from '../attendance/biometricCommandService';
 
-// Local storage fallback key for offline persistence
+// Local storage fallback key for offline persistence (scoped per tenant)
 const STORAGE_KEYS = {
   NOTIFICATIONS: 'workforceos_notifications_v2',
   DELIVERIES: 'workforceos_notification_deliveries_v2',
   OUTBOX: 'workforceos_notification_outbox_v2',
   VENDOR_NOTICES: 'workforceos_vendor_notifications_v1',
 };
+
+function getTenantStorageKey(baseKey: string, orgId?: string): string {
+  const effective = orgId || getActiveOrgId();
+  return effective ? `${baseKey}_${effective}` : baseKey;
+}
 
 function getLocalData<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -47,11 +53,17 @@ export const notificationService = {
    */
   async getNotifications(params: {
     userId?: string;
+    organizationId?: string;
     category?: string;
     unreadOnly?: boolean;
     limit?: number;
   }): Promise<{ items: HydratedNotificationItem[]; unreadCount: number }> {
     const limit = params.limit || 40;
+    const targetOrgId = params.organizationId || getActiveOrgId();
+    if (!targetOrgId || targetOrgId === 'platform-root') {
+      return { items: [], unreadCount: 0 };
+    }
+
     let hydratedItems: HydratedNotificationItem[] = [];
 
     if (isSupabaseEnabled) {
@@ -59,6 +71,7 @@ export const notificationService = {
         let query = supabase
           .from('notification_events')
           .select('*')
+          .eq('organization_id', targetOrgId)
           .order('created_at', { ascending: false })
           .limit(limit);
 
@@ -93,7 +106,7 @@ export const notificationService = {
               isRead: ev.is_read || false,
               status: ev.is_read ? 'READ' : 'DELIVERED',
               createdAt: ev.created_at,
-              metadata: ev.metadata || (isVendor ? { targetRole: 'VENDOR' } : {}),
+              metadata: { ...(ev.metadata || (isVendor ? { targetRole: 'VENDOR' } : {})), organizationId: ev.organization_id },
             };
           });
         }
@@ -102,18 +115,21 @@ export const notificationService = {
       }
     }
 
-    // Merge vendor notices store
-    const localVendorNotifs = getLocalData<HydratedNotificationItem[]>(STORAGE_KEYS.VENDOR_NOTICES, []);
+    // Merge tenant-scoped vendor notices store
+    const localVendorNotifs = getLocalData<HydratedNotificationItem[]>(
+      getTenantStorageKey(STORAGE_KEYS.VENDOR_NOTICES, targetOrgId),
+      []
+    );
     localVendorNotifs.forEach((vn) => {
       if (!hydratedItems.some((i) => i.id === vn.id)) {
         hydratedItems.unshift(vn);
       }
     });
 
-    // Fallback to local storage if items still empty
+    // Fallback to tenant-scoped local storage if items still empty
     if (hydratedItems.length === 0) {
-      const localEvents = getLocalData<any[]>(STORAGE_KEYS.NOTIFICATIONS, []);
-      const localDeliveries = getLocalData<any[]>(STORAGE_KEYS.DELIVERIES, []);
+      const localEvents = getLocalData<any[]>(getTenantStorageKey(STORAGE_KEYS.NOTIFICATIONS, targetOrgId), []);
+      const localDeliveries = getLocalData<any[]>(getTenantStorageKey(STORAGE_KEYS.DELIVERIES, targetOrgId), []);
 
       hydratedItems = localDeliveries.map((del) => {
         const ev = localEvents.find((e) => e.id === del.notification_id) || {
