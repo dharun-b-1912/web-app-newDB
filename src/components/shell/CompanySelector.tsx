@@ -16,6 +16,7 @@ export const CompanySelector: React.FC<CompanySelectorProps> = ({ onOpenLocation
     switchOrganization,
     switchLegalEntity,
     roleTitle,
+    isPlatformAdmin,
   } = useTenant();
   const { primaryRole } = usePermission();
   const [isOpen, setIsOpen] = useState(false);
@@ -75,8 +76,8 @@ export const CompanySelector: React.FC<CompanySelectorProps> = ({ onOpenLocation
               <span className="truncate">{organization?.name || 'Joy Corporate Solutions'}</span>
             </div>
 
-            {/* Organization Switcher if multi-org */}
-            {organizations.length > 1 && (
+            {/* Organization Switcher strictly restricted to Platform/Super Admins */}
+            {isPlatformAdmin && organizations.length > 1 && (
               <div className="mt-2 space-y-1">
                 <div className="text-[9px] font-bold text-gray-400 uppercase">Your Organizations:</div>
                 {organizations.map((org) => (

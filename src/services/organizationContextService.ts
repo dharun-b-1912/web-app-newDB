@@ -23,11 +23,15 @@ const STORAGE_KEYS = {
 // One-time migration: replace stale company ID from old default with correct Supabase UUID
 const STALE_COMPANY_ID = '0ce6436c-e9b4-4e0e-9102-411ea21b8b80';
 const CORRECT_COMPANY_ID = '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+const STALE_ELECTRA_COMPANY_ID = '3041388a-b7b2-438a-cfba-5fd788b4cbf3';
+const CORRECT_ELECTRA_COMPANY_ID = 'c0bbfb28-1500-4ebb-aba8-453b3681f342';
 if (typeof localStorage !== 'undefined') {
   try {
     const cachedEntityId = localStorage.getItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID);
     if (cachedEntityId === STALE_COMPANY_ID) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, CORRECT_COMPANY_ID);
+    } else if (cachedEntityId === STALE_ELECTRA_COMPANY_ID) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, CORRECT_ELECTRA_COMPANY_ID);
     }
     // Also migrate the cached COMPANIES list in api.ts KEYS.COMPANIES and sanitize PVE -> PVT
     const cachedCompanies = localStorage.getItem('workforce_companies');
@@ -122,17 +126,17 @@ export const DEFAULT_LEGAL_ENTITIES: Company[] = [
     created_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: '3041388a-b7b2-438a-cfba-5fd788b4cbf3',
+    id: 'c0bbfb28-1500-4ebb-aba8-453b3681f342',
     organization_id: 'c5ab6b03-adde-47cc-a033-064f4c39b21e',
-    legal_name: 'Electra EV Pvt Ltd',
+    legal_name: 'Electra EV',
     trade_name: 'Electra EV',
     statutory_registration_no: 'U34100TN2024PTC054321',
     tax_id: 'BBBEV5678G',
     country: 'India',
-    city: 'Chennai',
+    city: 'Coimbatore',
     currency: 'INR',
     timezone: 'Asia/Kolkata',
-    address: 'Plant 1, Industrial Corridor, Chennai, Tamil Nadu 600001',
+    address: 'Coimbatore Plant, Tamil Nadu',
     status: 'Active',
     created_at: '2024-01-01T00:00:00Z',
   },
@@ -290,30 +294,39 @@ export class OrganizationContextService {
     const resolvePromise = (async (): Promise<EffectiveUserContext> => {
       try {
         const primaryRole = getPrimaryRole(user);
-        const isPlatformAdmin = primaryRole === 'Super Admin' || user.role === 'Super Admin' || (user as any).is_platform_admin === true;
+        const rawOrgId = user.organization_id || (user as any).organizationId;
+        const isPlatformAdmin =
+          primaryRole === 'Super Admin' ||
+          (primaryRole as string) === 'Platform Admin' ||
+          user.role === 'Super Admin' ||
+          (user as any).is_platform_admin === true ||
+          rawOrgId === 'platform-root';
         const roleName = primaryRole !== 'Unassigned' ? primaryRole : ((user as any).roleCode || (user as any).primaryRole || user.role || 'Unassigned');
+
+        const isUuid = typeof rawOrgId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawOrgId);
+        const userOrgId = isUuid ? rawOrgId : '0c621892-e938-4707-9957-13534ea32c19';
 
         let allOrgs: Organization[] = [];
         let allEntities: Company[] = [];
 
-        // Check memory cache for orgs and entities (120s TTL)
-        if (
+        // Check memory cache for orgs and entities ONLY if scoped to platform admin or matching tenant
+        const cacheMatchesTenant =
           OrganizationContextService.cachedOrgs &&
           OrganizationContextService.cachedEntities &&
-          now - OrganizationContextService.cacheTimestamp < 120_000
-        ) {
-          allOrgs = OrganizationContextService.cachedOrgs;
-          allEntities = OrganizationContextService.cachedEntities;
+          now - OrganizationContextService.cacheTimestamp < 120_000 &&
+          (isPlatformAdmin ||
+            (OrganizationContextService.cachedOrgs.length === 1 &&
+              OrganizationContextService.cachedOrgs[0].id === userOrgId));
+
+        if (cacheMatchesTenant) {
+          allOrgs = OrganizationContextService.cachedOrgs!;
+          allEntities = OrganizationContextService.cachedEntities!;
         } else if (isSupabaseEnabled) {
-          // 1. Fetch live organizations and legal entities directly from Supabase with bounded timeout
+          // 1. Fetch live organizations and legal entities directly from Supabase with strict tenant isolation
           try {
-            const rawOrgId = user.organization_id || (user as any).organizationId;
-            const isUuid = typeof rawOrgId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawOrgId);
-            const userOrgId = isUuid ? rawOrgId : '0c621892-e938-4707-9957-13534ea32c19';
-            const isPrivileged = isPlatformAdmin || (primaryRole as string) === 'HR Head' || (primaryRole as string) === 'Company Admin' || (primaryRole as string) === 'Platform Admin';
             let orgQ = supabase.from('organizations').select('*');
             let compQ = supabase.from('companies').select('*');
-            if (rawOrgId !== 'platform-root' && !isPrivileged) {
+            if (!isPlatformAdmin) {
               orgQ = orgQ.eq('id', userOrgId);
               compQ = compQ.eq('organization_id', userOrgId);
             }
@@ -347,34 +360,55 @@ export class OrganizationContextService {
             console.warn('[OrgContextService] Supabase context query notice:', err);
           }
 
-          // Ensure default organizations (Joy Corporate and Electra EV) are present
-          for (const defOrg of DEFAULT_ORGANIZATIONS) {
-            if (!allOrgs.some((o) => o.id === defOrg.id)) {
-              allOrgs.push(defOrg);
+          // Strict fallback ONLY when DB returned 0 rows — never inject cross-tenant orgs or duplicate entities
+          if (allOrgs.length === 0) {
+            if (isPlatformAdmin) {
+              allOrgs = [...DEFAULT_ORGANIZATIONS];
+            } else {
+              const matchingOrg = DEFAULT_ORGANIZATIONS.find((o) => o.id === userOrgId);
+              if (matchingOrg) allOrgs = [matchingOrg];
             }
           }
-          for (const defEnt of DEFAULT_LEGAL_ENTITIES) {
-            if (!allEntities.some((e) => e.id === defEnt.id)) {
-              allEntities.push(defEnt);
+          if (allEntities.length === 0) {
+            if (isPlatformAdmin) {
+              allEntities = [...DEFAULT_LEGAL_ENTITIES];
+            } else {
+              const matchingEnt = DEFAULT_LEGAL_ENTITIES.find((e) => e.organization_id === userOrgId);
+              if (matchingEnt) allEntities = [matchingEnt];
             }
           }
+
+          // Hard tenant barrier: non-platform-admins NEVER retain other organizations or entities in memory
+          if (!isPlatformAdmin) {
+            allOrgs = allOrgs.filter((o) => o.id === userOrgId);
+            allEntities = allEntities.filter((e) => e.organization_id === userOrgId);
+          }
+
+          // Deduplicate entities by id to prevent duplicate entries
+          const seenEntityIds = new Set<string>();
+          allEntities = allEntities.filter((e) => {
+            if (seenEntityIds.has(e.id)) return false;
+            seenEntityIds.add(e.id);
+            return true;
+          });
 
           if (allOrgs.length > 0) OrganizationContextService.cachedOrgs = allOrgs;
           if (allEntities.length > 0) OrganizationContextService.cachedEntities = allEntities;
           OrganizationContextService.cacheTimestamp = Date.now();
         }
 
-      // 2. Authoritative Active Organization Selection: check cached/selected active org first if valid
+      // 2. Authoritative Active Organization Selection:
+      //    Platform Admins may switch via localStorage; regular tenant users are strictly locked to userOrgId.
       let activeOrg: Organization | null = null;
-      let targetOrgId: string | null = null;
-      if (typeof localStorage !== 'undefined') {
+      let targetOrgId: string | null = isPlatformAdmin ? null : userOrgId;
+      if (isPlatformAdmin && typeof localStorage !== 'undefined') {
         const cachedOrgId = localStorage.getItem(STORAGE_KEYS.ACTIVE_ORG_ID);
-        if (cachedOrgId && (allOrgs.some((o) => o.id === cachedOrgId) || cachedOrgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' || cachedOrgId === '0c621892-e938-4707-9957-13534ea32c19')) {
+        if (cachedOrgId && allOrgs.some((o) => o.id === cachedOrgId)) {
           targetOrgId = cachedOrgId;
         }
       }
       if (!targetOrgId) {
-        targetOrgId = user.organization_id || (user as any).organizationId;
+        targetOrgId = rawOrgId || userOrgId;
       }
 
       if (targetOrgId) {
