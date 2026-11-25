@@ -147,7 +147,7 @@ export const attendanceApi = {
             .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time, attendance_date')
             .eq('organization_id', tenantId)
             .order('punch_time', { ascending: true })
-            .limit(500)
+            .limit(5000)
             .abortSignal(ctrl.signal);
           if (date) {
             const startRange = new Date(`${date}T00:00:00Z`);
