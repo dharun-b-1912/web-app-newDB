@@ -74,6 +74,8 @@ export interface AttendanceDaily {
   late_entry_minutes?: number;
   early_checkout_minutes: number;
   early_exit_minutes?: number;
+  early_arrival_minutes?: number;
+  permission_minutes?: number;
   overtime_minutes: number;
   regularization_status?: RegularizationStatus;
   is_regularized?: boolean;

@@ -1763,7 +1763,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredData.map(({ emp, record, roster, shift, isWorking: rowIsWorking, isMissingPunch: rowIsMissingPunch, isAdaptiveInferred, adaptiveReason }) => {
+                filteredData.map(({ emp, record, roster, shift, isWorking: rowIsWorking, isMissingPunch: rowIsMissingPunch, isAdaptiveInferred, adaptiveReason, permissionMinutes }) => {
                   const empName = formatEmployeeName(emp);
                   const empCode = emp.employee_code || `WF-${emp.id}`;
                   const dept = formatTitleCase(emp.department_name || emp.department || 'General');
@@ -1985,14 +1985,14 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                           <span className="text-gray-400 font-mono text-xs">—</span>
                         ) : (
                           <div className="flex flex-col items-start gap-1">
-                            {(row as any)?.permissionMinutes > 0 ? (
+                            {permissionMinutes > 0 ? (
                               <div className="flex flex-col items-start gap-1">
                                 <span
                                   className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200/90 shadow-2xs whitespace-nowrap"
-                                  title={`Approved permission: ${(row as any).permissionMinutes >= 60 ? `${(row as any).permissionMinutes / 60} hr` : `${(row as any).permissionMinutes} mins`}`}
+                                  title={`Approved permission: ${permissionMinutes >= 60 ? `${permissionMinutes / 60} hr` : `${permissionMinutes} mins`}`}
                                 >
                                   <Clock className="w-2.5 h-2.5 text-teal-600" />
-                                  {(row as any).permissionMinutes >= 60 ? `${(row as any).permissionMinutes / 60}h` : `${(row as any).permissionMinutes}m`} Permission
+                                  {permissionMinutes >= 60 ? `${permissionMinutes / 60}h` : `${permissionMinutes}m`} Permission
                                 </span>
                                 {record.late_minutes === 0 ? (
                                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70 whitespace-nowrap">
@@ -2025,7 +2025,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                               </span>
                             )}
 
-                            {ot.hasOvertime && !(row as any)?.permissionMinutes && (
+                            {ot.hasOvertime && !permissionMinutes && (
                               <span
                                 title={`Overtime: ${ot.verbose}`}
                                 className="inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs whitespace-nowrap"

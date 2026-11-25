@@ -6,6 +6,7 @@ import {
 import {
   getShiftScheduledBreakMinutes,
   processAttendanceStatus,
+  DEFAULT_ATTENDANCE_POLICY,
 } from '../../lib/attendance/attendanceEngine';
 
 const ELECTRA_ORG_ID = 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
@@ -71,8 +72,8 @@ describe('Multi-Tenant Overtime & Shift Break Policy Isolation', () => {
 
   it('immediately applies tenant break & OT threshold changes in AttendanceEngine', async () => {
     // Default Electra night break is 0m, day break is 30m
-    expect(getShiftScheduledBreakMinutes('SHIFT-3', 30, ELECTRA_ORG_ID)).toBe(0);
-    expect(getShiftScheduledBreakMinutes('SHIFT-1', 0, ELECTRA_ORG_ID)).toBe(30);
+    expect(getShiftScheduledBreakMinutes('SHIFT-3', true, ELECTRA_ORG_ID)).toBe(0);
+    expect(getShiftScheduledBreakMinutes('SHIFT-1', false, ELECTRA_ORG_ID)).toBe(30);
 
     // Customize Electra EV: set night break to 20m, day break to 40m, min OT to 60m
     await tenantOvertimePolicyService.savePolicyAsync(ELECTRA_ORG_ID, {
@@ -81,18 +82,25 @@ describe('Multi-Tenant Overtime & Shift Break Policy Isolation', () => {
       minOtThresholdMinutes: 60,
     });
 
-    expect(getShiftScheduledBreakMinutes('SHIFT-3', 30, ELECTRA_ORG_ID)).toBe(20);
-    expect(getShiftScheduledBreakMinutes('SHIFT-1', 0, ELECTRA_ORG_ID)).toBe(40);
+    expect(getShiftScheduledBreakMinutes('SHIFT-3', true, ELECTRA_ORG_ID)).toBe(20);
+    expect(getShiftScheduledBreakMinutes('SHIFT-1', false, ELECTRA_ORG_ID)).toBe(40);
 
     // 45m extra work should yield 0 OT when minOtThresholdMinutes = 60
-    const resBelowMin = processAttendanceStatus({
-      punchIn: '2026-11-25T08:30:00',
-      punchOut: '2026-11-25T17:55:00', // 565m gross - 40m break = 525m net (45m extra over 480m)
-      shiftStart: '08:30',
-      shiftEnd: '17:00',
-      shiftCode: 'GEN-01',
-      organizationId: ELECTRA_ORG_ID,
-    });
+    const breakMins = getShiftScheduledBreakMinutes('GEN-01', false, ELECTRA_ORG_ID);
+    const resBelowMin = processAttendanceStatus(
+      510, // 08:30
+      1075, // 17:55 (565m gross - 40m break = 525m net; 45m extra work)
+      510,
+      1020, // 17:00
+      { ...DEFAULT_ATTENDANCE_POLICY, overtime_min_minutes: 60 },
+      false,
+      false,
+      false,
+      '2026-11-25',
+      undefined,
+      breakMins,
+      ELECTRA_ORG_ID
+    );
     expect(resBelowMin.overtimeMinutes).toBe(0);
 
     // Resetting restores defaults

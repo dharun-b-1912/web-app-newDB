@@ -24,7 +24,7 @@ import { cn } from '../../lib/utils';
 
 export const UserMenu: React.FC = () => {
   const { user, logout } = useAuth();
-  const { activeLegalEntity, roleTitle } = useTenant();
+  const { activeLegalEntity, roleTitle, organization } = useTenant();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [platformProfile, setPlatformProfile] = useState<PlatformAdminProfile | null>(null);

@@ -109,7 +109,8 @@ export function processAttendanceStatus(
   isHoliday: boolean = false,
   attendanceDate?: string,
   currentMinutesOverride?: number,
-  breakMinutes: number = 0
+  breakMinutes: number = 0,
+  orgId?: string
 ): {
   status: AttendanceStatus;
   grossMinutes: number;
@@ -245,7 +246,7 @@ export function processAttendanceStatus(
     }
   }
 
-  const tenantOtPolicy = tenantOvertimePolicyService.getPolicySync();
+  const tenantOtPolicy = tenantOvertimePolicyService.getPolicySync(orgId);
   // Deduct scheduled break (e.g. strict 30m lunch for Electra Day/General shifts; 0m for Night Shift) when worked >= 4h
   const effectiveBreak = (gross >= 240 && breakMinutes > 0) ? breakMinutes : 0;
   const net = Math.max(0, gross - effectiveBreak);

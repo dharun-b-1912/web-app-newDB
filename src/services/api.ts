@@ -1729,6 +1729,8 @@ export const api = {
                   if (!empLookup.has(m.id)) empLookup.set(m.id, m);
                 });
 
+                const activeCompanyId = filterObj?.companyId || this.getActiveCompany()?.id || '';
+
                 data.forEach((e: any) => {
                   const cachedEmp = cachedMap.get(e.id);
                   const extRegistry = getExtendedEmployeeRegistry();

@@ -174,7 +174,7 @@ export const MobilePunchPolicyView: React.FC<MobilePunchPolicyViewProps> = ({
             Refresh
           </Button>
           <Button
-            variant="default"
+            variant="primary"
             size="sm"
             onClick={handleSave}
             disabled={saving || !selectedOrgId}

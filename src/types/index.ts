@@ -167,7 +167,7 @@ export interface Company {
   organization_id: string;
   legal_name: string;
   trade_name?: string;
-  statutory_registration_no: string;
+  statutory_registration_no?: string;
   tax_id?: string;
   country: string;
   city: string;

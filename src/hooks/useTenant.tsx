@@ -13,6 +13,7 @@ interface TenantContextType {
   activeCompany: Company | null;
   activeLegalEntity: Company | null;
   roleTitle: string;
+  isPlatformAdmin: boolean;
   setActiveCompany: (company: Company) => void;
   switchOrganization: (orgId: string) => Promise<void>;
   switchLegalEntity: (entityId: string) => Promise<void>;
@@ -32,6 +33,11 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
   const [legalEntities, setLegalEntities] = useState<Company[]>(() => initialFastCtx?.authorizedLegalEntities || []);
   const [activeLegalEntity, setActiveLegalEntity] = useState<Company | null>(() => initialFastCtx?.activeLegalEntity || null);
   const [roleTitle, setRoleTitle] = useState<string>(() => initialFastCtx?.roleTitle || 'Unassigned');
+  const isPlatformAdmin = Boolean(
+    user?.role === 'Super Admin' ||
+    (user as any)?.is_platform_admin === true ||
+    user?.email === 'superadmin@joycorp.internal'
+  );
   const [isLoading, setIsLoading] = useState<boolean>(() => !initialFastCtx);
   const [error, setError] = useState<string | null>(null);
 
@@ -236,6 +242,7 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
         activeCompany: activeLegalEntity,
         activeLegalEntity,
         roleTitle,
+        isPlatformAdmin,
         setActiveCompany,
         switchOrganization,
         switchLegalEntity,
@@ -261,6 +268,7 @@ export const useTenant = () => {
       activeCompany: null,
       activeLegalEntity: null,
       roleTitle: 'Unassigned',
+      isPlatformAdmin: false,
       setActiveCompany: () => {},
       switchOrganization: async () => {},
       switchLegalEntity: async () => {},

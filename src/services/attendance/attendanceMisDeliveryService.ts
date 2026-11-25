@@ -691,6 +691,11 @@ export class AttendanceMisDeliveryService {
     whatsAppRecipients?: string[];
     requestedByUserId?: string;
     customNote?: string;
+    customSubject?: string;
+    deliveryChannel?: string;
+    includePunches?: boolean;
+    triggeredBy?: string;
+    mode?: string;
     attachExcel?: boolean;
     attachCsv?: boolean;
     preGeneratedArtifact?: AttendanceMisReportArtifact;

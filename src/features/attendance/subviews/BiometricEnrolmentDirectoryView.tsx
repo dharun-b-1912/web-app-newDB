@@ -2115,7 +2115,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
                               Pending Scan
                             </Badge>
                           ) : (
-                            <Badge variant="red" size="sm">
+                            <Badge variant="rose" size="sm">
                               Absent
                             </Badge>
                           )}

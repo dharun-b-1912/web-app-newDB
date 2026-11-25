@@ -1072,7 +1072,7 @@ export const attendanceApi = {
               const expectedOutMins = timeStringToMinutes(shiftEnd) || 1110;
               const calc = processAttendanceStatus(inMins, outMins, expectedInMins, expectedOutMins);
               const resolvedStatus = hasPunch
-                ? ((item.status === 'On Leave' || item.status === 'ON_LEAVE' || item.status === 'Leave')
+                ? (((item.status as string) === 'On Leave' || (item.status as string) === 'ON_LEAVE' || (item.status as string) === 'Leave')
                     ? (calc.status === 'Absent' ? 'Present' : calc.status)
                     : (item.status || calc.status || 'Present'))
                 : (roster.is_weekly_off ? 'Weekly Off' : item.status || 'Not Checked In');
