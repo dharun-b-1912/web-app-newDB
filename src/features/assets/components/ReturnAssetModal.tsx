@@ -19,6 +19,7 @@ interface ReturnAssetModalProps {
   onSuccess: () => void;
   assignment: AssetAssignment | null;
   asset?: UniversalAsset | null;
+  organizationId?: string;
 }
 
 export const ReturnAssetModal: React.FC<ReturnAssetModalProps> = ({
@@ -27,6 +28,7 @@ export const ReturnAssetModal: React.FC<ReturnAssetModalProps> = ({
   onSuccess,
   assignment,
   asset,
+  organizationId,
 }) => {
   const { showToast } = useToast();
 
@@ -50,6 +52,7 @@ export const ReturnAssetModal: React.FC<ReturnAssetModalProps> = ({
       await assetAssignmentService.returnAsset({
         assignmentId: assignment.id,
         assetId: assignment.asset_id,
+        organizationId,
         returnDate,
         conditionAtReturn,
         deductionStatus,

@@ -15,9 +15,6 @@ import { supabaseAdmin, supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { hrEventBus } from '../hrEventBus';
 import { api } from '../api';
 
-const DEFAULT_ORG_ID = '0c621892-e938-4707-9957-13534ea32c19';
-const DEFAULT_COMPANY_ID = '2030277f-a6a1-427f-beaf-4fc677a3bae2';
-
 function resolveTargetOrg(explicitOrgId?: string): string {
   if (explicitOrgId && explicitOrgId.trim()) return explicitOrgId.trim();
   const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
@@ -26,7 +23,7 @@ function resolveTargetOrg(explicitOrgId?: string): string {
     const user = api.getCurrentUser?.();
     if (user?.organization_id) return user.organization_id;
   } catch (_) {}
-  return DEFAULT_ORG_ID;
+  return '';
 }
 
 export const MODULAR_CATEGORIES: { code: string; name: string; dbCategory: string; icon: string }[] = [
@@ -41,13 +38,12 @@ export const MODULAR_CATEGORIES: { code: string; name: string; dbCategory: strin
 ];
 
 class AssetService {
-  private _cachedAssets: UniversalAsset[] = [];
   private _assetsByOrg: Map<string, UniversalAsset[]> = new Map();
   private _isInitialized: boolean = false;
-  private _inFlightFetch: Promise<UniversalAsset[]> | null = null;
+  private _inFlightByOrg: Map<string, Promise<UniversalAsset[]>> = new Map();
 
   constructor() {
-    this.fetchAssetsFromDb().catch(() => {});
+    // Eager loading removed to prevent cross-tenant data leakage during early bundle evaluation
   }
 
   /**
@@ -55,19 +51,22 @@ class AssetService {
    */
   async fetchAssetsFromDb(orgId?: string, force = false): Promise<UniversalAsset[]> {
     const targetOrg = resolveTargetOrg(orgId);
-    if (this._inFlightFetch && !force) return this._inFlightFetch;
+    if (!targetOrg) {
+      // Hard isolation boundary: Never query multi-tenant assets table without an active organization
+      return [];
+    }
 
-    this._inFlightFetch = (async () => {
+    const inFlight = this._inFlightByOrg.get(targetOrg);
+    if (inFlight && !force) return inFlight;
+
+    const fetchPromise = (async () => {
       try {
         const client = isSupabaseEnabled ? supabaseAdmin : supabase;
-        let query = client
+        const query = client
           .from('assets')
           .select('*')
+          .eq('organization_id', targetOrg)
           .order('created_at', { ascending: false });
-
-        if (targetOrg && targetOrg !== 'platform-root') {
-          query = query.eq('organization_id', targetOrg);
-        }
 
         const { data, error } = await query;
 
@@ -96,7 +95,7 @@ class AssetService {
           return {
             id: row.id,
             tenant_id: row.organization_id || targetOrg,
-            legal_entity_id: row.company_id || DEFAULT_COMPANY_ID,
+            legal_entity_id: row.company_id || '',
             asset_category_code: row.category || 'HARDWARE',
             asset_type_code: row.category || 'HARDWARE',
             asset_code: row.asset_code || `AST-${row.id?.slice(0, 6)}`,
@@ -125,18 +124,18 @@ class AssetService {
         });
 
         this._assetsByOrg.set(targetOrg, mapped);
-        this._cachedAssets = mapped;
         this._isInitialized = true;
         return mapped;
       } catch (err: any) {
         console.error('[AssetService] Database error:', err.message);
         return this._assetsByOrg.get(targetOrg) || [];
       } finally {
-        this._inFlightFetch = null;
+        this._inFlightByOrg.delete(targetOrg);
       }
     })();
 
-    return this._inFlightFetch;
+    this._inFlightByOrg.set(targetOrg, fetchPromise);
+    return fetchPromise;
   }
 
   /**
@@ -144,6 +143,7 @@ class AssetService {
    */
   getAssets(params: {
     organizationId?: string;
+    companyId?: string;
     search?: string;
     categoryCode?: string;
     status?: string;
@@ -153,7 +153,15 @@ class AssetService {
     limit?: number;
   } = {}): { items: UniversalAsset[]; total: number; page: number; totalPages: number } {
     const targetOrg = resolveTargetOrg(params.organizationId);
-    let filtered = [...(this._assetsByOrg.get(targetOrg) || this._cachedAssets.filter(a => a.tenant_id === targetOrg))];
+    if (!targetOrg) {
+      return { items: [], total: 0, page: 1, totalPages: 1 };
+    }
+
+    let filtered = [...(this._assetsByOrg.get(targetOrg) || [])];
+
+    if (params.companyId && params.companyId !== 'ALL') {
+      filtered = filtered.filter(a => !a.legal_entity_id || a.legal_entity_id === params.companyId);
+    }
 
     if (params.tab) {
       switch (params.tab) {
@@ -214,7 +222,8 @@ class AssetService {
 
   getAssetById(id: string, orgId?: string): UniversalAsset | null {
     const targetOrg = resolveTargetOrg(orgId);
-    const orgAssets = this._assetsByOrg.get(targetOrg) || this._cachedAssets;
+    if (!targetOrg) return null;
+    const orgAssets = this._assetsByOrg.get(targetOrg) || [];
     return orgAssets.find(a => a.id === id) || null;
   }
 
@@ -239,7 +248,10 @@ class AssetService {
     // Resolve company and organization context strictly
     const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
     const orgId = resolveTargetOrg(params.organizationId || activeComp?.organization_id);
-    const compId = params.companyId || activeComp?.id || DEFAULT_COMPANY_ID;
+    if (!orgId) {
+      throw new Error('Tenant organization context is required to register an asset.');
+    }
+    const compId = params.companyId || activeComp?.id || '';
 
     // Find category definition
     const catDef = MODULAR_CATEGORIES.find(c => c.code === params.categoryCode) || MODULAR_CATEGORIES[0];
@@ -311,7 +323,6 @@ class AssetService {
     const orgAssets = this._assetsByOrg.get(orgId) || [];
     orgAssets.unshift(createdAsset);
     this._assetsByOrg.set(orgId, orgAssets);
-    this._cachedAssets = orgAssets;
     hrEventBus.emit('asset.created', createdAsset);
     return createdAsset;
   }
@@ -322,17 +333,22 @@ class AssetService {
   async updateAssetStatus(assetId: string, status: string, orgId?: string): Promise<void> {
     const client = isSupabaseEnabled ? supabaseAdmin : supabase;
     const targetOrg = resolveTargetOrg(orgId);
+    if (!targetOrg) return;
 
-    const { error } = await client
+    let query = client
       .from('assets')
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', assetId);
+
+    query = query.eq('organization_id', targetOrg);
+
+    const { error } = await query;
 
     if (error) {
       console.warn('[AssetService] Update status failed:', error.message);
     }
 
-    const orgAssets = this._assetsByOrg.get(targetOrg) || this._cachedAssets;
+    const orgAssets = this._assetsByOrg.get(targetOrg) || [];
     const item = orgAssets.find(a => a.id === assetId);
     if (item) {
       item.status = status;
@@ -347,24 +363,48 @@ class AssetService {
   async deleteAsset(assetId: string, orgId?: string): Promise<void> {
     const client = isSupabaseEnabled ? supabaseAdmin : supabase;
     const targetOrg = resolveTargetOrg(orgId);
+    if (!targetOrg) {
+      throw new Error('Tenant organization context is required to delete an asset.');
+    }
 
-    const { error } = await client.from('assets').delete().eq('id', assetId);
+    const { error } = await client
+      .from('assets')
+      .delete()
+      .eq('id', assetId)
+      .eq('organization_id', targetOrg);
+
     if (error) {
       throw new Error(`Failed to delete asset: ${error.message}`);
     }
 
-    const orgAssets = (this._assetsByOrg.get(targetOrg) || this._cachedAssets).filter(a => a.id !== assetId);
+    const orgAssets = (this._assetsByOrg.get(targetOrg) || []).filter(a => a.id !== assetId);
     this._assetsByOrg.set(targetOrg, orgAssets);
-    this._cachedAssets = orgAssets;
     hrEventBus.emit('asset.deleted', { assetId });
   }
 
   /**
    * Compute real-time KPIs from active database records strictly isolated by organization
    */
-  getSummaryMetrics(orgId?: string): AssetSummaryMetrics {
+  getSummaryMetrics(orgId?: string, companyId?: string): AssetSummaryMetrics {
     const targetOrg = resolveTargetOrg(orgId);
-    const assets = this._assetsByOrg.get(targetOrg) || this._cachedAssets.filter(a => a.tenant_id === targetOrg);
+    if (!targetOrg) {
+      return {
+        total_assets: 0,
+        total_valuation: 0,
+        total_valuation_formatted: '₹0',
+        currently_assigned: 0,
+        available_in_pool: 0,
+        under_maintenance: 0,
+        low_stock_items_count: 0,
+        total_inventory_items: 0,
+      };
+    }
+
+    let assets = this._assetsByOrg.get(targetOrg) || [];
+    if (companyId && companyId !== 'ALL') {
+      assets = assets.filter(a => !a.legal_entity_id || a.legal_entity_id === companyId);
+    }
+
     const totalAssets = assets.length;
     const totalValuation = assets.reduce((acc, a) => acc + (a.purchase_price || 0), 0);
     const assigned = assets.filter(a => a.status === 'ASSIGNED' || a.status === 'IN_USE').length;
@@ -383,24 +423,26 @@ class AssetService {
     };
   }
 
-  getCategories(): AssetCategory[] {
+  getCategories(orgId?: string): AssetCategory[] {
+    const targetOrg = resolveTargetOrg(orgId) || 'tenant-configured';
     return MODULAR_CATEGORIES.map(c => ({
       id: `cat-${c.code.toLowerCase()}`,
-      tenant_id: DEFAULT_ORG_ID,
+      tenant_id: targetOrg,
       code: c.code,
       name: c.name,
       icon: c.icon,
     }));
   }
 
-  getAssetTypes(): AssetTypeMaster[] {
+  getAssetTypes(orgId?: string): AssetTypeMaster[] {
+    const targetOrg = resolveTargetOrg(orgId) || 'tenant-configured';
     return MODULAR_CATEGORIES.map(c => ({
       id: `typ-${c.code.toLowerCase()}`,
-      tenant_id: DEFAULT_ORG_ID,
+      tenant_id: targetOrg,
       code: c.code,
       name: c.name,
-      asset_class: 'TRACKED_ASSET',
-      tracking_mode: 'INDIVIDUAL',
+      asset_class: 'TRACKED_ASSET' as const,
+      tracking_mode: 'INDIVIDUAL' as const,
       serial_required: false,
       qr_required: false,
       employee_assignable: true,

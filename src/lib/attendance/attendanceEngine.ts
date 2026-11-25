@@ -98,6 +98,15 @@ export function getShiftScheduledBreakMinutes(
   return tenantPolicy.dayShiftBreakMinutes;
 }
 
+function minutesToDisplayTime(mins: number): string {
+  const norm = ((mins % 1440) + 1440) % 1440;
+  const h = Math.floor(norm / 60);
+  const m = norm % 60;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
 export function processAttendanceStatus(
   checkInMinutes: number | null,
   checkOutMinutes: number | null,
@@ -110,7 +119,9 @@ export function processAttendanceStatus(
   attendanceDate?: string,
   currentMinutesOverride?: number,
   breakMinutes: number = 0,
-  orgId?: string
+  orgId?: string,
+  isWeeklyOff: boolean = false,
+  hasShiftAssigned: boolean = true
 ): {
   status: AttendanceStatus;
   grossMinutes: number;
@@ -122,6 +133,8 @@ export function processAttendanceStatus(
   earlyArrivalMinutes?: number;
   earlyMinutes: number;
   overtimeMinutes: number;
+  timeToShiftStartMinutes?: number;
+  explanation?: string;
 } {
   if (isHoliday) {
     return {
@@ -133,6 +146,37 @@ export function processAttendanceStatus(
       graceAppliedMinutes: 0,
       earlyMinutes: 0,
       overtimeMinutes: 0,
+      explanation: 'Official organizational holiday.',
+    };
+  }
+
+  // Case: Weekly Off
+  if (isWeeklyOff && checkInMinutes === null && checkOutMinutes === null) {
+    return {
+      status: 'Weekly Off',
+      grossMinutes: 0,
+      netMinutes: 0,
+      lateMinutes: 0,
+      rawLateMinutes: 0,
+      graceAppliedMinutes: 0,
+      earlyMinutes: 0,
+      overtimeMinutes: 0,
+      explanation: 'Scheduled weekly rest day.',
+    };
+  }
+
+  // Case: No Shift Assigned on Roster
+  if (!hasShiftAssigned && checkInMinutes === null && checkOutMinutes === null) {
+    return {
+      status: 'Shift Not Assigned',
+      grossMinutes: 0,
+      netMinutes: 0,
+      lateMinutes: 0,
+      rawLateMinutes: 0,
+      graceAppliedMinutes: 0,
+      earlyMinutes: 0,
+      overtimeMinutes: 0,
+      explanation: 'No shift roster entry assigned for this date. Shift required to determine attendance.',
     };
   }
 
@@ -147,6 +191,7 @@ export function processAttendanceStatus(
       lateMinutes: 0,
       earlyMinutes: 0,
       overtimeMinutes: 0,
+      explanation: 'Approved leave of absence.',
     };
   }
 
@@ -176,26 +221,154 @@ export function processAttendanceStatus(
         graceAppliedMinutes: 0,
         earlyMinutes: 0,
         overtimeMinutes: 0,
+        explanation: 'Work from home approved.',
       };
     }
 
-    // ABSENT CONSTRAINT:
-    // If the date is in the past, or if today has passed the end of the shift (+ grace),
-    // the employee is classified as Absent. Prior to shift end today, status is 'Not Checked In'.
-    const shiftEndBufferMins = expectedOutMinutes + (policy.early_checkout_grace_minutes || 15);
-    const isPastCutoff = isPastDate || (isToday && currentMinutes >= shiftEndBufferMins);
-    const status: AttendanceStatus = isFutureDate ? 'Not Checked In' : isPastCutoff ? 'Absent' : 'Not Checked In';
+    const configuredGrace = policy.late_grace_minutes || 15;
+    const earlyCheckoutGrace = policy.early_checkout_grace_minutes || 15;
+    const isOvernightShift = expectedOutMinutes < expectedInMinutes;
 
-    return {
-      status,
-      grossMinutes: 0,
-      netMinutes: 0,
-      lateMinutes: 0,
-      rawLateMinutes: 0,
-      graceAppliedMinutes: 0,
-      earlyMinutes: 0,
-      overtimeMinutes: 0,
-    };
+    if (isFutureDate) {
+      return {
+        status: 'Upcoming',
+        grossMinutes: 0,
+        netMinutes: 0,
+        lateMinutes: 0,
+        rawLateMinutes: 0,
+        graceAppliedMinutes: 0,
+        earlyMinutes: 0,
+        overtimeMinutes: 0,
+        explanation: 'Shift scheduled in the future.',
+      };
+    }
+
+    if (isPastDate) {
+      return {
+        status: 'Absent',
+        grossMinutes: 0,
+        netMinutes: 0,
+        lateMinutes: 0,
+        rawLateMinutes: 0,
+        graceAppliedMinutes: 0,
+        earlyMinutes: 0,
+        overtimeMinutes: 0,
+        explanation: 'Shift completed on past date without attendance or approved leave.',
+      };
+    }
+
+    // Attendance is for TODAY
+    if (!isOvernightShift) {
+      // Standard daytime/evening shift ending today
+      if (currentMinutes < expectedInMinutes) {
+        // Shift has not started yet today!
+        const timeToStart = expectedInMinutes - currentMinutes;
+        return {
+          status: 'Upcoming',
+          grossMinutes: 0,
+          netMinutes: 0,
+          lateMinutes: 0,
+          rawLateMinutes: 0,
+          graceAppliedMinutes: 0,
+          earlyMinutes: 0,
+          overtimeMinutes: 0,
+          timeToShiftStartMinutes: timeToStart,
+          explanation: `Shift has not started yet today. Begins at ${minutesToDisplayTime(expectedInMinutes)} (${timeToStart}m remaining).`,
+        };
+      }
+
+      if (currentMinutes <= expectedInMinutes + configuredGrace) {
+        // Shift has started, but within entry grace period!
+        return {
+          status: 'Not Checked In',
+          grossMinutes: 0,
+          netMinutes: 0,
+          lateMinutes: 0,
+          rawLateMinutes: currentMinutes - expectedInMinutes,
+          graceAppliedMinutes: currentMinutes - expectedInMinutes,
+          earlyMinutes: 0,
+          overtimeMinutes: 0,
+          explanation: `Shift started at ${minutesToDisplayTime(expectedInMinutes)}; currently within ${configuredGrace}m entry grace window.`,
+        };
+      }
+
+      const shiftEndBufferMins = expectedOutMinutes + earlyCheckoutGrace;
+      if (currentMinutes < shiftEndBufferMins) {
+        // Shift is actively in progress, but grace period has expired!
+        const rawLate = currentMinutes - expectedInMinutes;
+        const late = rawLate - configuredGrace;
+        return {
+          status: 'Late',
+          grossMinutes: 0,
+          netMinutes: 0,
+          lateMinutes: late,
+          rawLateMinutes: rawLate,
+          graceAppliedMinutes: configuredGrace,
+          earlyMinutes: 0,
+          overtimeMinutes: 0,
+          explanation: `Shift in progress; check-in missing past grace window (${late}m late).`,
+        };
+      }
+
+      // Shift has ended today without check-in
+      return {
+        status: 'Absent (Pending Finalization)',
+        grossMinutes: 0,
+        netMinutes: 0,
+        lateMinutes: 0,
+        rawLateMinutes: 0,
+        graceAppliedMinutes: 0,
+        earlyMinutes: 0,
+        overtimeMinutes: 0,
+        explanation: 'Shift ended today without check-in. Pending daily attendance finalization.',
+      };
+    } else {
+      // Overnight Shift (starts in evening today, spans midnight into tomorrow morning)
+      if (currentMinutes < expectedInMinutes) {
+        const timeToStart = expectedInMinutes - currentMinutes;
+        return {
+          status: 'Upcoming',
+          grossMinutes: 0,
+          netMinutes: 0,
+          lateMinutes: 0,
+          rawLateMinutes: 0,
+          graceAppliedMinutes: 0,
+          earlyMinutes: 0,
+          overtimeMinutes: 0,
+          timeToShiftStartMinutes: timeToStart,
+          explanation: `Night shift scheduled to begin tonight at ${minutesToDisplayTime(expectedInMinutes)} (${timeToStart}m remaining).`,
+        };
+      }
+
+      if (currentMinutes <= expectedInMinutes + configuredGrace) {
+        return {
+          status: 'Not Checked In',
+          grossMinutes: 0,
+          netMinutes: 0,
+          lateMinutes: 0,
+          rawLateMinutes: currentMinutes - expectedInMinutes,
+          graceAppliedMinutes: currentMinutes - expectedInMinutes,
+          earlyMinutes: 0,
+          overtimeMinutes: 0,
+          explanation: `Night shift started tonight at ${minutesToDisplayTime(expectedInMinutes)}; currently within ${configuredGrace}m entry grace window.`,
+        };
+      }
+
+      // Past grace tonight during overnight shift
+      const rawLate = currentMinutes - expectedInMinutes;
+      const late = rawLate - configuredGrace;
+      return {
+        status: 'Late',
+        grossMinutes: 0,
+        netMinutes: 0,
+        lateMinutes: late,
+        rawLateMinutes: rawLate,
+        graceAppliedMinutes: configuredGrace,
+        earlyMinutes: 0,
+        overtimeMinutes: 0,
+        explanation: `Night shift in progress tonight; check-in missing past grace window (${late}m late).`,
+      };
+    }
   }
 
   // Determine whether shift is cross-midnight (e.g. 19:30 -> 07:30 or 20:00 -> 05:00)
@@ -362,23 +535,46 @@ export function processAttendanceStatus(
       isPastShiftEnd = isPastDate || (isToday && currentMinutes >= shiftEndBufferMins);
     }
 
+    let explanation = '';
     if (isPastShiftEnd) {
       status = 'Missing Punch';
+      explanation = `Employee checked in at ${minutesToDisplayTime(checkInMinutes)} but missed checkout after shift ended.`;
     } else {
       status = lateMinutes > 0 ? 'Late' : 'Present';
+      explanation = `Active at work. Checked in at ${minutesToDisplayTime(checkInMinutes)}${lateMinutes > 0 ? ` (${lateMinutes}m late)` : ' (On Time)'}.`;
     }
   } else if (checkOutMinutes !== null) {
     // Case 3: COMPLETED SHIFT (BOTH PUNCHES PRESENT)
     // Rule: Under 2 hours -> Absent. 2 to < 4 hours -> Half Day. 4 hours and above -> Present / Late.
+    let explanation = '';
     if (net < 120) {
       status = 'Absent';
+      explanation = `Working duration under 2 hours (${net}m worked). Classified as Absent.`;
     } else if (net < halfDayThresholdMinutes) {
       status = 'Half Day';
+      explanation = `Working duration (${net}m) below full-day threshold (${halfDayThresholdMinutes}m).`;
     } else if (lateMinutes > 0) {
       status = 'Late';
+      explanation = `Completed shift with ${lateMinutes}m late check-in.`;
     } else {
       status = 'Present';
+      explanation = 'Completed scheduled shift on time.';
     }
+
+    return {
+      status,
+      grossMinutes: gross,
+      netMinutes: net,
+      breakMinutes: effectiveBreak,
+      lateMinutes,
+      rawLateMinutes,
+      graceAppliedMinutes,
+      earlyArrivalMinutes,
+      earlyMinutes,
+      overtimeMinutes,
+      timeToShiftStartMinutes: 0,
+      explanation,
+    };
   }
 
   return {
@@ -392,6 +588,8 @@ export function processAttendanceStatus(
     earlyArrivalMinutes,
     earlyMinutes,
     overtimeMinutes,
+    timeToShiftStartMinutes: 0,
+    explanation: status === 'Missing Punch' ? 'Missed checkout punch after shift completed.' : 'Active at work.',
   };
 }
 

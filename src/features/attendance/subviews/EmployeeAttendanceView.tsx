@@ -1056,6 +1056,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           matchStatus = record.status === 'Weekly Off' || roster.is_weekly_off;
         } else if (statusFilter === 'Not Checked In') {
           matchStatus = (!record.first_check_in && !isWorking && record.status !== 'Absent' && record.status !== 'On Leave' && record.status !== 'Weekly Off') || record.status === 'Not Checked In';
+        } else if (statusFilter === 'Upcoming') {
+          matchStatus = record.status === 'Upcoming';
+        } else if (statusFilter === 'Absent (Pending Finalization)') {
+          matchStatus = record.status === 'Absent (Pending Finalization)';
+        } else if (statusFilter === 'Shift Not Assigned') {
+          matchStatus = record.status === 'Shift Not Assigned';
         } else {
           matchStatus = record.status.toLowerCase() === statusFilter.toLowerCase();
         }
@@ -1145,8 +1151,11 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   const presentCount = safeFilteredData.filter(
     d => d?.record?.status === 'Present' || d?.record?.status === 'Checked Out' || isRowWorking(d)
   ).length;
+  const upcomingCount = safeFilteredData.filter(d => d?.record?.status === 'Upcoming').length;
+  const absentPendingCount = safeFilteredData.filter(d => d?.record?.status === 'Absent (Pending Finalization)').length;
+  const shiftNotAssignedCount = safeFilteredData.filter(d => d?.record?.status === 'Shift Not Assigned').length;
   const notCheckedInCount = safeFilteredData.filter(
-    d => (d?.record?.status === 'Not Checked In' || !d?.record?.first_check_in) && !isRowWorking(d) && d?.record?.status !== 'Absent' && d?.record?.status !== 'Weekly Off' && d?.record?.status !== 'On Leave'
+    d => d?.record?.status === 'Not Checked In'
   ).length;
   const lateCount = safeFilteredData.filter(d => ((d?.record?.late_minutes || 0) > 0 || d?.record?.status === 'Late') && !isRowWorking(d)).length;
   const halfDayCount = safeFilteredData.filter(d => d?.record?.status === 'Half Day').length;
@@ -1621,6 +1630,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             <span>Matching: <strong className="text-gray-900">{totalInFilter}</strong> Employees</span>
             <span>•</span>
             <span>Present: <strong className="text-emerald-700">{presentCount}</strong></span>
+            {upcomingCount > 0 && (
+              <>
+                <span>•</span>
+                <span>Upcoming: <strong className="text-indigo-700">{upcomingCount}</strong></span>
+              </>
+            )}
             <span>•</span>
             <span>Not Checked In: <strong className="text-gray-700 font-bold">{notCheckedInCount}</strong></span>
             <span>•</span>
@@ -1629,6 +1644,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             <span>Half Day: <strong className="text-amber-900 font-bold">{halfDayCount}</strong></span>
             <span>•</span>
             <span>Absent: <strong className="text-rose-700">{absentCount}</strong></span>
+            {absentPendingCount > 0 && (
+              <>
+                <span>•</span>
+                <span>Pending Finalization: <strong className="text-orange-700 font-bold">{absentPendingCount}</strong></span>
+              </>
+            )}
             <span>•</span>
             <span>Leave: <strong className="text-purple-700">{onLeaveCount}</strong></span>
             {(holidayCount > 0 || isHolidayDate) && (
@@ -1639,6 +1660,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             )}
             <span>•</span>
             <span>Missing: <strong className="text-rose-700">{missingPunchCount}</strong></span>
+            {shiftNotAssignedCount > 0 && (
+              <>
+                <span>•</span>
+                <span>No Shift: <strong className="text-gray-500 font-bold">{shiftNotAssignedCount}</strong></span>
+              </>
+            )}
           </div>
 
           {selectedIds.size > 0 && (

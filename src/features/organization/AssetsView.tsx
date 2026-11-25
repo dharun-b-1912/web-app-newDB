@@ -101,7 +101,21 @@ export const AssetsView: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   const loadData = async (forceDb = false) => {
+    if (!activeOrgId) {
+      setAssets([]);
+      setTotalAssetsCount(0);
+      setTotalPages(1);
+      setMetrics(null);
+      setAssignments([]);
+      setInventoryItems([]);
+      setTransfers([]);
+      setMaintenanceRecords([]);
+      setAuditLogs([]);
+      return;
+    }
+
     try {
+      setIsRefreshing(true);
       // 1. Fetch live assets from Supabase strictly isolated by active organization
       const liveAssets = await assetService.fetchAssetsFromDb(activeOrgId, forceDb);
       const liveAssignments = await assetAssignmentService.fetchAssignmentsFromDb(activeOrgId, forceDb);
@@ -117,29 +131,33 @@ export const AssetsView: React.FC = () => {
       }
 
       // 3. Categories & Metrics
-      const cats = assetService.getCategories();
+      const cats = assetService.getCategories(activeOrgId);
       setCategories(cats);
 
-      const summary = assetService.getSummaryMetrics(activeOrgId);
+      const summary = assetService.getSummaryMetrics(activeOrgId, activeCompanyId);
       setMetrics(summary);
 
       // 4. Assignments & Secondary tables
       setAssignments(liveAssignments);
 
-      const inv = inventoryService.getInventoryItems();
+      const inv = inventoryService.getInventoryItems(activeOrgId);
       setInventoryItems(inv);
 
-      const trfs = assetTransferService.getTransfers();
+      const trfs = assetTransferService.getTransfers(activeOrgId);
       setTransfers(trfs);
 
-      const mnts = assetMaintenanceService.getMaintenanceRecords();
+      const mnts = assetMaintenanceService.getMaintenanceRecords(activeOrgId);
       setMaintenanceRecords(mnts);
 
       const logs = assetAuditService.getLogs(undefined, 50);
       setAuditLogs(logs);
 
-      // 5. Query and paginate asset list
+      // 5. Query and paginate asset list strictly scoped to active organization
       let filtered = [...liveAssets];
+
+      if (activeCompanyId && activeCompanyId !== 'ALL') {
+        filtered = filtered.filter(a => !a.legal_entity_id || a.legal_entity_id === activeCompanyId);
+      }
 
       if (returnableFilter === 'RETURNABLE') {
         filtered = filtered.filter(a => a.is_returnable !== false);

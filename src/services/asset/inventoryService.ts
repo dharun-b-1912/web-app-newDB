@@ -11,13 +11,15 @@ function getTargetOrg(orgId?: string): string {
     const user = api.getCurrentUser?.();
     if (user?.organization_id) return user.organization_id;
   } catch (_) {}
-  return 'default';
+  return '';
 }
 
 class InventoryService {
   private getItems(orgId?: string): InventoryItem[] {
+    const org = getTargetOrg(orgId);
+    if (!org) return [];
     try {
-      const key = `workforce_inventory_items_${getTargetOrg(orgId)}_v1`;
+      const key = `workforce_inventory_items_${org}_v1`;
       const data = localStorage.getItem(key);
       if (!data) return [];
       return JSON.parse(data);
@@ -27,8 +29,10 @@ class InventoryService {
   }
 
   private setItems(items: InventoryItem[], orgId?: string): void {
+    const org = getTargetOrg(orgId);
+    if (!org) return;
     try {
-      const key = `workforce_inventory_items_${getTargetOrg(orgId)}_v1`;
+      const key = `workforce_inventory_items_${org}_v1`;
       localStorage.setItem(key, JSON.stringify(items));
     } catch (e) {
       console.warn('[InventoryService] Failed to persist inventory items:', e);
@@ -36,8 +40,10 @@ class InventoryService {
   }
 
   private getTxStore(orgId?: string): InventoryTransaction[] {
+    const org = getTargetOrg(orgId);
+    if (!org) return [];
     try {
-      const key = `workforce_inventory_transactions_${getTargetOrg(orgId)}_v1`;
+      const key = `workforce_inventory_transactions_${org}_v1`;
       const data = localStorage.getItem(key);
       if (!data) return [];
       return JSON.parse(data);
@@ -47,8 +53,10 @@ class InventoryService {
   }
 
   private setTransactions(txs: InventoryTransaction[], orgId?: string): void {
+    const org = getTargetOrg(orgId);
+    if (!org) return;
     try {
-      const key = `workforce_inventory_transactions_${getTargetOrg(orgId)}_v1`;
+      const key = `workforce_inventory_transactions_${org}_v1`;
       localStorage.setItem(key, JSON.stringify(txs));
     } catch (e) {
       console.warn('[InventoryService] Failed to persist inventory transactions:', e);

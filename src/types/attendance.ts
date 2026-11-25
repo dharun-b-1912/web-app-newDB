@@ -1,4 +1,5 @@
 export type AttendanceStatus =
+  | 'Upcoming'
   | 'Not Checked In'
   | 'Present'
   | 'Late'
@@ -8,9 +9,11 @@ export type AttendanceStatus =
   | 'Early Checkout'
   | 'Checked Out'
   | 'Missing Punch'
+  | 'Absent (Pending Finalization)'
   | 'Absent'
   | 'Holiday'
   | 'Weekly Off'
+  | 'Shift Not Assigned'
   | 'Overtime';
 
 export type EventType = 'CHECK_IN' | 'CHECK_OUT' | 'BREAK_START' | 'BREAK_END' | 'OTHER';
@@ -76,6 +79,8 @@ export interface AttendanceDaily {
   early_exit_minutes?: number;
   early_arrival_minutes?: number;
   permission_minutes?: number;
+  time_to_shift_start_minutes?: number;
+  explanation?: string;
   overtime_minutes: number;
   regularization_status?: RegularizationStatus;
   is_regularized?: boolean;

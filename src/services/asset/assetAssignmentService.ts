@@ -10,8 +10,6 @@ import { assetService } from './assetService';
 import { hrEventBus } from '../hrEventBus';
 import { api } from '../api';
 
-const DEFAULT_ORG_ID = '0c621892-e938-4707-9957-13534ea32c19';
-
 function resolveTargetOrg(explicitOrgId?: string): string {
   if (explicitOrgId && explicitOrgId.trim()) return explicitOrgId.trim();
   const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
@@ -20,16 +18,15 @@ function resolveTargetOrg(explicitOrgId?: string): string {
     const user = api.getCurrentUser?.();
     if (user?.organization_id) return user.organization_id;
   } catch (_) {}
-  return DEFAULT_ORG_ID;
+  return '';
 }
 
 class AssetAssignmentService {
-  private _cachedAssignments: AssetAssignment[] = [];
   private _assignmentsByOrg: Map<string, AssetAssignment[]> = new Map();
-  private _inFlightFetch: Promise<AssetAssignment[]> | null = null;
+  private _inFlightByOrg: Map<string, Promise<AssetAssignment[]>> = new Map();
 
   constructor() {
-    this.fetchAssignmentsFromDb().catch(() => {});
+    // Eager loading removed to prevent cross-tenant data leakage during early bundle evaluation
   }
 
   /**
@@ -37,19 +34,21 @@ class AssetAssignmentService {
    */
   async fetchAssignmentsFromDb(orgId?: string, force = false): Promise<AssetAssignment[]> {
     const targetOrg = resolveTargetOrg(orgId);
-    if (this._inFlightFetch && !force) return this._inFlightFetch;
+    if (!targetOrg) {
+      return [];
+    }
 
-    this._inFlightFetch = (async () => {
+    const inFlight = this._inFlightByOrg.get(targetOrg);
+    if (inFlight && !force) return inFlight;
+
+    const fetchPromise = (async () => {
       try {
         const client = isSupabaseEnabled ? supabaseAdmin : supabase;
-        let query = client
+        const query = client
           .from('asset_assignments')
           .select('*')
+          .eq('organization_id', targetOrg)
           .order('created_at', { ascending: false });
-
-        if (targetOrg && targetOrg !== 'platform-root') {
-          query = query.eq('organization_id', targetOrg);
-        }
 
         const { data, error } = await query;
 
@@ -109,17 +108,17 @@ class AssetAssignmentService {
         });
 
         this._assignmentsByOrg.set(targetOrg, mapped);
-        this._cachedAssignments = mapped;
         return mapped;
       } catch (err: any) {
         console.error('[AssetAssignmentService] Database error:', err.message);
         return this._assignmentsByOrg.get(targetOrg) || [];
       } finally {
-        this._inFlightFetch = null;
+        this._inFlightByOrg.delete(targetOrg);
       }
     })();
 
-    return this._inFlightFetch;
+    this._inFlightByOrg.set(targetOrg, fetchPromise);
+    return fetchPromise;
   }
 
   /**
@@ -127,11 +126,19 @@ class AssetAssignmentService {
    */
   getAssignments(assetId?: string, orgId?: string): AssetAssignment[] {
     const targetOrg = resolveTargetOrg(orgId);
-    const orgAssignments = this._assignmentsByOrg.get(targetOrg) || this._cachedAssignments;
+    if (!targetOrg) return [];
+    const orgAssignments = this._assignmentsByOrg.get(targetOrg) || [];
     if (assetId) {
       return orgAssignments.filter(a => a.asset_id === assetId);
     }
     return orgAssignments;
+  }
+
+  getActiveAssignment(assetId: string, orgId?: string): AssetAssignment | null {
+    const targetOrg = resolveTargetOrg(orgId);
+    if (!targetOrg) return null;
+    const orgAssignments = this._assignmentsByOrg.get(targetOrg) || [];
+    return orgAssignments.find(a => a.asset_id === assetId && (!a.actual_return_date || a.actual_return_date === '')) || null;
   }
 
   /**
@@ -156,6 +163,9 @@ class AssetAssignmentService {
 
     const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
     const orgId = resolveTargetOrg(params.organizationId || activeComp?.organization_id);
+    if (!orgId) {
+      throw new Error('Tenant organization context is required to assign an asset.');
+    }
 
     // Pack extended metadata into condition_on_assignment TEXT JSON
     const metaPayload = JSON.stringify({
@@ -191,7 +201,7 @@ class AssetAssignmentService {
     }
 
     // Update Asset status in Supabase
-    await assetService.updateAssetStatus(params.assetId, 'ASSIGNED');
+    await assetService.updateAssetStatus(params.assetId, 'ASSIGNED', orgId);
 
     const createdAssignment: AssetAssignment = {
       id: data.id,
@@ -213,7 +223,9 @@ class AssetAssignmentService {
       deduction_status: params.deductionAmount ? 'DEPOSIT_HELD' : 'NO_DEDUCTION',
     };
 
-    this._cachedAssignments.unshift(createdAssignment);
+    const orgAssignments = this._assignmentsByOrg.get(orgId) || [];
+    orgAssignments.unshift(createdAssignment);
+    this._assignmentsByOrg.set(orgId, orgAssignments);
     hrEventBus.emit('asset.assigned', createdAssignment);
     return createdAssignment;
   }
@@ -224,6 +236,7 @@ class AssetAssignmentService {
   async returnAsset(params: {
     assignmentId: string;
     assetId: string;
+    organizationId?: string;
     returnDate?: string;
     conditionAtReturn: AssetCondition;
     deductionStatus?: 'NO_DEDUCTION' | 'DEDUCTED_PAYROLL' | 'DEPOSIT_HELD' | 'WAIVED' | 'REFUNDED';
@@ -232,6 +245,8 @@ class AssetAssignmentService {
   }): Promise<void> {
     const client = isSupabaseEnabled ? supabaseAdmin : supabase;
     const returnDate = params.returnDate || new Date().toISOString().split('T')[0];
+    const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
+    const orgId = resolveTargetOrg(params.organizationId || activeComp?.organization_id);
 
     const returnMetaPayload = JSON.stringify({
       return_condition: params.conditionAtReturn,
@@ -241,7 +256,7 @@ class AssetAssignmentService {
       returned_at: new Date().toISOString(),
     });
 
-    const { error } = await client
+    let query = client
       .from('asset_assignments')
       .update({
         returned_date: returnDate,
@@ -250,6 +265,12 @@ class AssetAssignmentService {
       })
       .eq('id', params.assignmentId);
 
+    if (orgId) {
+      query = query.eq('organization_id', orgId);
+    }
+
+    const { error } = await query;
+
     if (error) {
       console.error('[AssetAssignmentService] Failed to return asset in Supabase:', error);
       throw new Error(`Failed to update return in database: ${error.message}`);
@@ -257,15 +278,18 @@ class AssetAssignmentService {
 
     // Set asset back to AVAILABLE (or DAMAGED if critical damage)
     const newAssetStatus = params.conditionAtReturn === 'DAMAGED' || params.conditionAtReturn === 'CRITICAL' ? 'UNDER_MAINTENANCE' : 'AVAILABLE';
-    await assetService.updateAssetStatus(params.assetId, newAssetStatus);
+    await assetService.updateAssetStatus(params.assetId, newAssetStatus, orgId);
 
-    const asgn = this._cachedAssignments.find(a => a.id === params.assignmentId);
-    if (asgn) {
-      asgn.status = 'RETURNED';
-      asgn.actual_return_date = returnDate;
-      asgn.condition_at_return = params.conditionAtReturn;
-      asgn.deduction_status = params.deductionStatus || 'NO_DEDUCTION';
-      hrEventBus.emit('asset.returned', asgn);
+    if (orgId) {
+      const orgAssignments = this._assignmentsByOrg.get(orgId) || [];
+      const asgn = orgAssignments.find(a => a.id === params.assignmentId);
+      if (asgn) {
+        asgn.status = 'RETURNED';
+        asgn.actual_return_date = returnDate;
+        asgn.condition_at_return = params.conditionAtReturn;
+        asgn.deduction_status = params.deductionStatus || 'NO_DEDUCTION';
+        hrEventBus.emit('asset.returned', asgn);
+      }
     }
   }
 }

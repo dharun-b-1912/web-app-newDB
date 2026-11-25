@@ -28,7 +28,6 @@
   },
   "include": [
     "src",
-    "scratch",
     "scripts/verify_production_mis_system.ts"
   ],
   "exclude": [

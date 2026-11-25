@@ -1,20 +1,23 @@
 import { AssetAuditLog } from '../../types';
 import { api } from '../api';
 
-function getTargetOrg(): string {
+function getTargetOrg(orgId?: string): string {
+  if (orgId && orgId.trim()) return orgId.trim();
   const activeComp = typeof api !== 'undefined' && api.getActiveCompany ? api.getActiveCompany() : null;
   if (activeComp?.organization_id) return activeComp.organization_id;
   try {
     const user = api.getCurrentUser?.();
     if (user?.organization_id) return user.organization_id;
   } catch (_) {}
-  return 'default';
+  return '';
 }
 
 class AssetAuditService {
-  private getStore(): AssetAuditLog[] {
+  private getStore(orgId?: string): AssetAuditLog[] {
+    const org = getTargetOrg(orgId);
+    if (!org) return [];
     try {
-      const key = `workforce_asset_audit_logs_${getTargetOrg()}_v1`;
+      const key = `workforce_asset_audit_logs_${org}_v1`;
       const data = localStorage.getItem(key);
       if (!data) return [];
       return JSON.parse(data);
@@ -23,9 +26,11 @@ class AssetAuditService {
     }
   }
 
-  private setStore(logs: AssetAuditLog[]): void {
+  private setStore(logs: AssetAuditLog[], orgId?: string): void {
+    const org = getTargetOrg(orgId);
+    if (!org) return;
     try {
-      const key = `workforce_asset_audit_logs_${getTargetOrg()}_v1`;
+      const key = `workforce_asset_audit_logs_${org}_v1`;
       localStorage.setItem(key, JSON.stringify(logs));
     } catch (e) {
       console.warn('[AssetAuditService] Failed to persist audit log:', e);

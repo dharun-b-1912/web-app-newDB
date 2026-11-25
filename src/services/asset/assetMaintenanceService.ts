@@ -11,13 +11,15 @@ function getTargetOrg(orgId?: string): string {
     const user = api.getCurrentUser?.();
     if (user?.organization_id) return user.organization_id;
   } catch (_) {}
-  return 'default';
+  return '';
 }
 
 class AssetMaintenanceService {
   private getRecords(orgId?: string): AssetMaintenanceRecord[] {
+    const org = getTargetOrg(orgId);
+    if (!org) return [];
     try {
-      const key = `workforce_asset_maintenance_${getTargetOrg(orgId)}_v1`;
+      const key = `workforce_asset_maintenance_${org}_v1`;
       const data = localStorage.getItem(key);
       if (!data) return [];
       return JSON.parse(data);
@@ -27,8 +29,10 @@ class AssetMaintenanceService {
   }
 
   private setRecords(records: AssetMaintenanceRecord[], orgId?: string): void {
+    const org = getTargetOrg(orgId);
+    if (!org) return;
     try {
-      const key = `workforce_asset_maintenance_${getTargetOrg(orgId)}_v1`;
+      const key = `workforce_asset_maintenance_${org}_v1`;
       localStorage.setItem(key, JSON.stringify(records));
     } catch (e) {
       console.warn('[AssetMaintenanceService] Failed to persist records:', e);
