@@ -580,7 +580,7 @@ export class WhatsAppBotEngine {
       employeeCode: session.employeeCode || '',
       fullName: session.employeeName,
       organizationId: session.organizationId,
-      companyName: session.companyName || 'Joy Corporate Solutions',
+      companyName: session.companyName || 'Workforce Portal',
       department: session.department,
       designation: session.roleTitle || 'Workforce Associate',
       employmentStatus: 'Active',
@@ -766,7 +766,7 @@ export class WhatsAppBotEngine {
       `👤 *My Employee Profile*\n\n` +
       `*Name:* ${session.employeeName}\n` +
       `*Employee Code:* ${session.employeeCode || 'N/A'}\n` +
-      `*Company:* ${session.companyName || 'Joy Corporate Solutions'}\n` +
+      `*Company:* ${session.companyName || 'Workforce Portal'}\n` +
       `*Department:* ${session.department}\n` +
       `*Role:* ${session.roleTitle || 'Workforce Associate'}\n` +
       `*Mobile:* ${formatDisplayPhone(session.waId)}\n\n` +
@@ -820,7 +820,7 @@ export class WhatsAppBotEngine {
         body: {
           text:
             `👥 *Team Attendance Overview*\n\n` +
-            `🏢 *${session.companyName || 'Joy Corporate Solutions'}*\n` +
+            `🏢 *${session.companyName || 'Workforce Portal'}*\n` +
             `📅 *Date:* ${new Date().toLocaleDateString('en-IN')}\n\n` +
             `📊 *Total Direct Reports:* ${totalReports}\n` +
             `🟢 *Present Today:* ${presentCount}\n` +
@@ -1050,7 +1050,7 @@ export class WhatsAppBotEngine {
         body: {
           text:
             `📊 *Manager Operations & Workforce Metrics*\n\n` +
-            `🏢 *${session.companyName || 'Joy Corporate Solutions'}*\n` +
+            `🏢 *${session.companyName || 'Workforce Portal'}*\n` +
             `📅 *Date:* ${new Date().toLocaleDateString('en-IN')}\n\n` +
             `👥 *Direct Reports:* ${totalReports}\n` +
             `🟢 *Present On Shift:* ${presentCount}\n` +
@@ -1162,7 +1162,7 @@ export class WhatsAppBotEngine {
           body: {
             text:
               `✅ *Workforce MIS Report Dispatched*\n\n` +
-              `🏢 *Organization:* ${result.companyName || 'Joy Corporate Solutions'}\n` +
+              `🏢 *Organization:* ${result.companyName || 'Workforce Portal'}\n` +
               `📅 *Date:* ${result.date}\n` +
               `📋 *Slot:* ${slotToUse === 'MORNING' ? 'Morning Check-In Turnout' : 'Evening Reconciliation'}\n\n` +
               `📊 *Executive Turnout Summary:*\n` +
@@ -1210,7 +1210,7 @@ export class WhatsAppBotEngine {
     session.state = 'HR_SEARCHING_EMPLOYEE';
     const text =
       `🔍 *Employee Master Directory Search*\n\n` +
-      `Please enter an *Employee Code* (e.g. WF-1001, JCS-017), *Mobile Number*, or *Name* to look up in *${session.companyName || 'Joy Corporate Solutions'}*:\n\n` +
+      `Please enter an *Employee Code* (e.g. WF-1001, JCS-017), *Mobile Number*, or *Name* to look up in *${session.companyName || 'Workforce Portal'}*:\n\n` +
       `Or reply *MENU* to return.`;
 
     await whatsAppClient.sendText({

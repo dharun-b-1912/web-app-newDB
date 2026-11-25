@@ -551,7 +551,15 @@ class SmartShiftResolutionService {
         if (earlyDiff > 720) earlyDiff -= 1440;
 
         const assignedCode = String(assignedShift.code || assignedShift.shift_code || '').toUpperCase();
-        if (earlyDiff >= 0 && earlyDiff <= 300 && (assignedCode.includes('SHIFT-2') || assignedCode.includes('SHIFT-1') || assignedCode.includes('SHIFT-3') || assignedCode.includes('GEN'))) {
+        // Pre-shift Overtime Arrival Rule:
+        // Applicable ONLY to true plant afternoon/night shifts (e.g. SHIFT-2 starting at 14:30) where workers arrive early for production overtime.
+        // In ADAPTIVE_SHIFT mode, or if a morning plant shift (SHIFT-1) scores significantly higher (> 50 points better than assigned shift),
+        // we must NOT force GEN-01 or retain an ill-fitting shift when a worker clearly arrived for the 6:00 AM morning shift!
+        const isTruePlantShift = assignedCode.includes('SHIFT-2') || assignedCode.includes('SHIFT-3');
+        const candidateShift1 = candidateScores.find(c => c.shiftCode.includes('SHIFT-1'));
+        const shift1Wins = candidateShift1 && candidateShift1.totalScore >= 50 && (!assignedScore || candidateShift1.totalScore > (assignedScore.totalScore || 0) + 25);
+
+        if (mode !== 'ADAPTIVE_SHIFT' && !shift1Wins && earlyDiff >= 0 && earlyDiff <= 300 && isTruePlantShift) {
           return this.buildResult(
             assignedShift,
             'APPROVED_EMPLOYEE_ASSIGNMENT',

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Building2, ChevronDown, Check, Globe, Shield, Lock, MapPin } from 'lucide-react';
 import { useTenant } from '../../hooks/useTenant';
 import { usePermission } from '../../hooks/usePermission';
+import { sanitizeAuthorizedEntities } from '../../services/organizationContextService';
 
 export interface CompanySelectorProps {
   onOpenLocationEdit?: () => void;
@@ -35,9 +36,10 @@ export const CompanySelector: React.FC<CompanySelectorProps> = ({ onOpenLocation
   if (primaryRole === 'Super Admin' || !activeLegalEntity) return null;
 
   const normalizeLegalName = (name?: string) => (name || '').replace(/\bPVE\b/gi, 'PVT');
+  const cleanEntities = sanitizeAuthorizedEntities(legalEntities);
   const isCompanyAdmin = primaryRole === 'Company Admin';
   const isHRHead = primaryRole === 'HR Head';
-  const canSwitchEntities = legalEntities.length > 1;
+  const canSwitchEntities = cleanEntities.length > 1;
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -102,7 +104,7 @@ export const CompanySelector: React.FC<CompanySelectorProps> = ({ onOpenLocation
           {/* Legal Entities Section */}
           <div className="py-1.5">
             <div className="px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center justify-between">
-              <span>Authorized Legal Entities ({legalEntities.length})</span>
+              <span>Authorized Legal Entities ({cleanEntities.length})</span>
               {!canSwitchEntities && (
                 <span className="inline-flex items-center gap-1 text-[9px] text-gray-400 font-normal">
                   <Lock className="w-2.5 h-2.5" /> Assigned Scope
@@ -111,7 +113,7 @@ export const CompanySelector: React.FC<CompanySelectorProps> = ({ onOpenLocation
             </div>
 
             <div className="space-y-0.5 px-1.5">
-              {legalEntities.map((entity) => {
+              {cleanEntities.map((entity) => {
                 const isSelected = entity.id === activeLegalEntity.id;
                 return (
                   <button

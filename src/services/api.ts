@@ -24,6 +24,7 @@ import { logger } from './diagnostics/loggerService';
 import { CorrelationService } from './diagnostics/correlationService';
 import { getActiveOrgId } from './attendance/biometricCommandService';
 import { safeStorage } from '../utils/storageQuotaManager';
+import { sanitizeAuthorizedEntities } from '../utils/entitySanitizer';
 
 export function isValidUUID(id?: string | null): boolean {
   if (!id) return false;
@@ -800,8 +801,9 @@ export const api = {
             status: d.is_active === false ? 'Inactive' : 'Active',
             created_at: d.created_at || new Date().toISOString(),
           }));
-          setStorage(KEYS.COMPANIES, mapped);
-          return mapped;
+          const clean = sanitizeAuthorizedEntities(mapped);
+          setStorage(KEYS.COMPANIES, clean);
+          return clean;
         }
       } catch (err) {
         console.error('[API] Failed to fetch companies from Supabase:', err);
@@ -809,11 +811,12 @@ export const api = {
     }
     const list = getStorage<Company[]>(KEYS.COMPANIES, DEFAULT_COMPANIES);
     if (!list || list.length === 0) {
-      const fallbackList = activeOrgId ? DEFAULT_COMPANIES.filter(c => c.organization_id === activeOrgId) : DEFAULT_COMPANIES;
+      const fallbackList = sanitizeAuthorizedEntities(activeOrgId ? DEFAULT_COMPANIES.filter(c => c.organization_id === activeOrgId) : DEFAULT_COMPANIES);
       setStorage(KEYS.COMPANIES, fallbackList);
       return fallbackList;
     }
-    return activeOrgId ? list.filter(c => c.organization_id === activeOrgId) : list;
+    const filtered = activeOrgId ? list.filter(c => c.organization_id === activeOrgId) : list;
+    return sanitizeAuthorizedEntities(filtered);
   },
 
   async createCompany(input: Omit<Company, 'id' | 'created_at'>): Promise<Company> {
@@ -1958,7 +1961,8 @@ export const api = {
                     e.work_location_name = e.work_location;
                   } else {
                     const existingLoc = (e.work_location || e.work_location_name || '').toString().trim();
-                    e.work_location = existingLoc || e.branch_name || 'Joy Corporate Solutions Private Limited (HQ)';
+                    const isElectraEmp = (e.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' || activeCompanyId === 'c0bbfb28-1500-4ebb-aba8-453b3681f342' || (e.employee_code && e.employee_code.startsWith('EEV')));
+                    e.work_location = existingLoc || e.branch_name || (isElectraEmp ? 'Electra EV Plant' : 'Corporate HQ');
                     e.work_location_name = e.work_location;
                   }
 
@@ -1967,7 +1971,8 @@ export const api = {
                     e.employment.work_location = e.work_location;
                     e.employment.work_location_name = e.work_location;
                   }
-                  e.company_name = e.company_name || 'Joy Corporate Solutions Pvt Ltd';
+                  const isElectraWorker = (e.organization_id === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' || activeCompanyId === 'c0bbfb28-1500-4ebb-aba8-453b3681f342' || (e.employee_code && e.employee_code.startsWith('EEV')));
+                  e.company_name = e.company_name || (isElectraWorker ? 'Electra EV' : 'Joy Corporate Solutions Pvt Ltd');
 
                   // Shift & Attendance Policy resolution (preserve cached client assignments \u0026 Supabase DB assignments)
                   const sa = shiftAssignMap.get(e.id);

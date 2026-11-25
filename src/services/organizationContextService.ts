@@ -3,6 +3,15 @@ import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { api } from './api';
 import { hrEventBus } from './hrEventBus';
 import { getPrimaryRole } from '../lib/rbac/permissionEngine';
+import {
+  sanitizeAuthorizedEntities,
+  STALE_COMPANY_ID,
+  CORRECT_COMPANY_ID,
+  STALE_ELECTRA_COMPANY_ID,
+  CORRECT_ELECTRA_COMPANY_ID,
+} from '../utils/entitySanitizer';
+
+export { sanitizeAuthorizedEntities };
 
 export interface EffectiveUserContext {
   userId: string;
@@ -19,59 +28,6 @@ const STORAGE_KEYS = {
   ACTIVE_LEGAL_ENTITY_ID: 'workforce_active_legal_entity_id',
   AUDIT_LOGS: 'workforce_context_audit_logs',
 };
-
-// Canonical ID constants matching authoritative Supabase records
-const STALE_COMPANY_ID = '0ce6436c-e9b4-4e0e-9102-411ea21b8b80';
-const CORRECT_COMPANY_ID = '2030277f-a6a1-427f-beaf-4fc677a3bae2';
-const STALE_ELECTRA_COMPANY_ID = '3041388a-b7b2-438a-cfba-5fd788b4cbf3';
-const CORRECT_ELECTRA_COMPANY_ID = 'c0bbfb28-1500-4ebb-aba8-453b3681f342';
-
-/**
- * Universal Sanitizer: Purges obsolete mock IDs and collapses duplicate legal entities
- * (e.g., merging "Electra EV" and duplicate "Electra EV Pvt Ltd" into the canonical record).
- */
-export function sanitizeAuthorizedEntities(entities: Company[]): Company[] {
-  if (!Array.isArray(entities) || entities.length === 0) return [];
-
-  const obsoleteIds = new Set([
-    STALE_ELECTRA_COMPANY_ID,
-    STALE_COMPANY_ID,
-  ]);
-
-  const seenIds = new Set<string>();
-  const seenNormKeys = new Set<string>();
-  const cleanList: Company[] = [];
-
-  for (const ent of entities) {
-    if (!ent || !ent.id || obsoleteIds.has(ent.id)) continue;
-    if (seenIds.has(ent.id)) continue;
-
-    // Normalize entity legal and trade names to prevent duplicates like "Electra EV" vs "Electra EV Pvt Ltd"
-    const rawName = (ent.legal_name || ent.trade_name || '').toLowerCase();
-    const cleanNormName = rawName
-      .replace(/\b(private|pvt|limited|ltd|solutions|technologies|gmc|plant)\b/gi, '')
-      .replace(/[^a-z0-9]/g, '');
-    const orgKey = `${ent.organization_id || 'global'}_${cleanNormName}`;
-
-    if (seenNormKeys.has(orgKey)) {
-      continue;
-    }
-
-    seenIds.add(ent.id);
-    seenNormKeys.add(orgKey);
-
-    cleanList.push({
-      ...ent,
-      legal_name: (ent.legal_name || ent.trade_name || 'Enterprise Legal Entity').replace(/\bPVE\b/gi, 'PVT'),
-      trade_name: (ent.trade_name || ent.legal_name || 'Enterprise Legal Entity').replace(/\bPVE\b/gi, 'PVT'),
-      country: ent.country || 'India',
-      city: ent.city || 'Coimbatore',
-      currency: ent.currency || 'INR',
-    });
-  }
-
-  return cleanList;
-}
 
 if (typeof localStorage !== 'undefined') {
   try {
@@ -415,6 +371,8 @@ export class OrganizationContextService {
                 ...c,
                 legal_name: (c.legal_name || c.trade_name || '').replace(/\bPVE\b/gi, 'PVT'),
                 trade_name: (c.trade_name || c.legal_name || '').replace(/\bPVE\b/gi, 'PVT'),
+                statutory_registration_no: c.cin_number || c.statutory_registration_no || '',
+                tax_id: c.pan_number || c.gstin || c.tax_id || '',
                 address: c.registered_address || c.address || '',
                 status: c.is_active === false ? 'Inactive' : 'Active',
               })) as Company[];

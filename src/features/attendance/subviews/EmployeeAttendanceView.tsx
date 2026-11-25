@@ -207,6 +207,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     }
   });
   const [prevDailyRecords, setPrevDailyRecords] = useState<AttendanceDaily[]>([]);
+  const [dailyPermissions, setDailyPermissions] = useState<Map<string, { minutes: number; reason: string }>>(new Map());
   const [departments, setDepartments] = useState<string[]>(['People & HR', 'Engineering', 'Operations', 'Quality Assurance']);
   const [locations, setLocations] = useState<string[]>(['Coimbatore HQ', 'Chennai Factory', 'Hosur Plant', 'Bangalore Office']);
   const [vendors, setVendors] = useState<string[]>(['Direct Payroll']);
@@ -288,7 +289,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       attendanceApi.getDailyAttendanceAsync(selectedDate),
       attendanceApi.getDailyAttendanceAsync(prevDateStr),
       biometricGatewayService.syncPunchesFromSupabase(1000),
-    ]).then(([empRes, deptRes, shiftRes, _assignRes, _rosterRes, dailyRes, prevDailyRes]) => {
+      supabase
+        .from('attendance_regularizations')
+        .select('*')
+        .eq('attendance_date', selectedDate)
+        .eq('status', 'APPROVED'),
+    ]).then(([empRes, deptRes, shiftRes, _assignRes, _rosterRes, dailyRes, prevDailyRes, _bioRes, regRes]) => {
       if (empRes.status === 'fulfilled' && empRes.value) {
         const realEmps = empRes.value;
         setEmployees(realEmps);
@@ -336,6 +342,36 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           setPrevDailyRecords(prevFallback);
         }
       }
+
+      // Ingest approved permissions for selected date
+      const pMap = new Map<string, { minutes: number; reason: string }>();
+      if (regRes && regRes.status === 'fulfilled' && (regRes.value as any)?.data) {
+        const rows = (regRes.value as any).data;
+        for (const r of rows) {
+          const reasonStr = r.reason || '';
+          const match = reasonStr.match(/\[PERMISSION:(.*?):(\d+)m\]/);
+          const mins = match ? Number(match[2]) : (reasonStr.includes('1 hr') ? 60 : reasonStr.includes('30 min') ? 30 : 60);
+          if (r.employee_id) {
+            pMap.set(r.employee_id, { minutes: mins, reason: reasonStr });
+          }
+        }
+      }
+      // Check local storage permissions cache
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const localPerms = JSON.parse(localStorage.getItem('joy_peoplehr_attendance_permissions_v1') || '[]');
+          for (const lp of localPerms) {
+            if (lp.attendanceDate === selectedDate && lp.status === 'APPROVED') {
+              pMap.set(lp.employeeId, { minutes: lp.approvedMinutes || lp.requestedMinutes || 60, reason: lp.reason || 'Approved permission' });
+              if (lp.employeeCode) {
+                pMap.set(lp.employeeCode.toUpperCase(), { minutes: lp.approvedMinutes || lp.requestedMinutes || 60, reason: lp.reason || 'Approved permission' });
+              }
+            }
+          }
+        } catch (_) {}
+      }
+      setDailyPermissions(pMap);
+
       setIsInitialLoading(false);
       setRosterSyncVersion(v => v + 1);
     }).catch(() => {
@@ -874,6 +910,26 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         effectiveStatus = 'On Leave';
       }
 
+      // Evaluate Approved Late Arrival Permission:
+      // If employee has approved permission (e.g. 30m or 60m), deduct from late_minutes
+      const empPerm = dailyPermissions.get(emp.id) || (emp.employee_code ? dailyPermissions.get(emp.employee_code.toUpperCase()) : null);
+      let permMins = empPerm?.minutes || 0;
+      let effectiveLateMinutes = calc.lateMinutes;
+
+      if (permMins > 0 && inMins !== null && expIn !== null) {
+        const rawLate = Math.max(0, inMins - expIn);
+        const netLate = Math.max(0, rawLate - permMins);
+        const shiftGrace = (shift as any)?.grace_entry_minutes || 15;
+        if (netLate <= shiftGrace) {
+          effectiveLateMinutes = 0;
+          if (effectiveStatus === 'Late' || effectiveStatus === 'Half Day') {
+            effectiveStatus = 'Present';
+          }
+        } else {
+          effectiveLateMinutes = netLate;
+        }
+      }
+
       const outSrc = checkOutSrc || (lastOut ? (inSrc || 'MOBILE') : undefined);
       const overallSrc: PunchSource = (inSrc || resolvedRecord?.source || 'SYSTEM') as PunchSource;
 
@@ -910,10 +966,10 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         gross_working_minutes: liveGrossMins,
         net_working_minutes: liveNetMins,
         total_break_minutes: calc.breakMinutes ?? (resolvedRecord?.total_break_minutes || 0),
-        late_minutes: calc.lateMinutes,
+        late_minutes: effectiveLateMinutes,
         early_checkout_minutes: lastOut ? calc.earlyMinutes : 0,
-        early_arrival_minutes: calc.earlyArrivalMinutes || 0,
-        overtime_minutes: calc.overtimeMinutes || (resolvedRecord?.overtime_minutes ?? 0),
+        early_arrival_minutes: (effectiveLateMinutes === 0 && permMins > 0) ? 0 : (calc.earlyArrivalMinutes || 0),
+        overtime_minutes: (permMins > 0 && !lastOut) ? 0 : (calc.overtimeMinutes || (resolvedRecord?.overtime_minutes ?? 0)),
         status: effectiveStatus,
         source: overallSrc,
         check_in_source: inSrc as PunchSource,
@@ -933,9 +989,10 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         checkOutSrc,
         isAdaptiveInferred,
         adaptiveReason,
+        permissionMinutes: permMins,
       };
     });
-  }, [employees, dailyRecords, prevDailyRecords, selectedDate, rosterSyncVersion]);
+  }, [employees, dailyRecords, prevDailyRecords, selectedDate, rosterSyncVersion, dailyPermissions]);
 
   // STEP 2: Scoped and filtered employees & attendance records
   const filteredData = useMemo(() => {
@@ -1928,7 +1985,26 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                           <span className="text-gray-400 font-mono text-xs">—</span>
                         ) : (
                           <div className="flex flex-col items-start gap-1">
-                            {record.late_minutes > 0 ? (
+                            {(row as any)?.permissionMinutes > 0 ? (
+                              <div className="flex flex-col items-start gap-1">
+                                <span
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200/90 shadow-2xs whitespace-nowrap"
+                                  title={`Approved permission: ${(row as any).permissionMinutes >= 60 ? `${(row as any).permissionMinutes / 60} hr` : `${(row as any).permissionMinutes} mins`}`}
+                                >
+                                  <Clock className="w-2.5 h-2.5 text-teal-600" />
+                                  {(row as any).permissionMinutes >= 60 ? `${(row as any).permissionMinutes / 60}h` : `${(row as any).permissionMinutes}m`} Permission
+                                </span>
+                                {record.late_minutes === 0 ? (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70 whitespace-nowrap">
+                                    On Time
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80 whitespace-nowrap">
+                                    Late {formatDeviationDuration(record.late_minutes, { showBoth: record.late_minutes >= 60 })}
+                                  </span>
+                                )}
+                              </div>
+                            ) : record.late_minutes > 0 ? (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80 whitespace-nowrap">
                                 Late {formatDeviationDuration(record.late_minutes, { showBoth: record.late_minutes >= 60 })}
                               </span>
@@ -1949,7 +2025,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                               </span>
                             )}
 
-                            {ot.hasOvertime && (
+                            {ot.hasOvertime && !(row as any)?.permissionMinutes && (
                               <span
                                 title={`Overtime: ${ot.verbose}`}
                                 className="inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs whitespace-nowrap"

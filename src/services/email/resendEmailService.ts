@@ -388,7 +388,7 @@ class ResendEmailService {
    * Dispatches Employee Welcome & App Access Invitation Email
    */
   async sendEmployeeActivationEmail(params: ActivationEmailParams): Promise<EmailDeliveryResponse> {
-    const orgName = params.organizationName || 'Joy Corporate Solutions';
+    const orgName = params.organizationName || 'Enterprise Workforce Portal';
     const baseUrl = getAppBaseUrl();
     const activationLink = params.activationUrl || `${baseUrl}/activate?token=${encodeURIComponent(params.activationToken)}&emp=${encodeURIComponent(params.employeeId)}&email=${encodeURIComponent(params.to)}`;
 
@@ -507,7 +507,7 @@ class ResendEmailService {
    * Dispatches Account Creation Verification OTP & 1-Click Activation Email
    */
   async sendAccountCreationOtpEmail(params: AccountCreationOtpEmailParams): Promise<EmailDeliveryResponse> {
-    const orgName = params.organizationName || 'Joy Corporate Solutions';
+    const orgName = params.organizationName || 'Enterprise Workforce Portal';
     const baseUrl = getAppBaseUrl();
     const activationLink = params.activationUrl || `${baseUrl}/activate?email=${encodeURIComponent(params.to)}&otp=${encodeURIComponent(params.otpCode)}`;
     const expiryMins = params.expiresInMinutes || 10;
@@ -580,7 +580,7 @@ class ResendEmailService {
    * Dispatches Confirmation Email after Account is Successfully Activated
    */
   async sendAccountActivatedConfirmationEmail(params: AccountActivatedConfirmationParams): Promise<EmailDeliveryResponse> {
-    const orgName = params.organizationName || 'Joy Corporate Solutions';
+    const orgName = params.organizationName || 'Enterprise Workforce Portal';
     const baseUrl = getAppBaseUrl();
     const loginUrl = params.loginUrl || `${baseUrl}/login`;
 
@@ -763,7 +763,7 @@ class ResendEmailService {
    * Dispatches Password Reset Email with single-use token
    */
   async sendPasswordResetEmail(params: PasswordResetEmailParams): Promise<EmailDeliveryResponse> {
-    const orgName = params.organizationName || 'Joy Corporate Solutions';
+    const orgName = params.organizationName || 'Enterprise Workforce Portal';
     const baseUrl = getAppBaseUrl();
     const resetLink = params.resetUrl || `${baseUrl}/reset-password?token=${encodeURIComponent(params.resetToken)}`;
     const expiryMins = params.expiresInMinutes || 15;
@@ -827,7 +827,7 @@ class ResendEmailService {
    * Dispatches Security Audit Notifications (e.g. password changed)
    */
   async sendSecurityAlertEmail(params: SecurityAlertEmailParams): Promise<EmailDeliveryResponse> {
-    const orgName = params.organizationName || 'Joy Corporate Solutions';
+    const orgName = params.organizationName || 'Enterprise Workforce Portal';
     const alertTitles = {
       PASSWORD_CHANGED: 'Your Employee Account Password Was Changed',
       ACCOUNT_LOCKED: 'Your Account Was Temporarily Locked (Failed Attempts)',
@@ -1017,7 +1017,7 @@ class ResendEmailService {
    * Dispatches Organization Customer Administrator / User Invitation Email
    */
   async sendOrganizationUserInvitationEmail(params: OrganizationUserInviteEmailParams): Promise<EmailDeliveryResponse> {
-    const orgName = params.organizationName || 'Joy Corporate Solutions';
+    const orgName = params.organizationName || 'Enterprise Workforce Portal';
     const baseUrl = getAppBaseUrl();
     const token = params.token || `inv_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
     const invitationLink =
@@ -1171,7 +1171,7 @@ class ResendEmailService {
   async sendCandidateOnboardingInvitationEmail(
     params: CandidateOnboardingInviteEmailParams
   ): Promise<EmailDeliveryResponse> {
-    const orgName = params.organizationName || 'Joy Corporate Solutions Pvt Ltd';
+    const orgName = params.organizationName || 'Enterprise Workforce Portal';
     const baseUrl = getAppBaseUrl();
     const token = params.token;
     const onboardingLink =
@@ -1298,7 +1298,7 @@ class ResendEmailService {
    * Dispatches Direct Authentication Link & Password Reset Link
    */
   async sendDirectAuthenticationLinkEmail(params: PasswordResetEmailParams & { directLoginUrl?: string; authType?: string }): Promise<EmailDeliveryResponse> {
-    const orgName = params.organizationName || 'Joy Corporate Solutions';
+    const orgName = params.organizationName || 'Enterprise Workforce Portal';
     const baseUrl = getAppBaseUrl();
     const authLink = params.directLoginUrl || params.resetUrl || `${baseUrl}/reset-password?token=${encodeURIComponent(params.resetToken)}`;
     const expiryMins = params.expiresInMinutes || 30;
@@ -2146,7 +2146,7 @@ class ResendEmailService {
     pdfFilename?: string;
     companyName?: string;
   }): Promise<EmailDeliveryResponse> {
-    const company = params.companyName || 'Joy Corporate Solutions Pvt. Ltd.';
+    const company = params.companyName || 'Enterprise Partner';
     const subject = `Official Salary Payslip — ${params.periodLabel} | ${params.employeeName} (${params.employeeCode})`;
 
     const html = `
