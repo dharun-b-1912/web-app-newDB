@@ -67,6 +67,14 @@ import { api } from '../../../services/api';
 import { normalizeIndianPhone } from '../../../services/whatsapp/phoneUtils';
 import { MisRecipientsManagementView } from './MisRecipientsManagementView';
 import { misRecipientsService } from '../../../services/attendance/misRecipientsService';
+import {
+  shiftReportScheduleService,
+  ShiftReportPhase,
+  ShiftReportRule,
+  ShiftReportScheduleConfig,
+  computeOffsetTime24,
+  formatTime24To12,
+} from '../../../services/attendance/shiftReportScheduleService';
 
 // ============================================================================
 // 12-Hour Time Helpers & Interactive 12-Hour Selector
@@ -201,8 +209,8 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
   // Active Tab: 'DISPATCH' (Manual Send) | 'SCHEDULE' (Automated Time Dispatch) | 'RECIPIENTS' (Access Control) | 'PREVIEW'
   const [activeTab, setActiveTab] = useState<'DISPATCH' | 'SCHEDULE' | 'RECIPIENTS' | 'PREVIEW'>('DISPATCH');
 
-  // Report Period Selection: 'DAILY' | 'WEEKLY' | 'MONTHLY'
-  const [reportPeriod, setReportPeriod] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY'>('DAILY');
+  // Report Period Selection: 'DAILY' | 'SHIFT_WISE' | 'WEEKLY' | 'MONTHLY'
+  const [reportPeriod, setReportPeriod] = useState<'DAILY' | 'SHIFT_WISE' | 'WEEKLY' | 'MONTHLY'>('DAILY');
 
   // Daily Sub-Slot Selection: Morning Check-In Turnout vs Evening Check-Out Final
   const [dailySlot, setDailySlot] = useState<'MORNING_CHECKIN' | 'EVENING_FINAL'>(() => {
@@ -210,9 +218,23 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
     return currentHour < 14 ? 'MORNING_CHECKIN' : 'EVENING_FINAL';
   });
 
+  // Shift-Wise Report State (Isolated Workflow for Shift +30m Check-In / Check-Out & Dept Breakdown)
+  const [shiftPhase, setShiftPhase] = useState<ShiftReportPhase>('CHECK_IN');
+  const [selectedShiftCode, setSelectedShiftCode] = useState<string>('SHIFT-1');
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState<string>('ALL');
+  const [shiftScheduleConfig, setShiftScheduleConfig] = useState<ShiftReportScheduleConfig>(() =>
+    shiftReportScheduleService.getScheduleSync(effectiveOrgId)
+  );
+  const [isSavingShiftSchedule, setIsSavingShiftSchedule] = useState(false);
+  const [testingShiftRuleId, setTestingShiftRuleId] = useState<string | null>(null);
+
   // Effective report format passed to export services & dispatch
   const reportFormat: 'MORNING_CHECKIN' | 'EVENING_FINAL' | 'WEEKLY' | 'MONTHLY' =
-    reportPeriod === 'DAILY' ? dailySlot : reportPeriod;
+    reportPeriod === 'DAILY'
+      ? dailySlot
+      : reportPeriod === 'SHIFT_WISE'
+      ? (shiftPhase === 'CHECK_IN' ? 'MORNING_CHECKIN' : 'EVENING_FINAL')
+      : reportPeriod;
 
   // Active Company Payroll Billing Cycle & Periodic Realtime Ledgers
   const [payrollCycle, setPayrollCycle] = useState<{
@@ -228,9 +250,30 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
   const [isLoadingPeriodicData, setIsLoadingPeriodicData] = useState(false);
 
   const getSubjectForFormat = (
-    period: 'DAILY' | 'WEEKLY' | 'MONTHLY',
-    slot?: 'MORNING_CHECKIN' | 'EVENING_FINAL'
+    period: 'DAILY' | 'SHIFT_WISE' | 'WEEKLY' | 'MONTHLY',
+    slot?: 'MORNING_CHECKIN' | 'EVENING_FINAL',
+    shiftCodeParam?: string,
+    phaseParam?: ShiftReportPhase,
+    deptParam?: string
   ) => {
+    if (period === 'SHIFT_WISE') {
+      const sCode = shiftCodeParam || selectedShiftCode;
+      const pPhase = phaseParam || shiftPhase;
+      const dFilter = deptParam || selectedDepartmentFilter;
+      const rule = shiftScheduleConfig.rules.find(r => r.shiftCode === sCode);
+      const dispatchTime = rule
+        ? formatTime24To12(pPhase === 'CHECK_IN' ? rule.checkInDispatchTime : rule.checkOutDispatchTime)
+        : undefined;
+      return shiftReportScheduleService.formatShiftEmailSubject({
+        companyName,
+        reportDate,
+        shiftCode: sCode,
+        shiftName: rule?.shiftName,
+        phase: pPhase,
+        department: dFilter,
+        dispatchTimeLabel: dispatchTime,
+      });
+    }
     if (period === 'DAILY') {
       if (slot === 'MORNING_CHECKIN') {
         return `[Joy PeopleHR] Morning Check-In & Turnout Status Report — ${reportDate} (${companyName})`;
@@ -244,9 +287,34 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
   };
 
   const getNoteForFormat = (
-    period: 'DAILY' | 'WEEKLY' | 'MONTHLY',
-    slot?: 'MORNING_CHECKIN' | 'EVENING_FINAL'
+    period: 'DAILY' | 'SHIFT_WISE' | 'WEEKLY' | 'MONTHLY',
+    slot?: 'MORNING_CHECKIN' | 'EVENING_FINAL',
+    shiftCodeParam?: string,
+    phaseParam?: ShiftReportPhase,
+    deptParam?: string
   ) => {
+    if (period === 'SHIFT_WISE') {
+      const sCode = shiftCodeParam || selectedShiftCode;
+      const pPhase = phaseParam || shiftPhase;
+      const dFilter = deptParam || selectedDepartmentFilter;
+      const rule = shiftScheduleConfig.rules.find(r => r.shiftCode === sCode);
+      const dispatchTime = rule
+        ? formatTime24To12(pPhase === 'CHECK_IN' ? rule.checkInDispatchTime : rule.checkOutDispatchTime)
+        : undefined;
+      const summary = shiftReportScheduleService.buildShiftDepartmentStructuredSummary(
+        allRows,
+        sCode,
+        pPhase,
+        dFilter,
+        rule?.shiftName
+      );
+      return shiftReportScheduleService.formatShiftExecutiveNote({
+        summary,
+        reportDate,
+        companyName,
+        dispatchTimeLabel: dispatchTime,
+      });
+    }
     if (period === 'DAILY') {
       if (slot === 'MORNING_CHECKIN') {
         return `Please review the morning workforce check-in status, on-time arrivals, and pending punches for ${reportDate}. Biometric and mobile punches have been verified.`;
@@ -259,7 +327,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
     return `Executive governance and statutory compliance MIS audit based on active company payroll billing cycle. Contains verified monthly attendance ledger, headcount movement, and 20h overtime regulatory limits for print & management sign-off.`;
   };
 
-  const handleSelectPeriod = (period: 'DAILY' | 'WEEKLY' | 'MONTHLY') => {
+  const handleSelectPeriod = (period: 'DAILY' | 'SHIFT_WISE' | 'WEEKLY' | 'MONTHLY') => {
     setReportPeriod(period);
     setSubject(getSubjectForFormat(period, dailySlot));
     setCustomNote(getNoteForFormat(period, dailySlot));
@@ -269,6 +337,14 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
     setDailySlot(slot);
     setSubject(getSubjectForFormat('DAILY', slot));
     setCustomNote(getNoteForFormat('DAILY', slot));
+  };
+
+  const handleSelectShiftConfig = (newShiftCode: string, newPhase: ShiftReportPhase, newDept: string) => {
+    setSelectedShiftCode(newShiftCode);
+    setShiftPhase(newPhase);
+    setSelectedDepartmentFilter(newDept);
+    setSubject(getSubjectForFormat('SHIFT_WISE', dailySlot, newShiftCode, newPhase, newDept));
+    setCustomNote(getNoteForFormat('SHIFT_WISE', dailySlot, newShiftCode, newPhase, newDept));
   };
 
   // Directory & Contact State
@@ -539,21 +615,54 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
 
       loadPeriodicData();
 
+      // Load shift-wise timed report schedule config
+      shiftReportScheduleService.loadScheduleAsync(effectiveOrgId).then((cfg) => {
+        setShiftScheduleConfig(cfg);
+      }).catch(() => {});
+
       // Start scheduler daemon in background
       attendanceReportSchedulerService.initScheduler();
     }
-  }, [isOpen]);
+  }, [isOpen, effectiveOrgId]);
 
-  // Target data based on chosen scope
+  const availableDepartments = useMemo(() => {
+    const set = new Set<string>();
+    allRows.forEach((r) => {
+      const d = String(r.emp?.department_name || r.emp?.department || r.record?.department || '').trim();
+      if (d) set.add(d);
+    });
+    return Array.from(set).sort();
+  }, [allRows]);
+
+  // Target data based on chosen scope + optional Shift-Wise & Department filter
   const targetRows = useMemo(() => {
+    let base = filteredRows;
     if (scope === 'SELECTED' && selectedIds.size > 0) {
-      return allRows.filter(r => selectedIds.has(r.emp.id));
+      base = allRows.filter(r => selectedIds.has(r.emp.id));
+    } else if (scope === 'ALL') {
+      base = allRows;
     }
-    if (scope === 'ALL') {
-      return allRows;
+
+    if (reportPeriod === 'SHIFT_WISE') {
+      return shiftReportScheduleService.filterRowsForShiftAndDepartment(
+        base,
+        selectedShiftCode,
+        selectedDepartmentFilter
+      );
     }
-    return filteredRows;
-  }, [scope, selectedIds, filteredRows, allRows]);
+    return base;
+  }, [scope, selectedIds, filteredRows, allRows, reportPeriod, selectedShiftCode, selectedDepartmentFilter]);
+
+  const activeShiftSummary = useMemo(() => {
+    const rule = shiftScheduleConfig.rules.find(r => r.shiftCode === selectedShiftCode);
+    return shiftReportScheduleService.buildShiftDepartmentStructuredSummary(
+      allRows,
+      selectedShiftCode,
+      shiftPhase,
+      selectedDepartmentFilter,
+      rule?.shiftName
+    );
+  }, [allRows, selectedShiftCode, shiftPhase, selectedDepartmentFilter, shiftScheduleConfig.rules]);
 
   // Filtered contacts for manual staff directory search
   const filteredContacts = useMemo(() => {
@@ -792,18 +901,40 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
     };
   }, [targetRows]);
 
+  const getResolvedExportParams = () => {
+    if (reportPeriod === 'SHIFT_WISE') {
+      const rule = shiftScheduleConfig.rules.find(r => r.shiftCode === selectedShiftCode);
+      const cutoff = rule
+        ? formatTime24To12(shiftPhase === 'CHECK_IN' ? rule.checkInDispatchTime : rule.checkOutDispatchTime)
+        : undefined;
+      return {
+        activeFmt: (shiftPhase === 'CHECK_IN' ? 'MORNING_CHECKIN' : 'EVENING_FINAL') as 'MORNING_CHECKIN' | 'EVENING_FINAL',
+        exportPeriod: 'DAILY' as const,
+        typeLabel: `${selectedShiftCode} ${shiftPhase === 'CHECK_IN' ? 'Check-In Turnout' : 'Check-Out & OT Audit'}`,
+        cutoffTime: cutoff,
+      };
+    }
+    const activeFmt = reportPeriod === 'DAILY' ? dailySlot : reportPeriod;
+    const typeLabel =
+      reportPeriod === 'WEEKLY'
+        ? 'Weekly HR Intelligence'
+        : reportPeriod === 'MONTHLY'
+        ? 'Monthly Workforce Governance'
+        : dailySlot === 'MORNING_CHECKIN'
+        ? 'Morning Check-In Turnout'
+        : 'Daily Attendance';
+    return {
+      activeFmt,
+      exportPeriod: reportPeriod,
+      typeLabel,
+      cutoffTime: undefined,
+    };
+  };
+
   // Local immediate download actions
   const handleDownloadExcel = async () => {
     try {
-      const activeFmt = reportPeriod === 'DAILY' ? dailySlot : reportPeriod;
-      const typeLabel =
-        reportPeriod === 'WEEKLY'
-          ? 'Weekly HR Intelligence'
-          : reportPeriod === 'MONTHLY'
-          ? 'Monthly Workforce Governance'
-          : dailySlot === 'MORNING_CHECKIN'
-          ? 'Morning Check-In Turnout'
-          : 'Daily Attendance';
+      const { activeFmt, exportPeriod, typeLabel, cutoffTime } = getResolvedExportParams();
 
       showToast(`Generating ${typeLabel} Excel (.xlsx)...`, 'info');
       const res = await attendanceReportExportService.generateExcelWorkbook(targetRows, punches, {
@@ -811,7 +942,8 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
         reportDate,
         includePunches,
         reportType: activeFmt,
-        reportPeriod,
+        reportPeriod: exportPeriod,
+        cutoffTime,
         weeklyEmployeeLedger: weeklyLedger,
         monthlyEmployeeLedger: monthlyLedger,
         payrollCycle: payrollCycle ? { periodName: payrollCycle.name, startDate: payrollCycle.startDate, endDate: payrollCycle.endDate, totalDays: payrollCycle.totalDays, workingDays: payrollCycle.workingDays } : undefined,
@@ -830,15 +962,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
   const handleDownloadPdf = async () => {
     try {
       setIsGeneratingPdf(true);
-      const activeFmt = reportPeriod === 'DAILY' ? dailySlot : reportPeriod;
-      const typeLabel =
-        reportPeriod === 'WEEKLY'
-          ? 'Weekly HR Intelligence'
-          : reportPeriod === 'MONTHLY'
-          ? 'Monthly Workforce Governance'
-          : dailySlot === 'MORNING_CHECKIN'
-          ? 'Morning Check-In Turnout'
-          : 'Daily Attendance';
+      const { activeFmt, exportPeriod, typeLabel, cutoffTime } = getResolvedExportParams();
 
       showToast(`Generating ${typeLabel} PDF (.pdf)...`, 'info');
       const res = await attendanceReportExportService.generatePdfDocument(targetRows, punches, {
@@ -846,7 +970,8 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
         reportDate,
         includePunches,
         reportType: activeFmt,
-        reportPeriod,
+        reportPeriod: exportPeriod,
+        cutoffTime,
       });
       attendanceReportExportService.downloadFile(
         res.buffer,
@@ -863,11 +988,13 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
 
   const handleDownloadCsv = () => {
     try {
-      const activeFmt = reportPeriod === 'DAILY' ? dailySlot : reportPeriod;
+      const { activeFmt } = getResolvedExportParams();
       const csvStr = attendanceReportExportService.generateCsvContent(targetRows, activeFmt as any);
       const safeComp = companyName.replace(/[^a-zA-Z0-9]/g, '_');
       const filename =
-        reportPeriod === 'WEEKLY'
+        reportPeriod === 'SHIFT_WISE'
+          ? `${safeComp}_${selectedShiftCode}_${shiftPhase}_${reportDate}.csv`
+          : reportPeriod === 'WEEKLY'
           ? `${safeComp}_Weekly_Attendance_${reportDate}.csv`
           : reportPeriod === 'MONTHLY'
           ? `${safeComp}_Monthly_Attendance_${reportDate}.csv`
@@ -950,15 +1077,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
     setDetailedDeliveryResults(null);
 
     try {
-      const activeFmt = reportPeriod === 'DAILY' ? dailySlot : reportPeriod;
-      const reportName =
-        reportPeriod === 'WEEKLY'
-          ? 'Weekly HR Intelligence MIS'
-          : reportPeriod === 'MONTHLY'
-          ? 'Monthly Workforce Governance MIS'
-          : dailySlot === 'MORNING_CHECKIN'
-          ? 'Morning Check-In Turnout'
-          : 'Evening Final Audit';
+      const { activeFmt, typeLabel: reportName } = getResolvedExportParams();
 
       showToast(`Generating unified ${reportName} package and dispatching...`, 'info');
 
@@ -1086,6 +1205,121 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
       showToast(`Schedule test run error: ${err.message}`, 'error');
     } finally {
       setIsTestingSchedule(false);
+    }
+  };
+
+  // Shift-Wise Auto-Dispatch Handlers (Isolated Workflow)
+  const handleUpdateShiftRule = (ruleId: string, patch: Partial<ShiftReportRule>) => {
+    const updatedRules = shiftScheduleConfig.rules.map(r => {
+      if (r.id !== ruleId) return r;
+      const merged = { ...r, ...patch };
+      if (patch.checkInOffsetMinutes !== undefined) {
+        merged.checkInDispatchTime = computeOffsetTime24(merged.shiftStart, patch.checkInOffsetMinutes);
+      }
+      if (patch.checkOutOffsetMinutes !== undefined) {
+        merged.checkOutDispatchTime = computeOffsetTime24(merged.shiftEnd, patch.checkOutOffsetMinutes);
+      }
+      return merged;
+    });
+    const nextConfig: ShiftReportScheduleConfig = {
+      ...shiftScheduleConfig,
+      rules: updatedRules,
+    };
+    setShiftScheduleConfig(nextConfig);
+    shiftReportScheduleService.saveScheduleAsync(effectiveOrgId, nextConfig).catch(() => {});
+  };
+
+  const handleSaveShiftSchedule = async () => {
+    setIsSavingShiftSchedule(true);
+    try {
+      const saved = await shiftReportScheduleService.saveScheduleAsync(effectiveOrgId, shiftScheduleConfig);
+      setShiftScheduleConfig(saved);
+      showToast('✓ Shift-based timed report rules saved for ' + companyName, 'success');
+    } catch (err: any) {
+      showToast(`Failed to save shift schedule: ${err.message}`, 'error');
+    } finally {
+      setIsSavingShiftSchedule(false);
+    }
+  };
+
+  const handleTestShiftRule = async (rule: ShiftReportRule, phase: ShiftReportPhase) => {
+    const key = `${rule.id}_${phase}`;
+    setTestingShiftRuleId(key);
+    const dispatchTime = formatTime24To12(phase === 'CHECK_IN' ? rule.checkInDispatchTime : rule.checkOutDispatchTime);
+    const phaseLabel = phase === 'CHECK_IN' ? 'Check-In Turnout' : 'Check-Out & OT Audit';
+    showToast(`Testing ${rule.shiftCode} ${phaseLabel} (${dispatchTime})...`, 'info');
+
+    try {
+      const scopedRows = shiftReportScheduleService.filterRowsForShiftAndDepartment(
+        allRows,
+        rule.shiftCode,
+        rule.departmentFilter
+      );
+      if (scopedRows.length === 0) {
+        showToast(`No employees assigned to ${rule.shiftCode} on ${reportDate}.`, 'error');
+        return;
+      }
+
+      const fallbackHrEmail = contacts.find(c => c.isHr)?.email || '';
+      const testEmailRecipients = scheduleConfig.recipients.length > 0
+        ? scheduleConfig.recipients
+        : (recipients.length > 0 ? recipients : (fallbackHrEmail ? [fallbackHrEmail] : []));
+
+      const summary = shiftReportScheduleService.buildShiftDepartmentStructuredSummary(
+        allRows,
+        rule.shiftCode,
+        phase,
+        rule.departmentFilter,
+        rule.shiftName
+      );
+      const customShiftSubject = shiftReportScheduleService.formatShiftEmailSubject({
+        companyName,
+        reportDate,
+        shiftCode: rule.shiftCode,
+        shiftName: rule.shiftName,
+        phase,
+        department: rule.departmentFilter,
+        dispatchTimeLabel: dispatchTime,
+      });
+      const customShiftNote = shiftReportScheduleService.formatShiftExecutiveNote({
+        summary,
+        reportDate,
+        companyName,
+        dispatchTimeLabel: dispatchTime,
+      });
+
+      const { attendanceMisDeliveryService } = await import(
+        '../../../services/attendance/attendanceMisDeliveryService'
+      );
+
+      const delivery = await attendanceMisDeliveryService.deliverUnifiedMisReport({
+        rows: scopedRows,
+        punches,
+        reportDate,
+        reportType: phase === 'CHECK_IN' ? 'MORNING_CHECKIN' : 'EVENING_FINAL',
+        companyName,
+        organizationId: effectiveOrgId,
+        deliveryChannel: deliveryChannel,
+        emailRecipients: testEmailRecipients,
+        whatsAppRecipients: whatsAppRecipientList.map(w => w.phone),
+        customSubject: customShiftSubject,
+        customNote: customShiftNote,
+        includePunches: true,
+        attachExcel: true,
+        attachCsv: true,
+        triggeredBy: `Shift Rule Test (${rule.shiftCode} ${phaseLabel})`,
+        mode: 'MANUAL_TEST',
+      });
+
+      if (delivery.success) {
+        showToast(`✓ ${rule.shiftCode} ${phaseLabel} delivered (${scopedRows.length} staff across ${summary.departments.length} depts)!`, 'success');
+      } else {
+        throw new Error('Delivery returned unsuccessful status');
+      }
+    } catch (err: any) {
+      showToast(`Shift test dispatch error: ${err.message}`, 'error');
+    } finally {
+      setTestingShiftRuleId(null);
     }
   };
 
@@ -1338,6 +1572,8 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                     <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-950 border border-emerald-300">
                       {reportPeriod === 'DAILY'
                         ? (dailySlot === 'MORNING_CHECKIN' ? 'Daily: Morning Turnout' : 'Daily: Evening Final')
+                        : reportPeriod === 'SHIFT_WISE'
+                        ? `Shift: ${selectedShiftCode} (${shiftPhase === 'CHECK_IN' ? 'Check-In' : 'Check-Out'})`
                         : reportPeriod === 'WEEKLY'
                         ? 'Period: 7-Day Weekly Trend'
                         : `Monthly Cycle: ${payrollCycle?.name || 'October 2026'}`}
@@ -1345,7 +1581,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                   {/* Card 1: Daily Attendance MIS */}
                   <div
                     onClick={() => handleSelectPeriod('DAILY')}
@@ -1360,16 +1596,13 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                         <Calendar className="w-4 h-4 text-emerald-700" />
                         <span>Daily Attendance MIS</span>
                       </div>
-                      <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                        Realtime Punches
-                      </span>
                     </div>
                     <p className="text-[11px] text-gray-600 leading-relaxed mb-2">
-                      Arrival punctuality, active working hours, verified biometric punches, and shift variances.
+                      Full-org morning turnout (~10:30) and evening final audit (~19:00).
                     </p>
 
                     {/* Sub-Slot Pills for Daily */}
-                    <div className="pt-2 border-t border-emerald-100 flex items-center gap-1.5">
+                    <div className="pt-2 border-t border-emerald-100 flex items-center gap-1.5 flex-wrap">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1384,7 +1617,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                         }`}
                       >
                         <Sun className="w-3 h-3 text-amber-600" />
-                        Morning (~10:30)
+                        Morning
                       </button>
 
                       <button
@@ -1401,7 +1634,62 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                         }`}
                       >
                         <Moon className="w-3 h-3 text-indigo-600" />
-                        Evening (~19:00)
+                        Evening
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Shift-Wise Check-In / Check-Out & Dept Breakdown */}
+                  <div
+                    onClick={() => handleSelectPeriod('SHIFT_WISE')}
+                    className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer ${
+                      reportPeriod === 'SHIFT_WISE'
+                        ? 'bg-white border-emerald-600 ring-2 ring-emerald-500/30 shadow-xs'
+                        : 'bg-white/70 border-emerald-200 hover:bg-white text-gray-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="font-extrabold text-xs text-emerald-950 flex items-center gap-1.5">
+                        <Timer className="w-4 h-4 text-amber-600" />
+                        <span>Shift-Wise Report</span>
+                      </div>
+                      <span className="text-[9px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                        +30m Timed
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-600 leading-relaxed mb-2">
+                      Per-shift Check-In &amp; Check-Out differentiation with Dept-wise breakdown.
+                    </p>
+                    <div className="pt-2 border-t border-emerald-100 flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReportPeriod('SHIFT_WISE');
+                          handleSelectShiftConfig(selectedShiftCode, 'CHECK_IN', selectedDepartmentFilter);
+                        }}
+                        className={`text-[10px] font-bold px-2 py-1 rounded-md transition-all flex items-center gap-1 ${
+                          reportPeriod === 'SHIFT_WISE' && shiftPhase === 'CHECK_IN'
+                            ? 'bg-emerald-100 text-emerald-950 border border-emerald-300 font-extrabold'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        Check-In
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReportPeriod('SHIFT_WISE');
+                          handleSelectShiftConfig(selectedShiftCode, 'CHECK_OUT', selectedDepartmentFilter);
+                        }}
+                        className={`text-[10px] font-bold px-2 py-1 rounded-md transition-all flex items-center gap-1 ${
+                          reportPeriod === 'SHIFT_WISE' && shiftPhase === 'CHECK_OUT'
+                            ? 'bg-indigo-100 text-indigo-950 border border-indigo-300 font-extrabold'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        Check-Out
                       </button>
                     </div>
                   </div>
@@ -1460,6 +1748,126 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                     </div>
                   </div>
                 </div>
+
+                {/* Shift-Wise & Department-Wise Interactive Selector & Live Preview */}
+                {reportPeriod === 'SHIFT_WISE' && (
+                  <div className="bg-white border border-emerald-200 rounded-xl p-3.5 space-y-3 shadow-2xs animate-in fade-in duration-150">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-extrabold text-emerald-950">Shift &amp; Department Report Scope:</span>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                          shiftPhase === 'CHECK_IN'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                        }`}>
+                          {shiftPhase === 'CHECK_IN' ? 'Check-In Turnout (+30m)' : 'Check-Out & OT Audit (+30m)'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-gray-600">
+                        Matched: <strong className="text-emerald-800">{activeShiftSummary.totalEmployees} Staff</strong> across <strong className="text-emerald-800">{activeShiftSummary.departments.length} Depts</strong>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                      {/* 1. Shift Selector */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Target Shift</label>
+                        <select
+                          value={selectedShiftCode}
+                          onChange={(e) => handleSelectShiftConfig(e.target.value, shiftPhase, selectedDepartmentFilter)}
+                          className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-800 focus:outline-emerald-600"
+                        >
+                          <option value="ALL">All Shifts (Consolidated)</option>
+                          {shiftScheduleConfig.rules.map(rule => (
+                            <option key={rule.id} value={rule.shiftCode}>
+                              {rule.shiftCode} ({formatTime24To12(rule.shiftStart)} - {formatTime24To12(rule.shiftEnd)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 2. Phase Differentiation */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Report Phase</label>
+                        <div className="grid grid-cols-2 gap-1 bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectShiftConfig(selectedShiftCode, 'CHECK_IN', selectedDepartmentFilter)}
+                            className={`py-1 px-2 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                              shiftPhase === 'CHECK_IN'
+                                ? 'bg-emerald-700 text-white shadow-2xs'
+                                : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            Check-In
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectShiftConfig(selectedShiftCode, 'CHECK_OUT', selectedDepartmentFilter)}
+                            className={`py-1 px-2 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                              shiftPhase === 'CHECK_OUT'
+                                ? 'bg-indigo-700 text-white shadow-2xs'
+                                : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            Check-Out
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 3. Department Filter */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Department Filter</label>
+                        <select
+                          value={selectedDepartmentFilter}
+                          onChange={(e) => handleSelectShiftConfig(selectedShiftCode, shiftPhase, e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-800 focus:outline-emerald-600"
+                        >
+                          <option value="ALL">All Departments (Dept-Wise)</option>
+                          {availableDepartments.map(dept => (
+                            <option key={dept} value={dept}>{dept}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Department-Wise Structured Preview Grid */}
+                    {activeShiftSummary.departments.length > 0 && (
+                      <div className="border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="bg-slate-50 px-3 py-1.5 border-b border-gray-200 flex items-center justify-between text-[10px] font-bold text-gray-600 uppercase tracking-wider">
+                          <span>Department-Wise Breakdown ({selectedShiftCode})</span>
+                          <span>
+                            {shiftPhase === 'CHECK_IN'
+                              ? `In: ${activeShiftSummary.checkedInCount}/${activeShiftSummary.totalEmployees} (${activeShiftSummary.turnoutPct}%) • Late: ${activeShiftSummary.lateCount}`
+                              : `Out: ${activeShiftSummary.checkedOutCount}/${activeShiftSummary.checkedInCount} • Missing Out: ${activeShiftSummary.missingOutPunchCount} • OT: ${activeShiftSummary.overtimeCount}`}
+                          </span>
+                        </div>
+                        <div className="max-h-32 overflow-y-auto divide-y divide-gray-100 text-[11px]">
+                          {activeShiftSummary.departments.map((d) => (
+                            <div key={d.department} className="px-3 py-1.5 flex items-center justify-between hover:bg-gray-50">
+                              <span className="font-bold text-gray-800">{d.department}</span>
+                              {shiftPhase === 'CHECK_IN' ? (
+                                <div className="flex items-center gap-2.5 font-mono text-[10px]">
+                                  <span className="text-emerald-700 font-bold">In: {d.checkedIn}/{d.total}</span>
+                                  <span className="text-gray-600">On-Time: {d.onTime}</span>
+                                  <span className={d.late > 0 ? 'text-amber-700 font-bold' : 'text-gray-400'}>Late: {d.late}</span>
+                                  <span className={d.absentOrNotIn > 0 ? 'text-rose-600 font-bold' : 'text-gray-400'}>Not In: {d.absentOrNotIn}</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2.5 font-mono text-[10px]">
+                                  <span className="text-indigo-700 font-bold">Out: {d.checkedOut}/{d.checkedIn}</span>
+                                  <span className={d.missingOutPunch > 0 ? 'text-rose-600 font-bold' : 'text-gray-400'}>Missing Out: {d.missingOutPunch}</span>
+                                  <span className={d.earlyCheckout > 0 ? 'text-amber-700 font-bold' : 'text-gray-400'}>Early: {d.earlyCheckout}</span>
+                                  <span className={d.overtimeCount > 0 ? 'text-emerald-700 font-bold' : 'text-gray-400'}>OT: {d.overtimeCount}</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Delivery Channel Selector */}
@@ -2284,7 +2692,8 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                     </button>
                   </div>
                 </div>
-              </div>
+
+                              </div>
 
               {/* Recurrence & Next Run Status Strip */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2362,7 +2771,8 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                     Schedule mode: 2 automated dispatches per day (Morning {formatTo12Hour(scheduleConfig.morningTime || '10:00')} &amp; Evening {formatTo12Hour(scheduleConfig.eveningTime || '19:00')})
                   </div>
                 </div>
-              </div>
+
+                              </div>
 
               {/* Automated Target HR Recipients */}
               <div className="border border-gray-200 rounded-xl p-4 bg-white space-y-3.5 shadow-2xs">
@@ -2781,6 +3191,188 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                       {isSavingSchedule ? 'Saving...' : 'Save Schedule Settings'}
                     </Button>
                   </div>
+                </div>
+
+                              </div>
+
+              {/* Shift-Wise Timed Auto-Dispatch Rules (Isolated Plant / Shift Workflow) */}
+              <div className="border border-emerald-200/90 rounded-2xl p-4 bg-gradient-to-br from-white to-emerald-50/30 space-y-3.5 shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-100 pb-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                      <Timer className="w-4 h-4 text-emerald-700" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-xs text-emerald-950">
+                          Shift-Wise Timed Auto-Dispatch (Check-In &amp; Check-Out)
+                        </span>
+                        <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${
+                          shiftScheduleConfig.enabled ? 'bg-emerald-200 text-emerald-950' : 'bg-gray-200 text-gray-600'
+                        }`}>
+                          {shiftScheduleConfig.enabled ? 'ENABLED' : 'PAUSED'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-600 mt-0.5">
+                        Sends distinct Check-In Turnout &amp; Check-Out/OT reports per shift (e.g. 06:00 AM shift → 06:30 AM Check-In, 03:00 PM Check-Out) with Department-Wise breakdown.
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={shiftScheduleConfig.enabled}
+                      onChange={e => {
+                        const updated = { ...shiftScheduleConfig, enabled: e.target.checked };
+                        setShiftScheduleConfig(updated);
+                        shiftReportScheduleService.saveScheduleAsync(effectiveOrgId, updated).catch(() => {});
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#07563D]"></div>
+                  </label>
+                </div>
+
+                <div className="space-y-2.5">
+                  {shiftScheduleConfig.rules.map((rule) => {
+                    const isTestingIn = testingShiftRuleId === `${rule.id}_CHECK_IN`;
+                    const isTestingOut = testingShiftRuleId === `${rule.id}_CHECK_OUT`;
+
+                    return (
+                      <div
+                        key={rule.id}
+                        className="bg-white border border-gray-200 rounded-xl p-3 space-y-2.5 shadow-2xs"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-black px-2 py-0.5 rounded bg-emerald-950 text-white font-mono">
+                              {rule.shiftCode}
+                            </span>
+                            <span className="text-xs font-bold text-gray-900">{rule.shiftName}</span>
+                            <span className="text-[10px] font-mono text-gray-500">
+                              ({formatTime24To12(rule.shiftStart)} – {formatTime24To12(rule.shiftEnd)}{rule.isOvernight ? ' +1d' : ''})
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 text-[11px]">
+                            <span className="text-gray-500 font-semibold">Dept Scope:</span>
+                            <select
+                              value={rule.departmentFilter}
+                              onChange={e => handleUpdateShiftRule(rule.id, { departmentFilter: e.target.value })}
+                              className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded text-[11px] font-bold text-gray-800"
+                            >
+                              <option value="ALL">All Departments (Dept-Wise)</option>
+                              {availableDepartments.map(d => (
+                                <option key={d} value={d}>{d}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-[11px]">
+                          {/* Check-In Timed Slot */}
+                          <div className={`p-2.5 rounded-lg border flex flex-wrap items-center justify-between gap-2 ${
+                            rule.checkInEnabled ? 'bg-emerald-50/50 border-emerald-200' : 'bg-gray-50 border-gray-200 opacity-70'
+                          }`}>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={rule.checkInEnabled}
+                                onChange={e => handleUpdateShiftRule(rule.id, { checkInEnabled: e.target.checked })}
+                                className="accent-[#07563D] w-3.5 h-3.5 cursor-pointer"
+                              />
+                              <div>
+                                <div className="font-bold text-emerald-950">Check-In Report</div>
+                                <div className="text-[10px] text-emerald-800 font-mono">
+                                  Sends at <strong>{formatTime24To12(rule.checkInDispatchTime)}</strong>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                value={rule.checkInOffsetMinutes}
+                                onChange={e => handleUpdateShiftRule(rule.id, { checkInOffsetMinutes: Number(e.target.value) })}
+                                className="px-1.5 py-0.5 bg-white border border-emerald-200 rounded text-[10px] font-bold text-emerald-900"
+                              >
+                                <option value={15}>+15m after start</option>
+                                <option value={30}>+30m after start</option>
+                                <option value={45}>+45m after start</option>
+                                <option value={60}>+60m after start</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => handleTestShiftRule(rule, 'CHECK_IN')}
+                                disabled={Boolean(testingShiftRuleId)}
+                                className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                {isTestingIn ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Play className="w-2.5 h-2.5" />}
+                                Test
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Check-Out Timed Slot */}
+                          <div className={`p-2.5 rounded-lg border flex flex-wrap items-center justify-between gap-2 ${
+                            rule.checkOutEnabled ? 'bg-indigo-50/50 border-indigo-200' : 'bg-gray-50 border-gray-200 opacity-70'
+                          }`}>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={rule.checkOutEnabled}
+                                onChange={e => handleUpdateShiftRule(rule.id, { checkOutEnabled: e.target.checked })}
+                                className="accent-indigo-600 w-3.5 h-3.5 cursor-pointer"
+                              />
+                              <div>
+                                <div className="font-bold text-indigo-950">Check-Out &amp; OT Report</div>
+                                <div className="text-[10px] text-indigo-800 font-mono">
+                                  Sends at <strong>{formatTime24To12(rule.checkOutDispatchTime)}</strong>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                value={rule.checkOutOffsetMinutes}
+                                onChange={e => handleUpdateShiftRule(rule.id, { checkOutOffsetMinutes: Number(e.target.value) })}
+                                className="px-1.5 py-0.5 bg-white border border-indigo-200 rounded text-[10px] font-bold text-indigo-900"
+                              >
+                                <option value={15}>+15m after end</option>
+                                <option value={30}>+30m after end</option>
+                                <option value={45}>+45m after end</option>
+                                <option value={60}>+60m after end</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => handleTestShiftRule(rule, 'CHECK_OUT')}
+                                disabled={Boolean(testingShiftRuleId)}
+                                className="px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-800 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                {isTestingOut ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Play className="w-2.5 h-2.5" />}
+                                Test
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[10px] text-gray-500">
+                    Each shift dispatch includes Shift-Wise &amp; Department-Wise Excel (.xlsx) and PDF (.pdf).
+                  </span>
+                  <Button
+                    size="xs"
+                    onClick={handleSaveShiftSchedule}
+                    disabled={isSavingShiftSchedule}
+                    leftIcon={isSavingShiftSchedule ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                    className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold"
+                  >
+                    {isSavingShiftSchedule ? 'Saving...' : 'Save Shift Schedule'}
+                  </Button>
                 </div>
               </div>
 
