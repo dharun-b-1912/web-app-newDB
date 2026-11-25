@@ -8,6 +8,7 @@ import {
   EventType,
   PunchSource,
 } from '../../types/attendance';
+import { tenantOvertimePolicyService } from '../../services/attendance/tenantOvertimePolicyService';
 
 export const DEFAULT_ATTENDANCE_POLICY: AttendancePolicy = {
   id: 'pol-default-01',
@@ -89,24 +90,12 @@ export function getShiftScheduledBreakMinutes(
   isOvernight?: boolean,
   orgId?: string
 ): number {
+  const tenantPolicy = tenantOvertimePolicyService.getPolicySync(orgId);
   const code = String(shiftCode || '').toUpperCase();
-  // Night Shift (11:00 PM - 06:00 AM / SHIFT-3) has 0m break
   if (isOvernight || code.includes('SHIFT-3') || code.includes('NS-01') || code.includes('NGT')) {
-    return 0;
+    return tenantPolicy.nightShiftBreakMinutes;
   }
-  const isElectra =
-    orgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' ||
-    orgId === 'c0bbfb28-1500-4ebb-aba8-453b3681f342' ||
-    orgId === 'org-electra-01' ||
-    code === 'SHIFT-1' ||
-    code === 'SHIFT-2' ||
-    code === 'GEN-01';
-
-  // Electra EV day/general shifts have a strict 30-minute lunch break
-  if (isElectra) {
-    return 30;
-  }
-  return 0;
+  return tenantPolicy.dayShiftBreakMinutes;
 }
 
 export function processAttendanceStatus(
@@ -256,16 +245,17 @@ export function processAttendanceStatus(
     }
   }
 
+  const tenantOtPolicy = tenantOvertimePolicyService.getPolicySync();
   // Deduct scheduled break (e.g. strict 30m lunch for Electra Day/General shifts; 0m for Night Shift) when worked >= 4h
   const effectiveBreak = (gross >= 240 && breakMinutes > 0) ? breakMinutes : 0;
   const net = Math.max(0, gross - effectiveBreak);
   // Overtime and full-day thresholds evaluated against scheduled net shift duration (8h for Day/Gen, 7h for Night Shift)
   const shiftBaseMinutes = scheduledShiftDurationMinutes > 0
     ? Math.max(0, scheduledShiftDurationMinutes - breakMinutes)
-    : ((policy.required_hours_per_day || 8) * 60);
+    : (tenantOtPolicy.dailyWorkThresholdMinutes || (policy.required_hours_per_day || 8) * 60);
   const halfDayThresholdMinutes = isOvernightShift
-    ? Math.round(shiftBaseMinutes / 2) // 210m (3.5h) for 7h Night Shift
-    : ((policy.half_day_hours_threshold || 4) * 60); // 240m (4h) for 8h Day Shift
+    ? (tenantOtPolicy.nightShiftHalfDayThresholdMinutes || Math.round(shiftBaseMinutes / 2))
+    : (tenantOtPolicy.dayShiftHalfDayThresholdMinutes || (policy.half_day_hours_threshold || 4) * 60);
 
   // Late minutes and Early Arrival calculation against shift scheduled start
   let rawLateMinutes = 0;
@@ -316,19 +306,23 @@ export function processAttendanceStatus(
   }
 
   // Overtime minutes:
-  // Overtime includes BOTH staying past shift end AND early arrival before shift start!
+  // Evaluated against tenant-configured minOtThresholdMinutes, maxOtMinutesPerDay, & pre/post toggles
   let overtimeMinutes = 0;
-  const minOtThreshold = policy.overtime_min_minutes || 30;
+  const minOtThreshold = tenantOtPolicy.minOtThresholdMinutes ?? policy.overtime_min_minutes ?? 30;
+  const maxOtCap = tenantOtPolicy.maxOtMinutesPerDay ?? 480;
   if (checkOutMinutes !== null) {
-    if (net > shiftBaseMinutes + minOtThreshold) {
+    if (tenantOtPolicy.postShiftOtEnabled && net >= shiftBaseMinutes + minOtThreshold) {
       overtimeMinutes = net - shiftBaseMinutes;
     }
-  } else if (checkInMinutes !== null) {
-    // If worker arrived >= 30m early for shift, pre-shift overtime is active and credited
+    if (tenantOtPolicy.preShiftOtEnabled && earlyArrivalMinutes >= minOtThreshold) {
+      overtimeMinutes = Math.max(overtimeMinutes, earlyArrivalMinutes);
+    }
+  } else if (checkInMinutes !== null && tenantOtPolicy.preShiftOtEnabled) {
     if (earlyArrivalMinutes >= minOtThreshold) {
       overtimeMinutes = earlyArrivalMinutes;
     }
   }
+  if (overtimeMinutes > maxOtCap) overtimeMinutes = maxOtCap;
 
   let status: AttendanceStatus = 'Present';
 

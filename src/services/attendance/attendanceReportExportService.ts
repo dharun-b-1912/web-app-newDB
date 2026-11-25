@@ -18,6 +18,7 @@ import ExcelJS from 'exceljs';
 import { jsPDF } from 'jspdf';
 import { supabase } from '../../lib/supabase';
 import { api } from '../api';
+import { tenantOvertimePolicyService } from './tenantOvertimePolicyService';
 import { attendanceApi } from '../attendanceApi';
 import { AttendanceDaily } from '../../types/attendance';
 import { ClassifiedPunchEvent } from './attendanceClassificationEngine';
@@ -235,26 +236,29 @@ export function computeEmployeeOvertime(
   const inMins = rec?.first_check_in ? extractIstMinutesOfDay(rec.first_check_in) : null;
   const outMins = rec?.last_check_out ? extractIstMinutesOfDay(rec.last_check_out) : null;
 
-  // 1. Calculate Pre-Shift Early Check-in Overtime (e.g. employee comes 2 to 4 hours early before shift)
+  const tenantPolicy = tenantOvertimePolicyService.getPolicySync((rec as any)?.organization_id);
+  const minOtThreshold = tenantPolicy.minOtThresholdMinutes ?? 30;
+  const maxOtCap = tenantPolicy.maxOtMinutesPerDay ?? 480;
+
+  // 1. Calculate Pre-Shift Early Check-in Overtime
   let earlyArrivalOt = 0;
-  if (inMins !== null && sMins !== null) {
+  if (tenantPolicy.preShiftOtEnabled && inMins !== null && sMins !== null) {
     let earlyDiff = sMins - inMins;
     if (shift?.cross_midnight && earlyDiff < -720) earlyDiff += 1440;
     if (earlyDiff > 720) earlyDiff -= 1440;
-    // If worker arrived at least 30 minutes before scheduled start time, that is pre-shift early OT!
-    if (earlyDiff >= 30) {
+    if (earlyDiff >= minOtThreshold) {
       earlyArrivalOt = earlyDiff;
     }
   }
 
   // 2. Calculate Post-Shift Late Stay Overtime (past scheduled shift end)
   let postShiftOt = 0;
-  if (outMins !== null && eMins !== null) {
+  if (tenantPolicy.postShiftOtEnabled && outMins !== null && eMins !== null) {
     const isNight = Boolean(shift?.cross_midnight || (sMins !== null && sMins > eMins));
     let postDiff = outMins - eMins;
     if (isNight && postDiff < -720) postDiff += 1440;
     if (postDiff > 720) postDiff -= 1440;
-    if (postDiff >= 30) {
+    if (postDiff >= minOtThreshold) {
       postShiftOt = postDiff;
     }
   }
@@ -265,7 +269,7 @@ export function computeEmployeeOvertime(
   // Priority 2: Duration-based overtime (net/total worked minutes exceeding scheduled shift duration)
   const workMins = rec?.total_work_minutes ?? rec?.net_working_minutes ?? 0;
   let durationOt = 0;
-  if (outMins !== null && workMins >= shiftDuration + 30) {
+  if (tenantPolicy.postShiftOtEnabled && outMins !== null && workMins >= shiftDuration + minOtThreshold) {
     durationOt = workMins - shiftDuration;
   }
 
@@ -290,9 +294,9 @@ export function computeEmployeeOvertime(
     }
   }
 
-  // Safety guard: Single shift overtime capped at 480 mins (8 hours)
-  if (ot > 480) {
-    ot = 480;
+  // Safety guard: Single shift overtime capped at tenant maxOtCap
+  if (ot > maxOtCap) {
+    ot = maxOtCap;
   }
   if (ot < 0) ot = 0;
 

@@ -58,6 +58,12 @@ const DEFAULT_BREAK_POLICY: BreakPolicy = {
 function getActiveOrgId(): string {
   if (typeof window !== 'undefined') {
     try {
+      const activeComp = localStorage.getItem('workforce_active_company');
+      if (activeComp) {
+        const parsed = JSON.parse(activeComp);
+        if (parsed?.organization_id && parsed.organization_id.length === 36) return parsed.organization_id;
+        if (parsed?.id && parsed.id.length === 36) return parsed.id;
+      }
       const storedOrg = localStorage.getItem('workforce_active_organization');
       if (storedOrg) {
         const parsed = JSON.parse(storedOrg);

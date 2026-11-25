@@ -36,6 +36,11 @@ import {
   OvertimePolicy,
 } from '../../types/workOvertime';
 import { workOvertimeService } from '../../services/workOvertimeService';
+import {
+  tenantOvertimePolicyService,
+  TenantOvertimePolicyConfig,
+} from '../../services/attendance/tenantOvertimePolicyService';
+import { getActiveOrgId } from '../../services/attendance/biometricCommandService';
 
 const PRESET_ICONS: Record<IndustryPreset, React.ElementType> = {
   CORPORATE: Building2,
@@ -63,18 +68,51 @@ export const OvertimeEngineView: React.FC = () => {
   const [workHours, setWorkHours] = useState<WorkHourRecord[]>(() => workOvertimeService.getWorkHourRecords(new Date().toISOString().split('T')[0]));
   const [exceptions, setExceptions] = useState<WorkException[]>(() => workOvertimeService.getWorkExceptions(new Date().toISOString().split('T')[0]));
   const [policy, setPolicy] = useState<OvertimePolicy>(() => workOvertimeService.getPolicy());
+  const [activeOrgId, setActiveOrgId] = useState<string>(() => getActiveOrgId() || 'org-default');
+  const [activeOrgName, setActiveOrgName] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem('workforce_active_company');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return parsed?.name || parsed?.company_name || 'Active Organization';
+      }
+    } catch { /* ignore */ }
+    return 'Active Organization';
+  });
+  const [tenantPolicy, setTenantPolicy] = useState<TenantOvertimePolicyConfig>(() =>
+    tenantOvertimePolicyService.getPolicySync(getActiveOrgId() || 'org-default')
+  );
+  const [isSavingPolicy, setIsSavingPolicy] = useState(false);
   const [selectedRecordForDrawer, setSelectedRecordForDrawer] = useState<WorkHourRecord | null>(null);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [filterDepartment, setFilterDepartment] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
 
   const refreshData = (date = selectedDate) => {
+    const currentOrg = getActiveOrgId() || 'org-default';
+    setActiveOrgId(currentOrg);
+    try {
+      const raw = localStorage.getItem('workforce_active_company');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setActiveOrgName(parsed?.name || parsed?.company_name || 'Active Organization');
+      }
+    } catch { /* ignore */ }
     setMetrics(workOvertimeService.getDashboardMetrics(date));
     setActivePreset(workOvertimeService.getActivePreset());
     setWorkHours(workOvertimeService.getWorkHourRecords(date));
     setExceptions(workOvertimeService.getWorkExceptions(date));
     setPolicy(workOvertimeService.getPolicy());
+    setTenantPolicy(tenantOvertimePolicyService.getPolicySync(currentOrg));
   };
+
+  useEffect(() => {
+    const currentOrg = getActiveOrgId() || 'org-default';
+    setActiveOrgId(currentOrg);
+    tenantOvertimePolicyService.loadPolicyAsync(currentOrg).then((loaded) => {
+      setTenantPolicy(loaded);
+    });
+  }, [isConfigModalOpen]);
 
   useEffect(() => {
     refreshData(selectedDate);
@@ -488,110 +526,337 @@ export const OvertimeEngineView: React.FC = () => {
         </div>
       )}
 
-      {/* Policy Configuration Modal */}
+      {/* Policy Configuration Modal (Multi-Tenant Isolated SaaS Rules) */}
       {isConfigModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-gray-200 p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <h3 className="text-base font-bold text-gray-900">Overtime Policy Configuration</h3>
+          <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-xl border border-gray-200 p-6 space-y-5">
+            <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">Overtime &amp; Shift Break Policy Configuration</h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    {activeOrgName} — Isolated Tenant Policy
+                  </span>
+                  <span className="text-[11px] text-gray-400">Applies live to Attendance, OT Engine &amp; MIS</span>
+                </div>
+              </div>
               <button onClick={() => setIsConfigModalOpen(false)} className="text-gray-400 hover:text-gray-600">
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-gray-700 mb-1">Daily Work Threshold (Minutes)</label>
-                <input
-                  type="number"
-                  value={policy.daily_threshold_minutes}
-                  onChange={e => setPolicy({ ...policy, daily_threshold_minutes: Number(e.target.value) })}
-                  className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium"
-                />
+            <div className="space-y-5 text-xs">
+              {/* Section 1: Overtime Thresholds & Caps */}
+              <div className="bg-gray-50/70 rounded-xl p-4 border border-gray-100 space-y-3">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                  1. Overtime Thresholds &amp; Statutory Caps
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Daily Work Threshold (Min)</label>
+                    <input
+                      type="number"
+                      min={60}
+                      max={720}
+                      value={tenantPolicy.dailyWorkThresholdMinutes}
+                      onChange={e => {
+                        const val = Number(e.target.value);
+                        setTenantPolicy({ ...tenantPolicy, dailyWorkThresholdMinutes: val });
+                        setPolicy({ ...policy, daily_threshold_minutes: val });
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Min OT Trigger (Min)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={180}
+                      value={tenantPolicy.minOtThresholdMinutes}
+                      onChange={e => setTenantPolicy({ ...tenantPolicy, minOtThresholdMinutes: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Max OT Cap / Shift (Min)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={720}
+                      value={tenantPolicy.maxOtMinutesPerDay}
+                      onChange={e => setTenantPolicy({ ...tenantPolicy, maxOtMinutesPerDay: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Grace Period (Minutes)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={60}
+                      value={tenantPolicy.gracePeriodMinutes}
+                      onChange={e => {
+                        const val = Number(e.target.value);
+                        setTenantPolicy({ ...tenantPolicy, gracePeriodMinutes: val });
+                        setPolicy({ ...policy, grace_period_minutes: val });
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Monthly Statutory OT Cap (Hours)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={120}
+                      value={tenantPolicy.monthlyStatutoryOtCapHours}
+                      onChange={e => setTenantPolicy({ ...tenantPolicy, monthlyStatutoryOtCapHours: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">Grace Period (Minutes)</label>
-                  <input
-                    type="number"
-                    value={policy.grace_period_minutes}
-                    onChange={e => setPolicy({ ...policy, grace_period_minutes: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">Regular Rate Multiplier</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={policy.normal_rate_multiplier}
-                    onChange={e => setPolicy({ ...policy, normal_rate_multiplier: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium"
-                  />
+              {/* Section 2: Shift Break & Half-Day Rules */}
+              <div className="bg-gray-50/70 rounded-xl p-4 border border-gray-100 space-y-3">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                  2. Shift Break Deductions &amp; Half-Day Cutoffs
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Day / Gen Shift Break (Min)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={120}
+                      value={tenantPolicy.dayShiftBreakMinutes}
+                      onChange={e => setTenantPolicy({ ...tenantPolicy, dayShiftBreakMinutes: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Night Shift Break (Min)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={120}
+                      value={tenantPolicy.nightShiftBreakMinutes}
+                      onChange={e => setTenantPolicy({ ...tenantPolicy, nightShiftBreakMinutes: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Day Half-Day Cutoff (Min)</label>
+                    <input
+                      type="number"
+                      min={60}
+                      max={360}
+                      value={tenantPolicy.dayShiftHalfDayThresholdMinutes}
+                      onChange={e => setTenantPolicy({ ...tenantPolicy, dayShiftHalfDayThresholdMinutes: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Night Half-Day Cutoff (Min)</label>
+                    <input
+                      type="number"
+                      min={60}
+                      max={360}
+                      value={tenantPolicy.nightShiftHalfDayThresholdMinutes}
+                      onChange={e => setTenantPolicy({ ...tenantPolicy, nightShiftHalfDayThresholdMinutes: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">Weekend Multiplier</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={policy.weekend_multiplier}
-                    onChange={e => setPolicy({ ...policy, weekend_multiplier: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">Holiday Multiplier</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={policy.holiday_multiplier}
-                    onChange={e => setPolicy({ ...policy, holiday_multiplier: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium"
-                  />
+              {/* Section 3: OT Component Toggles */}
+              <div className="bg-gray-50/70 rounded-xl p-4 border border-gray-100 space-y-3">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                  3. Overtime Component Eligibility
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="flex items-center justify-between p-3 rounded-xl border border-gray-200 bg-white cursor-pointer">
+                    <div>
+                      <span className="block font-bold text-gray-800">Pre-Shift / Early Arrival OT</span>
+                      <span className="text-[11px] text-gray-500">Count extra minutes clocked before shift start</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={tenantPolicy.preShiftOtEnabled}
+                      onChange={e => setTenantPolicy({ ...tenantPolicy, preShiftOtEnabled: e.target.checked })}
+                      className="w-4 h-4 accent-emerald-600"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between p-3 rounded-xl border border-gray-200 bg-white cursor-pointer">
+                    <div>
+                      <span className="block font-bold text-gray-800">Post-Shift / Stay-Late OT</span>
+                      <span className="text-[11px] text-gray-500">Count extra minutes clocked after shift end</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={tenantPolicy.postShiftOtEnabled}
+                      onChange={e => setTenantPolicy({ ...tenantPolicy, postShiftOtEnabled: e.target.checked })}
+                      className="w-4 h-4 accent-emerald-600"
+                    />
+                  </label>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">Night Window Start</label>
-                  <input
-                    type="text"
-                    value={policy.night_window_start}
-                    onChange={e => setPolicy({ ...policy, night_window_start: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium"
-                  />
+              {/* Section 4: Pay Multipliers & Night Window */}
+              <div className="bg-gray-50/70 rounded-xl p-4 border border-gray-100 space-y-3">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                  4. Pay Multipliers &amp; Night Window
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Regular (x)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={tenantPolicy.regularMultiplier}
+                      onChange={e => {
+                        const val = Number(e.target.value);
+                        setTenantPolicy({ ...tenantPolicy, regularMultiplier: val });
+                        setPolicy({ ...policy, normal_rate_multiplier: val });
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Weekend (x)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={tenantPolicy.weekendMultiplier}
+                      onChange={e => {
+                        const val = Number(e.target.value);
+                        setTenantPolicy({ ...tenantPolicy, weekendMultiplier: val });
+                        setPolicy({ ...policy, weekend_multiplier: val });
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Holiday (x)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={tenantPolicy.holidayMultiplier}
+                      onChange={e => {
+                        const val = Number(e.target.value);
+                        setTenantPolicy({ ...tenantPolicy, holidayMultiplier: val });
+                        setPolicy({ ...policy, holiday_multiplier: val });
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Night (x)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={tenantPolicy.nightMultiplier}
+                      onChange={e => setTenantPolicy({ ...tenantPolicy, nightMultiplier: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">Night Window End</label>
-                  <input
-                    type="text"
-                    value={policy.night_window_end}
-                    onChange={e => setPolicy({ ...policy, night_window_end: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Night Window Start</label>
+                    <input
+                      type="text"
+                      value={tenantPolicy.nightWindowStart}
+                      onChange={e => {
+                        setTenantPolicy({ ...tenantPolicy, nightWindowStart: e.target.value });
+                        setPolicy({ ...policy, night_window_start: e.target.value });
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">Night Window End</label>
+                    <input
+                      type="text"
+                      value={tenantPolicy.nightWindowEnd}
+                      onChange={e => {
+                        setTenantPolicy({ ...tenantPolicy, nightWindowEnd: e.target.value });
+                        setPolicy({ ...policy, night_window_end: e.target.value });
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-medium"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
-              <Button variant="outline" size="sm" onClick={() => setIsConfigModalOpen(false)}>
-                Cancel
-              </Button>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-gray-100">
               <Button
+                variant="outline"
                 size="sm"
-                onClick={() => {
-                  workOvertimeService.updatePolicy(policy);
-                  showToast('Overtime policy parameters updated successfully!');
-                  setIsConfigModalOpen(false);
-                  refreshData();
+                disabled={isSavingPolicy}
+                onClick={async () => {
+                  setIsSavingPolicy(true);
+                  try {
+                    const reset = await tenantOvertimePolicyService.resetToOrgDefaults(activeOrgId);
+                    setTenantPolicy(reset);
+                    const syncedLegacy: OvertimePolicy = {
+                      ...policy,
+                      daily_threshold_minutes: reset.dailyWorkThresholdMinutes,
+                      grace_period_minutes: reset.gracePeriodMinutes,
+                      normal_rate_multiplier: reset.regularMultiplier,
+                      weekend_multiplier: reset.weekendMultiplier,
+                      holiday_multiplier: reset.holidayMultiplier,
+                      night_window_start: reset.nightWindowStart,
+                      night_window_end: reset.nightWindowEnd,
+                    };
+                    setPolicy(syncedLegacy);
+                    workOvertimeService.updatePolicy(syncedLegacy);
+                    showToast(`Restored ${activeOrgName} default overtime & break rules!`);
+                    refreshData();
+                  } finally {
+                    setIsSavingPolicy(false);
+                  }
                 }}
               >
-                Save Policy
+                Reset to Org Defaults
               </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setIsConfigModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={isSavingPolicy}
+                  onClick={async () => {
+                    setIsSavingPolicy(true);
+                    try {
+                      await tenantOvertimePolicyService.savePolicyAsync(activeOrgId, tenantPolicy);
+                      workOvertimeService.updatePolicy({
+                        ...policy,
+                        daily_threshold_minutes: tenantPolicy.dailyWorkThresholdMinutes,
+                        grace_period_minutes: tenantPolicy.gracePeriodMinutes,
+                        normal_rate_multiplier: tenantPolicy.regularMultiplier,
+                        weekend_multiplier: tenantPolicy.weekendMultiplier,
+                        holiday_multiplier: tenantPolicy.holidayMultiplier,
+                        night_window_start: tenantPolicy.nightWindowStart,
+                        night_window_end: tenantPolicy.nightWindowEnd,
+                      });
+                      showToast(`Saved ${activeOrgName} overtime & shift break policy!`);
+                      setIsConfigModalOpen(false);
+                      refreshData();
+                    } finally {
+                      setIsSavingPolicy(false);
+                    }
+                  }}
+                >
+                  {isSavingPolicy ? 'Saving...' : 'Save Policy'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
