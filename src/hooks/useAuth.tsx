@@ -13,6 +13,7 @@ import {
   validateSessionIntegrity,
   clearSessionFingerprint,
 } from '../lib/security/sessionProtection';
+import { tenantStorageManager } from '../services/tenant/tenantStorageManager';
 
 interface AuthContextType {
   user: AuthSessionUser | null;
@@ -423,8 +424,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } catch (_) {}
       await authService.signOut();
       try {
-        localStorage.removeItem('workforce_active_route');
-        localStorage.removeItem('workforce_auth_context');
+        tenantStorageManager.wipeAllOnLogout();
       } catch (_) {}
       setUser(null);
       setMustChangePassword(false);

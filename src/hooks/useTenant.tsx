@@ -3,6 +3,7 @@ import { Company, Organization } from '../types';
 import { useAuth } from './useAuth';
 import { organizationContextService } from '../services/organizationContextService';
 import { api } from '../services/api';
+import { tenantStorageManager } from '../services/tenant/tenantStorageManager';
 
 interface TenantContextType {
   organization: Organization | null;
@@ -170,6 +171,9 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
     if (!user) return;
     setIsLoading(true);
     try {
+      // Atomic Tenant Evacuation: Purge all other tenant cached state from browser memory & storage
+      tenantStorageManager.purgeCrossTenantCaches(orgId);
+
       const newCtx = await organizationContextService.switchOrganization(user, orgId);
       setOrganization(newCtx.activeOrganization);
       setOrganizations(newCtx.organizations);
