@@ -202,16 +202,52 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
       const windowStartUtc = `${windowStartDate}T00:00:00+05:30`;
       const windowEndUtc = `${windowEndDate}T23:59:59+05:30`;
 
-      const [empRes, punchRes, dailyRes, deptRes] = await Promise.all([
+      // Helper to fetch all rows beyond PostgREST default 1000-row limit
+      const fetchAllRows = async (queryBuilder: (from: number, to: number) => PromiseLike<any>): Promise<any[]> => {
+        let all: any[] = [];
+        let from = 0;
+        const batchSize = 1000;
+        while (true) {
+          const { data, error } = await queryBuilder(from, from + batchSize - 1);
+          if (error) {
+            console.error('[BiometricDirectory] Pagination error:', error);
+            break;
+          }
+          if (!data || data.length === 0) break;
+          all.push(...data);
+          if (data.length < batchSize) break;
+          from += batchSize;
+        }
+        return all;
+      };
+
+      const [empRes, punches, dailyRecords, deptRes] = await Promise.all([
         client
           ? client.from('employees').select('id, employee_code, display_name, first_name, last_name, department_id, designation_id, employment_status, employment_type').eq('organization_id', orgId)
           : Promise.resolve({ data: [] }),
         client
-          ? client.from('attendance_punches').select('id, employee_id, punch_time, punch_type, verification_mode, attendance_date').eq('organization_id', orgId).gte('punch_time', windowStartUtc).lte('punch_time', windowEndUtc).order('punch_time', { ascending: true })
-          : Promise.resolve({ data: [] }),
+          ? fetchAllRows((from, to) =>
+              client
+                .from('attendance_punches')
+                .select('id, employee_id, punch_time, punch_type, verification_mode, attendance_date')
+                .eq('organization_id', orgId)
+                .gte('punch_time', windowStartUtc)
+                .lte('punch_time', windowEndUtc)
+                .order('punch_time', { ascending: true })
+                .range(from, to)
+            )
+          : Promise.resolve([]),
         client
-          ? client.from('attendance_daily').select('id, employee_id, attendance_date, shift_id, status, first_check_in, last_check_out, total_work_minutes, overtime_minutes, late_entry_minutes, early_exit_minutes, current_work_state').eq('organization_id', orgId).gte('attendance_date', windowStartDate).lte('attendance_date', windowEndDate)
-          : Promise.resolve({ data: [] }),
+          ? fetchAllRows((from, to) =>
+              client
+                .from('attendance_daily')
+                .select('id, employee_id, attendance_date, shift_id, status, first_check_in, last_check_out, total_work_minutes, overtime_minutes, late_entry_minutes, early_exit_minutes, current_work_state')
+                .eq('organization_id', orgId)
+                .gte('attendance_date', windowStartDate)
+                .lte('attendance_date', windowEndDate)
+                .range(from, to)
+            )
+          : Promise.resolve([]),
         client
           ? client.from('departments').select('id, name').eq('organization_id', orgId)
           : Promise.resolve({ data: [] }),
@@ -228,8 +264,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
       const deptMap = new Map<string, string>();
       (deptRes.data || []).forEach((d: any) => deptMap.set(d.id, d.name));
 
-      const punches: any[] = punchRes.data || [];
-      const dailyRecords: any[] = dailyRes.data || [];
+      // punches and dailyRecords are already fully paginated arrays
 
       // Map daily records by `${employeeId}_${date}`
       const dailyMap = new Map<string, any>();
@@ -287,10 +322,24 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
       const deptSet = new Set<string>();
       const mappedRecords: EnrolmentRecord[] = empList.map((emp) => {
         const stat = punchStats.get(emp.id);
-        const isEnrolled = !!stat && stat.total > 0;
-        const totalPunches = stat ? stat.total : 0;
-        const firstPunchAt = stat ? stat.firstPunch : null;
-        const latestPunchAt = stat ? stat.latestPunch : null;
+        let totalPunches = stat ? stat.total : 0;
+        let firstPunchAt = stat ? stat.firstPunch : null;
+        let latestPunchAt = stat ? stat.latestPunch : null;
+
+        // Multi-source verification: If punches are being processed or employee only has daily check-in
+        if (!firstPunchAt) {
+          const empDailies = Array.from(dailyMap.values()).filter(
+            (d: any) => d.employee_id === emp.id && (d.first_check_in || d.status === 'PRESENT')
+          );
+          if (empDailies.length > 0) {
+            empDailies.sort((a: any, b: any) => (a.attendance_date || '').localeCompare(b.attendance_date || ''));
+            firstPunchAt = empDailies[0].first_check_in || `${empDailies[0].attendance_date}T09:00:00+05:30`;
+            latestPunchAt = empDailies[empDailies.length - 1].last_check_out || empDailies[empDailies.length - 1].first_check_in || firstPunchAt;
+            totalPunches = Math.max(totalPunches, empDailies.length);
+          }
+        }
+
+        const isEnrolled = Boolean(firstPunchAt) || (!!stat && stat.total > 0);
 
         // Determine Enrolment Date in IST
         let enrolledDate: string | null = null;
