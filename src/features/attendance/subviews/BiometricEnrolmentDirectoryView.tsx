@@ -108,13 +108,37 @@ interface BiometricEnrolmentDirectoryViewProps {
   onNavigateToTerminalLogs?: (employeeId?: string) => void;
 }
 
-const AUDIT_DATES = [
-  { key: '2026-11-20', label: 'Nov 20 (Fri)', dayName: 'Friday' },
-  { key: '2026-11-21', label: 'Nov 21 (Sat)', dayName: 'Saturday' },
-  { key: '2026-11-22', label: 'Nov 22 (Sun)', dayName: 'Sunday' },
-  { key: '2026-11-23', label: 'Nov 23 (Mon)', dayName: 'Monday' },
-  { key: '2026-11-24', label: 'Nov 24 (Tue)', dayName: 'Tuesday (Today)' },
-];
+// Generate dynamic 7-day rolling window ending today (IST) — no hardcoded dates
+function getDynamicAuditDates(): { key: string; label: string; dayName: string }[] {
+  const result: { key: string; label: string; dayName: string }[] = [];
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  const todayDate = new Date(todayStr + 'T00:00:00+05:30');
+  // Show up to 7 days ending today; start from org enrollment epoch (Nov 20) if less than 7 days
+  const epochStart = new Date('2026-11-20T00:00:00+05:30');
+  const windowStart = new Date(Math.max(
+    todayDate.getTime() - 6 * 24 * 60 * 60 * 1000,
+    epochStart.getTime()
+  ));
+  const curr = new Date(windowStart);
+  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const monthShorts = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  while (curr <= todayDate) {
+    const y = curr.getFullYear();
+    const m = String(curr.getMonth() + 1).padStart(2, '0');
+    const d = String(curr.getDate()).padStart(2, '0');
+    const key = `${y}-${m}-${d}`;
+    const dn = dayNames[curr.getDay()];
+    const isToday = key === todayStr;
+    result.push({
+      key,
+      label: `${monthShorts[curr.getMonth()]} ${curr.getDate()} (${dn.slice(0,3)})`,
+      dayName: isToday ? `${dn} (Today)` : dn,
+    });
+    curr.setDate(curr.getDate() + 1);
+  }
+  return result;
+}
+const AUDIT_DATES = getDynamicAuditDates();
 
 export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirectoryViewProps> = ({
   onBack,
@@ -131,7 +155,9 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
 
   // View Mode: 5-Day Matrix vs Single Date Detail
   const [viewMode, setViewMode] = useState<'MATRIX_5DAY' | 'SINGLE_DAY'>('MATRIX_5DAY');
-  const [selectedSingleDate, setSelectedSingleDate] = useState<string>('2026-11-24');
+  const [selectedSingleDate, setSelectedSingleDate] = useState<string>(
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())
+  );
 
   // Filtering & Search
   const [activeTab, setActiveTab] = useState<'ALL' | 'ENROLLED' | 'PENDING' | 'ACTIVE_TODAY' | 'OVERTIME_WORKERS'>('ALL');
@@ -150,7 +176,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
   }, []);
 
   // --------------------------------------------------------------------------
-  // DATA INGESTION & PIPELINE (Nov 20 to Nov 24)
+  // DATA INGESTION & PIPELINE — Dynamic rolling window (last 7 days ending today)
   // --------------------------------------------------------------------------
   const loadEnrolmentData = useCallback(async () => {
     setIsLoading(true);
@@ -169,16 +195,22 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
         }
       } catch {}
 
-      // 2. Parallel fetch: Employees, Punches (Nov 20-24), Daily Attendance (Nov 20-24), Departments
+      // 2. Dynamic date window from AUDIT_DATES (rolling 7-day window ending today)
+      const auditDates = getDynamicAuditDates();
+      const windowStartDate = auditDates[0]?.key || '2026-11-20';
+      const windowEndDate = auditDates[auditDates.length - 1]?.key || todayIst;
+      const windowStartUtc = `${windowStartDate}T00:00:00+05:30`;
+      const windowEndUtc = `${windowEndDate}T23:59:59+05:30`;
+
       const [empRes, punchRes, dailyRes, deptRes] = await Promise.all([
         client
           ? client.from('employees').select('id, employee_code, display_name, first_name, last_name, department_id, designation_id, employment_status, employment_type').eq('organization_id', orgId)
           : Promise.resolve({ data: [] }),
         client
-          ? client.from('attendance_punches').select('id, employee_id, punch_time, punch_type, verification_mode, attendance_date').eq('organization_id', orgId).gte('punch_time', '2026-11-20T00:00:00Z').lte('punch_time', '2026-11-24T23:59:59Z').order('punch_time', { ascending: true })
+          ? client.from('attendance_punches').select('id, employee_id, punch_time, punch_type, verification_mode, attendance_date').eq('organization_id', orgId).gte('punch_time', windowStartUtc).lte('punch_time', windowEndUtc).order('punch_time', { ascending: true })
           : Promise.resolve({ data: [] }),
         client
-          ? client.from('attendance_daily').select('id, employee_id, attendance_date, shift_id, status, first_check_in, last_check_out, total_work_minutes, overtime_minutes, late_entry_minutes, early_exit_minutes, current_work_state').eq('organization_id', orgId).gte('attendance_date', '2026-11-20').lte('attendance_date', '2026-11-24')
+          ? client.from('attendance_daily').select('id, employee_id, attendance_date, shift_id, status, first_check_in, last_check_out, total_work_minutes, overtime_minutes, late_entry_minutes, early_exit_minutes, current_work_state').eq('organization_id', orgId).gte('attendance_date', windowStartDate).lte('attendance_date', windowEndDate)
           : Promise.resolve({ data: [] }),
         client
           ? client.from('departments').select('id, name').eq('organization_id', orgId)
@@ -275,10 +307,22 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
             year: 'numeric',
           });
 
-          if (enrolledDate === '2026-11-20') enrolmentBatch = 'Batch 1 (20-Nov)';
-          else if (enrolledDate === '2026-11-21') enrolmentBatch = 'Batch 2 (21-Nov)';
-          else if (enrolledDate === '2026-11-23') enrolmentBatch = 'Batch 3 (23-Nov)';
-          else if (enrolledDate === '2026-11-24') enrolmentBatch = 'Batch 4 (24-Nov)';
+          // Dynamic batch assignment — based on actual enrollment date, not hardcoded dates
+          const batchAuditDates = getDynamicAuditDates();
+          const batchIdx = batchAuditDates.findIndex(d => d.key === enrolledDate);
+          if (batchIdx >= 0) {
+            const bd = new Date(enrolledDate + 'T00:00:00+05:30');
+            const batchLabel = `${bd.getDate()}-${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][bd.getMonth()]}`;
+            enrolmentBatch = `Batch ${batchIdx + 1} (${batchLabel})` as EnrolmentRecord['enrolmentBatch'];
+          } else if (enrolledDate === '2026-11-20') {
+            enrolmentBatch = 'Batch 1 (20-Nov)';
+          } else if (enrolledDate === '2026-11-21') {
+            enrolmentBatch = 'Batch 2 (21-Nov)';
+          } else if (enrolledDate === '2026-11-23') {
+            enrolmentBatch = 'Batch 3 (23-Nov)';
+          } else if (enrolledDate === '2026-11-24') {
+            enrolmentBatch = 'Batch 4 (24-Nov)';
+          }
         }
 
         // Build Daily History across all 5 dates (Nov 20 to Nov 24)
@@ -347,7 +391,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
 
           if (firstIn) {
             daysPresentCount++;
-            if (!lastOut && dateStr === '2026-11-24') {
+            if (!lastOut && dateStr === todayIst) {
               status = 'Working';
             } else if (lateMins > 0) {
               status = 'Late';
@@ -383,8 +427,8 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
           };
         }
 
-        // Today specific data (2026-11-24)
-        const todayDetail = dailyHistory['2026-11-24'];
+        // Today specific data — dynamic (uses actual IST today)
+        const todayDetail = dailyHistory[todayIst] || dailyHistory[windowEndDate];
         const activeToday = Boolean(todayDetail?.firstCheckIn);
 
         // Format dates in IST
@@ -458,8 +502,69 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
     }
   }, [showToast, todayIst]);
 
+  // Last-refreshed timestamp for UI indicator
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
+
   useEffect(() => {
-    loadEnrolmentData();
+    // Initial load
+    loadEnrolmentData().then(() => setLastRefreshedAt(new Date()));
+
+    // ── Supabase Realtime Subscription ──────────────────────────────────────
+    // Listen to INSERT events on attendance_punches for this org.
+    // When a new biometric punch arrives (new enrollment or new attendance),
+    // debounce-reload the full enrolment dataset so the directory updates
+    // within seconds of the machine punch being ingested.
+    const orgId = getActiveOrgId();
+    const realtimeClient = supabaseAdmin || supabase;
+    if (!realtimeClient || !isSupabaseEnabled) return;
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const triggerRefresh = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadEnrolmentData().then(() => setLastRefreshedAt(new Date()));
+      }, 2500); // 2.5 s debounce — absorbs burst punches from one scan event
+    };
+
+    const channel = realtimeClient
+      .channel(`biometric-enrolment-directory-${orgId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'attendance_punches',
+          filter: `organization_id=eq.${orgId}`,
+        },
+        (_payload: any) => {
+          triggerRefresh();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'attendance_daily',
+          filter: `organization_id=eq.${orgId}`,
+        },
+        (_payload: any) => {
+          triggerRefresh();
+        }
+      )
+      .subscribe();
+
+    // ── Polling fallback ─────────────────────────────────────────────────────
+    // Even if realtime WebSocket drops, refresh every 60 s automatically.
+    const pollInterval = setInterval(() => {
+      loadEnrolmentData().then(() => setLastRefreshedAt(new Date()));
+    }, 60_000);
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      clearInterval(pollInterval);
+      realtimeClient.removeChannel(channel);
+    };
   }, [loadEnrolmentData]);
 
   // Executive KPI summary
@@ -470,11 +575,17 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
     const activeToday = records.filter((r) => r.activeToday).length;
     const enrolledRate = total > 0 ? ((enrolled / total) * 100).toFixed(1) : '0.0';
 
-    // Batch Breakdown
-    const batch20 = records.filter((r) => r.enrolledDate === '2026-11-20').length;
-    const batch21 = records.filter((r) => r.enrolledDate === '2026-11-21').length;
-    const batch23 = records.filter((r) => r.enrolledDate === '2026-11-23').length;
-    const batch24 = records.filter((r) => r.enrolledDate === '2026-11-24').length;
+    // Batch Breakdown — dynamic, groups by any enrollment date in the window
+    const batchDateMap = new Map<string, number>();
+    records.forEach(r => {
+      if (r.enrolledDate) {
+        batchDateMap.set(r.enrolledDate, (batchDateMap.get(r.enrolledDate) || 0) + 1);
+      }
+    });
+    const batch20 = batchDateMap.get('2026-11-20') || 0;
+    const batch21 = batchDateMap.get('2026-11-21') || 0;
+    const batch23 = batchDateMap.get('2026-11-23') || 0;
+    const batch24 = batchDateMap.get('2026-11-24') || 0;
 
     // OT earners
     const otEarners = records.filter((r) => r.totalOtMinutesNov20to24 > 0).length;
@@ -1529,13 +1640,24 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
             <Button
               variant="outline"
               size="md"
-              onClick={loadEnrolmentData}
+              onClick={() => loadEnrolmentData().then(() => setLastRefreshedAt(new Date()))}
               disabled={isLoading}
               className="gap-2 rounded-xl text-xs font-bold text-gray-700 bg-white border-gray-200 hover:bg-gray-50 h-10 px-3.5"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-[#07563D] ${isLoading ? 'animate-spin' : ''}`} />
-              Sync Hardware
+              {isLoading ? 'Syncing...' : 'Sync Now'}
             </Button>
+            {/* Live realtime status indicator */}
+            {lastRefreshedAt && (
+              <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-gray-500 font-medium">
+                <span className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`} />
+                <span>
+                  {isLoading
+                    ? 'Fetching latest enrollment...'
+                    : `Live · Updated ${lastRefreshedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}`}
+                </span>
+              </div>
+            )}
 
             <Button
               variant="primary"
@@ -2046,7 +2168,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
                               <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                               {outTime}
                             </div>
-                          ) : dayD?.firstCheckIn && selectedSingleDate === '2026-11-24' ? (
+                          ) : dayD?.firstCheckIn && selectedSingleDate === todayIst ? (
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               In Shift
@@ -2089,7 +2211,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
                         <TableCell className="font-mono font-bold text-gray-800">
                           {dayD?.workMinutes && dayD.workMinutes > 0 ? (
                             formatMinutesToHoursStr(dayD.workMinutes)
-                          ) : dayD?.firstCheckIn && selectedSingleDate === '2026-11-24' ? (
+                          ) : dayD?.firstCheckIn && selectedSingleDate === todayIst ? (
                             <span className="text-emerald-700 text-[10px]">Live</span>
                           ) : (
                             <span className="text-gray-300">—</span>
