@@ -16,6 +16,18 @@ const DLT_CHECKOUT_TEMPLATE_ID = '1077188040062422070';
 // In-memory daily SMS sent set per instance (backed by Postgres attendance_daily / punches audit)
 const smsSentTodayCache = new Set<string>();
 
+function runBackground(task: Promise<unknown>): void {
+  const safe = task.catch((err) => {
+    console.warn('[ADMS-EDGE] background task notice:', err);
+  });
+  try {
+    const edgeRuntime = (globalThis as any).EdgeRuntime;
+    if (edgeRuntime && typeof edgeRuntime.waitUntil === 'function') {
+      edgeRuntime.waitUntil(safe);
+    }
+  } catch (_) {}
+}
+
 function getAirtelCredentials() {
   return {
     customerId: Deno.env.get('AIRTEL_CUSTOMER_ID') || '07877a9b-e87e-488d-b48f-796813a9a920',
@@ -473,6 +485,17 @@ serve(async (req: Request) => {
 
     const sn = (url.searchParams.get('SN') || url.searchParams.get('sn') || jsonBody?.sn || jsonBody?.SN || '').trim();
 
+    if (sn === 'JNP2263200782') {
+      await redisSet(`adms_debug_hit:${sn}`, JSON.stringify({
+        timestamp: new Date().toISOString(),
+        url: req.url,
+        pathname,
+        method: req.method,
+        host: req.headers.get('host'),
+        headers: Object.fromEntries(req.headers.entries())
+      }), 86400);
+    }
+
     // Create authoritative Supabase Admin Client
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SECRET_KEY') || '';
@@ -560,7 +583,14 @@ serve(async (req: Request) => {
       `ServerTime=${nowFormatted}\n` +
       `SyncTime=1\n` +
       `RegistryCode=OK\n`,
-      { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Content-Encoding': 'identity',
+          'Cache-Control': 'no-transform, no-cache, no-store',
+        }
+      }
     );
   }
 
@@ -625,6 +655,7 @@ serve(async (req: Request) => {
         .in('organization_id', authorizedOrgIds);
 
       const candidateEmployees = emps || [];
+      const historicalPunches: any[] = [];
 
       for (const line of lines) {
         const parts = line.split('\t');
@@ -691,6 +722,24 @@ serve(async (req: Request) => {
         }
 
         const isHistoricalBacklog = (todayDate !== currentIstToday);
+
+        // FAST-PATH FOR HISTORICAL BACKLOG PUNCHES:
+        // Replayed backlog punches from yesterday or older are collected for bulk insertion.
+        // This avoids 500+ sequential roundtrips that trigger LiteSpeed/PHP gateway timeouts.
+        if (isHistoricalBacklog) {
+          historicalPunches.push({
+            employee_id: emp.id,
+            organization_id: organizationId,
+            device_id: device.id,
+            punch_time: eventUtcIso,
+            punch_type: 'CHECK_IN',
+            punch_source: 'BIOMETRIC',
+            verification_mode: 'FACE',
+            attendance_date: todayDate,
+          });
+          parsedCount++;
+          continue;
+        }
 
         const timeFormatted = punchDate.toLocaleTimeString('en-US', {
           timeZone: 'Asia/Kolkata',
@@ -1133,11 +1182,26 @@ serve(async (req: Request) => {
 
         parsedCount++;
       }
+
+      if (historicalPunches.length > 0) {
+        try {
+          await supabase.from('attendance_punches').insert(historicalPunches);
+          console.log(`[ADMS-EDGE] 📦 Ingested ${historicalPunches.length} historical backlog punches.`);
+        } catch (hErr: any) {
+          console.warn('[ADMS-EDGE] Historical backlog insert notice:', hErr?.message || hErr);
+        }
+      }
     }
 
-    return new Response(`OK: ${parsedCount}\n`, {
+    // In ZKTeco Push SDK protocol:
+    // Acknowledge plain OK\n so the embedded device clears its upload buffer and advances to getrequest
+    return new Response('OK\n', {
       status: 200,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Encoding': 'identity',
+        'Cache-Control': 'no-transform, no-cache, no-store',
+      },
     });
   }
 
@@ -1185,7 +1249,11 @@ serve(async (req: Request) => {
       console.log(`[ADMS-EDGE] 🚀 Dispatching chunk (${Math.min(allLines.length, batchSize)}/${allLines.length}) to terminal ${sn}:\n${currentBatch}`);
       return new Response(`${currentBatch}\n`, {
         status: 200,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Content-Encoding': 'identity',
+          'Cache-Control': 'no-transform, no-cache, no-store',
+        },
       });
     }
 
@@ -1202,9 +1270,14 @@ serve(async (req: Request) => {
       });
     }
 
-    return new Response(`OK: ${parsedCount}\n`, {
+    // When no command pending, reply with standard OK\n
+    return new Response('OK\n', {
       status: 200,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Encoding': 'identity',
+        'Cache-Control': 'no-transform, no-cache, no-store',
+      },
     });
   }
 
@@ -1230,9 +1303,14 @@ serve(async (req: Request) => {
         ack: ackBody
       }), 86400);
     }
-    return new Response(`OK: ${parsedCount}\n`, {
+
+    return new Response('OK\n', {
       status: 200,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Encoding': 'identity',
+        'Cache-Control': 'no-transform, no-cache, no-store',
+      },
     });
   }
 
