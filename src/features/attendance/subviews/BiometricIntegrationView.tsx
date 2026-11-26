@@ -73,6 +73,7 @@ import { attendanceTimeService } from '../../../services/attendance/attendanceTi
 import { formatEmployeeName } from '../../../utils/nameFormat';
 import { navPerfTracker } from '../../../services/observability/navigationPerfTracker';
 import { cn } from '../../../lib/utils';
+import { supabase, supabaseAdmin, isSupabaseEnabled } from '../../../lib/supabase';
 
 export interface BiometricIntegrationViewProps {
   currentTab?: string;
@@ -130,7 +131,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   });
   const [punches, setPunches] = useState<RawBiometricPunch[]>(() => {
     try {
-      return biometricGatewayService.getRawPunches(50).filter(isHardwareBiometricPunch);
+      return biometricGatewayService.getRawPunches(1000).filter(isHardwareBiometricPunch);
     } catch {
       return [];
     }
@@ -421,11 +422,11 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
       const currentAgents = biometricGatewayService.getGatewayAgents();
       const currentDevs = biometricGatewayService.getBiometricDevices(activeOrg);
       const cutoffMs = Date.now() - 48 * 60 * 60 * 1000;
-      const currentPunches = biometricGatewayService.getRawPunches(200, activeOrg).filter(p => {
+      const currentPunches = biometricGatewayService.getRawPunches(1000, activeOrg).filter(p => {
         if (!p.punch_time) return false;
         if (!isHardwareBiometricPunch(p)) return false;
         try { return new Date(p.punch_time).getTime() >= cutoffMs; } catch { return false; }
-      }).slice(0, 50);
+      });
       
       // Deduplicate currentDevs strictly by serial_number or IP:port to eliminate duplicate rows
       const seenDevKeys = new Set<string>();
@@ -533,13 +534,13 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
         if (biometricGatewayService.isLocalAgentOnline()) {
           await biometricGatewayService.syncRealPunchesFromAgent(undefined, false, activeOrg).catch(() => {});
         }
-        await biometricGatewayService.syncPunchesFromSupabase(50, activeOrg).catch(() => {});
+        await biometricGatewayService.syncPunchesFromSupabase(1000, activeOrg).catch(() => {});
 
         if (!destroyed && !selectedWorkspaceDeviceRef.current) {
           const _cutoff = Date.now() - 48 * 60 * 60 * 1000;
-          const fresh = biometricGatewayService.getRawPunches(200, activeOrg).filter(p => {
+          const fresh = biometricGatewayService.getRawPunches(1000, activeOrg).filter(p => {
             try { return !!p.punch_time && isHardwareBiometricPunch(p) && new Date(p.punch_time).getTime() >= _cutoff; } catch { return false; }
-          }).slice(0, 50);
+          });
           setPunches(fresh);
         }
       } catch (_) {}
@@ -550,6 +551,33 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
 
     // Fast polling every 4 seconds so punches appear in real-time without delay
     const punchSyncInterval = setInterval(syncLivePunches, 4000);
+
+    // Realtime Supabase Subscription for instantaneous punch updates
+    const realtimeClient = supabaseAdmin || supabase;
+    let realtimeChannel: any = null;
+    let punchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    if (realtimeClient && isSupabaseEnabled) {
+      const activeOrg = getActiveOrgId();
+      realtimeChannel = realtimeClient
+        .channel(`biometric-live-punches-${activeOrg}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'attendance_punches',
+            filter: `organization_id=eq.${activeOrg}`,
+          },
+          () => {
+            if (punchDebounceTimer) clearTimeout(punchDebounceTimer);
+            punchDebounceTimer = setTimeout(() => {
+              syncLivePunches();
+            }, 1000);
+          }
+        )
+        .subscribe();
+    }
 
     // Targeted event subscriptions update local UI state — all skip when workspace is active
     const unsubConnector = hrEventBus.subscribe('biometric.connector_status_changed', (evt: any) => {
@@ -575,7 +603,11 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
     return () => {
       destroyed = true;
       if (loadDebounce) clearTimeout(loadDebounce);
+      if (punchDebounceTimer) clearTimeout(punchDebounceTimer);
       clearInterval(punchSyncInterval);
+      if (realtimeChannel && realtimeClient) {
+        realtimeClient.removeChannel(realtimeChannel);
+      }
       biometricGatewayService.stopConnectorMonitoring();
       unsubConnector();
       unsubBiometric();

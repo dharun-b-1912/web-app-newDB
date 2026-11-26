@@ -5296,7 +5296,7 @@ class BiometricGatewayService {
   // 3. PUNCH INGESTION, DEDUPLICATION & TIME ENGINE INTEGRATION
   // ==========================================================================
 
-  getRawPunches(limit = 100, targetOrgId?: string): RawBiometricPunch[] {
+  getRawPunches(limit = 1000, targetOrgId?: string): RawBiometricPunch[] {
     const targetOrg = targetOrgId || getActiveOrgId();
     const devices = this.getBiometricDevices(targetOrg);
     if (!devices || devices.length === 0) {
@@ -6011,7 +6011,7 @@ class BiometricGatewayService {
    * Synchronizes recent punches directly from Supabase attendance_punches table
    * Populates the in-memory cache with cloud punches without using browser localStorage
    */
-  async syncPunchesFromSupabase(limit = 100, targetOrgId?: string): Promise<RawBiometricPunch[]> {
+  async syncPunchesFromSupabase(limit = 1000, targetOrgId?: string): Promise<RawBiometricPunch[]> {
     try {
       const orgId = targetOrgId || getActiveOrgId();
 
@@ -6042,7 +6042,7 @@ class BiometricGatewayService {
             }));
 
             const sorted = mappedPunches.sort((a, b) => new Date(b.punch_time || 0).getTime() - new Date(a.punch_time || 0).getTime());
-            setStore(STORAGE_KEYS.PUNCHES, sorted.slice(0, 500), orgId);
+            setStore(STORAGE_KEYS.PUNCHES, sorted.slice(0, 1000), orgId);
             JoyRedis.setLivePunchesCache(sorted.slice(0, 100)).catch(() => {});
 
             // Update matching device's last_punch_at and last_attendance_sync_at
@@ -6165,7 +6165,7 @@ class BiometricGatewayService {
         });
 
         const sorted = mappedPunches.sort((a, b) => new Date(b.punch_time || 0).getTime() - new Date(a.punch_time || 0).getTime());
-        setStore(STORAGE_KEYS.PUNCHES, sorted.slice(0, 500), orgId);
+        setStore(STORAGE_KEYS.PUNCHES, sorted.slice(0, 1000), orgId);
         JoyRedis.setLivePunchesCache(sorted.slice(0, 100)).catch(() => {});
 
         const devs = this.getBiometricDevices(orgId);
