@@ -160,7 +160,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
   );
 
   // Filtering & Search
-  const [activeTab, setActiveTab] = useState<'ALL' | 'ENROLLED' | 'PENDING' | 'ACTIVE_TODAY' | 'OVERTIME_WORKERS'>('ALL');
+  const [activeTab, setActiveTab] = useState<'ALL' | 'ENROLLED' | 'PENDING'>('ALL');
   const [selectedShiftFilter, setSelectedShiftFilter] = useState<string>('ALL');
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -610,11 +610,9 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
   const filteredRecords = useMemo(() => {
     return records
       .filter((r) => {
-        // Tab filter
+        // Tab filter (focused strictly on enrolment)
         if (activeTab === 'ENROLLED' && !r.isEnrolled) return false;
         if (activeTab === 'PENDING' && r.isEnrolled) return false;
-        if (activeTab === 'ACTIVE_TODAY' && !r.activeToday) return false;
-        if (activeTab === 'OVERTIME_WORKERS' && r.totalOtMinutesNov20to24 <= 0) return false;
 
         // Shift filter
         if (selectedShiftFilter !== 'ALL') {
@@ -1672,26 +1670,11 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
           </div>
         </div>
 
-        {/* Staggered Rollout Context Strip */}
-        <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-emerald-700 shrink-0" />
-            <span className="font-bold text-emerald-950">Rollout Progression:</span>
-            <span className="text-emerald-900">
-              Biometric terminal onboarded <strong>Friday, Nov 20</strong>. Staggered enrollment rollout: <strong>74 enrolled on 20-Nov</strong>, <strong>26 on 21-Nov</strong>, <strong>46 on 23-Nov</strong> ({kpis.enrolledRate}% complete). Legitimate factory presence prior to scan is preserved cleanly.
-            </span>
-          </div>
 
-          <div className="flex items-center gap-3 text-xs font-mono font-bold text-emerald-900">
-            <span>Plant Device: eSSL MB160 Main Gate</span>
-            <span>•</span>
-            <span>Cumulative Overtime: {kpis.totalOtFormatted}</span>
-          </div>
-        </div>
       </div>
 
       {/* 2. EXECUTIVE KPI CARDS */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
         <Card
           onClick={() => setActiveTab('ALL')}
           className={`p-4 rounded-2xl cursor-pointer transition-all border ${
@@ -1740,37 +1723,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
           <p className="text-[11px] text-amber-600 mt-0.5 font-semibold">Scheduled for mapping</p>
         </Card>
 
-        <Card
-          onClick={() => setActiveTab('ACTIVE_TODAY')}
-          className={`p-4 rounded-2xl cursor-pointer transition-all border ${
-            activeTab === 'ACTIVE_TODAY'
-              ? 'border-teal-600 bg-teal-50/20 shadow-sm ring-1 ring-teal-600'
-              : 'bg-white border-gray-200/80 shadow-2xs hover:border-gray-300'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider">Active Today ({new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' })})</p>
-            <Activity className="w-4 h-4 text-teal-600" />
-          </div>
-          <p className="text-2xl font-black text-teal-800 mt-1 font-mono">{kpis.activeToday}</p>
-          <p className="text-[11px] text-teal-600 mt-0.5 font-semibold">Verified punches today</p>
-        </Card>
-
-        <Card
-          onClick={() => setActiveTab('OVERTIME_WORKERS')}
-          className={`p-4 rounded-2xl cursor-pointer transition-all border ${
-            activeTab === 'OVERTIME_WORKERS'
-              ? 'border-amber-600 bg-amber-50/20 shadow-sm ring-1 ring-amber-600'
-              : 'bg-white border-gray-200/80 shadow-2xs hover:border-gray-300'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Overtime Earners</p>
-            <TrendingUp className="w-4 h-4 text-amber-600" />
-          </div>
-          <p className="text-2xl font-black text-amber-900 mt-1 font-mono">{kpis.otEarners}</p>
-          <p className="text-[11px] text-amber-700 mt-0.5 font-semibold font-mono">Total {kpis.totalOtFormatted}</p>
-        </Card>
+        
       </div>
 
       {/* 3. CONTROLS, SHIFT FILTERS & BATCH SELECTORS */}
@@ -1782,8 +1735,6 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
               { id: 'ALL', label: `All Employees (${kpis.total})` },
               { id: 'ENROLLED', label: `Enrolled (${kpis.enrolled})` },
               { id: 'PENDING', label: `Pending Enrolment (${kpis.pending})` },
-              { id: 'ACTIVE_TODAY', label: `Active Today (${kpis.activeToday})` },
-              { id: 'OVERTIME_WORKERS', label: `With Overtime (${kpis.otEarners})` },
             ].map((tab) => (
               <button
                 key={tab.id}
