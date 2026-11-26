@@ -1164,6 +1164,12 @@ serve(async (req: Request) => {
 
     if (queuedCmd) {
       await redisDel(queueKey);
+      if (sn) {
+        await redisSet(`adms_last_dispatched:${sn}`, JSON.stringify({
+          timestamp: new Date().toISOString(),
+          commands: queuedCmd
+        }), 86400);
+      }
       console.log(`[ADMS-EDGE] 🚀 Dispatching queued command to terminal ${sn}:\n${queuedCmd}`);
       return new Response(`${queuedCmd}\n`, {
         status: 200,
@@ -1206,6 +1212,12 @@ serve(async (req: Request) => {
   if (pathname.includes('devicecmd') || pathname.endsWith('/devicecmd.aspx')) {
     const ackBody = await req.text();
     console.log(`[ADMS-EDGE] 📋 Device ${sn} command ack received:\n${ackBody}`);
+    if (sn) {
+      await redisSet(`adms_last_devicecmd:${sn}`, JSON.stringify({
+        timestamp: new Date().toISOString(),
+        ack: ackBody
+      }), 86400);
+    }
     return new Response(`OK: ${parsedCount}\n`, {
       status: 200,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },

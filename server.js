@@ -338,9 +338,21 @@ connectorRouter.all(['/trigger-sync', '/sync-now'], async (req, res) => {
       const sn = dev.serial_number;
       if (!sn) continue;
 
-      const pullCmd = `C:1001:CHECK\nC:1002:DATA QUERY ATTLOG\nC:1003:DATA QUERY USERINFO`;
       if (upstashUrl && upstashToken) {
         try {
+          // Check if user commands already pending in queue
+          const existRes = await fetch(`${upstashUrl}/get/adms_cmd_queue:${sn}`, {
+            headers: { Authorization: `Bearer ${upstashToken}` }
+          });
+          const existData = await existRes.json();
+          let finalCmd = `C:1001:CHECK\nC:1002:DATA QUERY ATTLOG\nC:1003:DATA QUERY USERINFO`;
+          if (existData?.result && existData.result.includes('DATA UPDATE USERINFO')) {
+            // Keep pending user push commands and ensure ATTLOG query is included
+            finalCmd = existData.result.includes('DATA QUERY ATTLOG')
+              ? existData.result
+              : `${existData.result}\nC:7999:DATA QUERY ATTLOG`;
+          }
+
           // Set command queue
           await fetch(`${upstashUrl}/set/adms_cmd_queue:${sn}`, {
             method: 'POST',
@@ -348,7 +360,7 @@ connectorRouter.all(['/trigger-sync', '/sync-now'], async (req, res) => {
               Authorization: `Bearer ${upstashToken}`,
               'Content-Type': 'text/plain'
             },
-            body: pullCmd
+            body: finalCmd
           });
           // Clear auto-lock so terminal pulls immediately
           await fetch(`${upstashUrl}/del/adms_auto_lock:${sn}`, {
@@ -372,22 +384,149 @@ connectorRouter.all(['/trigger-sync', '/sync-now'], async (req, res) => {
   }
 });
 
-connectorRouter.post(['/push-user', '/push-employees', '/api/push-employees'], async (req, res) => {
+connectorRouter.post(['/push-user', '/push-employees', '/api/push-employees', '/push-pending-employees'], async (req, res) => {
   try {
     const orgId = req.body?.organizationId || req.body?.organization_id || req.query?.organizationId || 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
-    const { data: emps, error } = await supabaseAdminClient
-      .from('employees')
-      .select('id, employee_code, first_name, last_name, display_name, department_id, designation_id, organization_id, employment_status')
+    const upstashUrl = process.env.UPSTASH_REDIS_REST_URL;
+    const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    // Find active biometric devices for this tenant
+    const { data: devices } = await supabaseAdminClient
+      .from('biometric_devices')
+      .select('id, serial_number, device_name')
       .eq('organization_id', orgId);
 
-    const userCount = emps?.length || 0;
-    console.log(`[Cloud ADMS Push] Pushing ${userCount} workforce members to biometric terminal fleet for org ${orgId}`);
+    const targetDevices = devices && devices.length > 0 ? devices : [{ serial_number: 'JNP2263200782' }];
+
+    let usersToPush = [];
+    if (req.body?.users && Array.isArray(req.body.users) && req.body.users.length > 0) {
+      usersToPush = req.body.users.map((u, idx) => ({
+        pin: String(u.pin || u.userId || u.device_user_id || (1001 + idx)),
+        name: (u.name || u.display_name || 'Worker').replace(/[\t\r\n]/g, ' ').slice(0, 24).trim(),
+        privilege: u.privilege === 'ADMIN' ? '14' : '0',
+        cardNumber: u.cardNumber || u.card_number || ''
+      }));
+    } else {
+      let query = supabaseAdminClient
+        .from('employees')
+        .select('id, employee_code, first_name, last_name, display_name, department_id, designation_id, organization_id, employment_status')
+        .eq('organization_id', orgId);
+
+      const targetCodes = req.body?.employee_codes || req.query?.employee_codes;
+      if (Array.isArray(targetCodes) && targetCodes.length > 0) {
+        query = query.in('employee_code', targetCodes);
+      } else if (req.body?.pending_only || req.query?.pending_only) {
+        query = query.like('employee_code', 'TEMP-%');
+      }
+
+      const { data: emps, error } = await query;
+      if (error) {
+        return res.status(500).json({ success: false, error: error.message });
+      }
+
+      usersToPush = (emps || []).map((emp, idx) => {
+        const rawDigits = (emp.employee_code || '').replace(/\D/g, '');
+        const pin = emp.employee_code?.startsWith('TEMP-')
+          ? String(parseInt(emp.employee_code.replace(/\D/g, ''), 10))
+          : (emp.employee_code === 'SUB01' ? '9001' : (rawDigits || String(1001 + idx)));
+        const name = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || `Emp ${emp.employee_code}`;
+        return {
+          pin,
+          name: name.replace(/[\t\r\n]/g, ' ').slice(0, 24).trim(),
+          privilege: '0',
+          cardNumber: ''
+        };
+      });
+    }
+
+    if (usersToPush.length === 0) {
+      return res.status(200).json({ success: true, message: 'No users to push.', count: 0 });
+    }
+
+    // Format ADMS commands (capped to chunks if very large, targeted directly)
+    const admsCommands = [
+      ...usersToPush.map((u, i) =>
+        `C:${7001 + i}:DATA UPDATE USERINFO PIN=${u.pin}\tName=${u.name}\tPri=${u.privilege}\tPasswd=\tCard=${u.cardNumber}\tGrp=1\tTZ=0`
+      ),
+      `C:7999:DATA QUERY ATTLOG`
+    ].join('\n');
+
+    const results = [];
+    if (upstashUrl && upstashToken) {
+      for (const dev of targetDevices) {
+        const sn = dev.serial_number;
+        if (!sn) continue;
+        try {
+          await fetch(`${upstashUrl}/set/adms_cmd_queue:${sn}`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${upstashToken}`,
+              'Content-Type': 'text/plain'
+            },
+            body: admsCommands
+          });
+          await fetch(`${upstashUrl}/del/adms_auto_lock:${sn}`, {
+            headers: { Authorization: `Bearer ${upstashToken}` }
+          });
+          results.push({ sn, status: 'QUEUED', count: usersToPush.length });
+        } catch (err) {
+          console.warn(`[Push-User] Failed to push to Redis for ${sn}:`, err.message);
+        }
+      }
+    }
 
     return res.status(200).json({
       success: true,
-      message: `Successfully synchronized and pushed all ${userCount} employees to biometric terminal fleet (Cloud ADMS Active).`,
-      count: userCount,
+      message: `Successfully queued ${usersToPush.length} employee(s) to biometric terminal fleet. Machine will ingest on next poll.`,
+      users: usersToPush,
+      devices: results,
       timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+connectorRouter.get(['/device-queue-status', '/api/device-queue-status'], async (req, res) => {
+  try {
+    const sn = req.query.sn || req.query.serial_number || 'JNP2263200782';
+    const upstashUrl = process.env.UPSTASH_REDIS_REST_URL;
+    const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    if (!upstashUrl || !upstashToken) {
+      return res.status(500).json({ error: 'Redis credentials not configured' });
+    }
+
+    const [qRes, lastGetRes, lastAckRes, lastDispRes] = await Promise.all([
+      fetch(`${upstashUrl}/get/adms_cmd_queue:${sn}`, { headers: { Authorization: `Bearer ${upstashToken}` } }),
+      fetch(`${upstashUrl}/get/adms_last_getrequest:${sn}`, { headers: { Authorization: `Bearer ${upstashToken}` } }),
+      fetch(`${upstashUrl}/get/adms_last_devicecmd:${sn}`, { headers: { Authorization: `Bearer ${upstashToken}` } }),
+      fetch(`${upstashUrl}/get/adms_last_dispatched:${sn}`, { headers: { Authorization: `Bearer ${upstashToken}` } })
+    ]);
+
+    const q = await qRes.json();
+    const lastGet = await lastGetRes.json();
+    const lastAck = await lastAckRes.json();
+    const lastDisp = await lastDispRes.json();
+
+    const { data: dev } = await supabaseAdminClient
+      .from('biometric_devices')
+      .select('*')
+      .eq('serial_number', sn)
+      .maybeSingle();
+
+    return res.status(200).json({
+      success: true,
+      serial_number: sn,
+      device_name: dev?.device_name,
+      is_active: dev?.is_active,
+      last_heartbeat_at: dev?.last_heartbeat_at,
+      current_queue: q.result || null,
+      queue_status: q.result ? 'WAITING_FOR_DEVICE_PICKUP' : 'CONSUMED_BY_DEVICE',
+      last_polled_at: lastGet.result || null,
+      last_dispatched: lastDisp.result ? JSON.parse(lastDisp.result) : null,
+      last_device_ack: lastAck.result ? JSON.parse(lastAck.result) : null,
+      server_time: new Date().toISOString()
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
