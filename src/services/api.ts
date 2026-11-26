@@ -1258,8 +1258,8 @@ export const api = {
   async createDesignation(input: Partial<Designation> & { title: string }): Promise<Designation> {
     const rawCode = input.code || input.title.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6) || 'DESIG';
     const id = ensureUUID((input as any).id);
-    const orgId = (input as any).organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || '0c621892-e938-4707-9957-13534ea32c19';
-    const compId = input.company_id && isValidUUID(input.company_id) ? input.company_id : (api.getActiveCompany()?.id && isValidUUID(api.getActiveCompany()?.id) ? api.getActiveCompany()!.id : '2030277f-a6a1-427f-beaf-4fc677a3bae2');
+    const orgId = (input as any).organization_id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id')) : null) || getActiveOrgId();
+    const compId = input.company_id && isValidUUID(input.company_id) ? input.company_id : (api.getActiveCompany()?.id && isValidUUID(api.getActiveCompany()?.id) ? api.getActiveCompany()!.id : '');
 
     const newDesig: Designation = {
       id,

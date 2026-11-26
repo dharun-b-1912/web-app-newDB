@@ -97,7 +97,7 @@ export function resolveOrgUUID(val?: any): string {
   if (isValidUUID(val)) return val;
   const active = getActiveOrgId();
   if (isValidUUID(active)) return active;
-  return '0c621892-e938-4707-9957-13534ea32c19';
+  return 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
 }
 
 export function generateUUID(): string {
@@ -274,7 +274,7 @@ class PayrollApi {
         await ensureSupabaseSession();
         let q = supabase.from('salary_components').select('*').order('created_at', { ascending: true });
         if (isValidUUID(tenantId)) {
-          q = q.or(`organization_id.eq.${tenantId},organization_id.eq.0c621892-e938-4707-9957-13534ea32c19`);
+          q = q.eq('organization_id', tenantId);
         }
         const { data, error } = await q;
         if (!error && Array.isArray(data) && data.length > 0) {
@@ -548,7 +548,7 @@ class PayrollApi {
         await ensureSupabaseSession();
         let q = dbClient.from('salary_structures').select('*').order('created_at', { ascending: true });
         if (isValidUUID(tenantId)) {
-          q = q.or(`organization_id.eq.${tenantId},organization_id.eq.0c621892-e938-4707-9957-13534ea32c19`);
+          q = q.eq('organization_id', tenantId);
         }
         const { data, error } = await q;
         if (!error && Array.isArray(data) && data.length > 0) {
@@ -2827,7 +2827,7 @@ async fetchStatutoryConfigFromDb(tenantId = getActiveOrgId()): Promise<Statutory
     try {
       const orgUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)
         ? tenantId
-        : '0c621892-e938-4707-9957-13534ea32c19';
+        : getActiveOrgId();
       const { data, error } = await dbClient
         .from('payroll_statutory_configs')
         .select('*')
@@ -2896,7 +2896,7 @@ saveStatutoryConfig(config: StatutoryConfig, tenantId = getActiveOrgId()): Statu
   if (isSupabaseEnabled) {
     const orgUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)
       ? tenantId
-      : '0c621892-e938-4707-9957-13534ea32c19';
+      : getActiveOrgId();
     
     (async () => {
       try {

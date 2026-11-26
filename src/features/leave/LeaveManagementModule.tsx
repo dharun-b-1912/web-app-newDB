@@ -32,6 +32,8 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useTenant } from '../../hooks/useTenant';
+import { getActiveOrgId } from '../../services/leaveApi';
 
 interface LeaveManagementModuleProps {
   initialTab?: string;
@@ -52,6 +54,8 @@ interface SubNavGroup {
 }
 
 export const LeaveManagementModule: React.FC<LeaveManagementModuleProps> = ({ initialTab }) => {
+  const { organization, activeLegalEntity } = useTenant();
+  const activeOrgId = organization?.id || activeLegalEntity?.organization_id || getActiveOrgId();
   const [activeTab, setActiveTab] = useState<string>(() => resolveTabId(initialTab));
   const [selectedRequestForDrawer, setSelectedRequestForDrawer] = useState<LeaveRequest | null>(null);
   const [activeFilterParam, setActiveFilterParam] = useState<string | undefined>(undefined);
@@ -201,7 +205,7 @@ export const LeaveManagementModule: React.FC<LeaveManagementModuleProps> = ({ in
       </div>
 
       {/* Subview Container */}
-      <div className="transition-all duration-200">
+      <div key={activeOrgId} className="transition-all duration-200">
         {activeTab === 'dashboard' && (
           <LeaveDashboardView
             onSelectKpiFilter={handleKpiFilterSelect}

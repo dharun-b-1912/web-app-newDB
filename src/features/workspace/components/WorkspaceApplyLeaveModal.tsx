@@ -4,7 +4,8 @@ import { Card } from '../../../components/ui/Card';
 import { Calendar, AlertCircle, CheckCircle2, X, Clock, ArrowRight } from 'lucide-react';
 import { LeaveType, LeaveEntitlement, LeaveRequest } from '../../../types/leave';
 import { Employee, User } from '../../../types';
-import { leaveApi } from '../../../services/leaveApi';
+import { leaveApi, getActiveOrgId } from '../../../services/leaveApi';
+import { api } from '../../../services/api';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { useToast } from '../../../components/ui/Toast';
 
@@ -54,8 +55,8 @@ export const WorkspaceApplyLeaveModal: React.FC<Props> = ({
     setIsSubmitting(true);
     try {
       const typeName = selectedTypeId === 'lt-cl' ? 'Casual Leave' : selectedTypeId === 'lt-sl' ? 'Sick Leave' : 'Privilege Leave';
-      const orgId = employee?.organization_id || user.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
-      const compId = employee?.company_id || (user as any).company_id || '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+      const orgId = employee?.organization_id || user.organization_id || api.getActiveCompany()?.organization_id || getActiveOrgId();
+      const compId = employee?.company_id || (user as any).company_id || api.getActiveCompany()?.id || '';
       const created = leaveApi.submitLeaveRequest({
         organization_id: orgId,
         company_id: compId,

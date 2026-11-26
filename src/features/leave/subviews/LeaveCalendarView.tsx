@@ -61,8 +61,13 @@ export const LeaveCalendarView: React.FC = () => {
     isWeekend: boolean;
   } | null>(null);
 
-  const loadData = () => {
-    setRequests(leaveApi.getLeaveRequests());
+  const loadData = async () => {
+    try {
+      const res = await leaveApi.getLeaveRequestsAsync();
+      setRequests(res);
+    } catch {
+      setRequests(leaveApi.getLeaveRequests());
+    }
     setCalendars(leaveApi.getHolidayCalendars());
   };
 

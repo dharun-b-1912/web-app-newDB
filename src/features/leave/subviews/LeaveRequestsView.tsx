@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { leaveApi } from '../../../services/leaveApi';
+import { leaveApi, getActiveOrgId } from '../../../services/leaveApi';
 import { api } from '../../../services/api';
 import { LeaveRequest, LeaveType } from '../../../types/leave';
 import { calculateLeaveDuration, validateLeaveRequest } from '../../../lib/leave/leaveEngine';
@@ -57,8 +57,9 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
 
   const loadData = async () => {
     try {
+      const activeOrg = chosenEmp?.organization_id || currentUser?.organization_id || api.getActiveCompany()?.organization_id || getActiveOrgId();
       const [reqs, types] = await Promise.all([
-        leaveApi.getLeaveRequestsAsync(),
+        leaveApi.getLeaveRequestsAsync(activeOrg),
         leaveApi.getLeaveTypesAsync(),
       ]);
       setRequests(reqs);
@@ -68,7 +69,8 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
         setSelectedTypeId(activeTypes[0].id);
       }
     } catch {
-      setRequests(leaveApi.getLeaveRequests());
+      const activeOrg = chosenEmp?.organization_id || currentUser?.organization_id || api.getActiveCompany()?.organization_id || getActiveOrgId();
+      setRequests(leaveApi.getLeaveRequests(activeOrg));
       const activeTypes = leaveApi.getLeaveTypes().filter(t => t.is_active);
       setLeaveTypes(activeTypes);
       if (activeTypes.length > 0 && !selectedTypeId) {
@@ -82,7 +84,16 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
     const unsub = hrEventBus.subscribe('leave.*', () => {
       loadData();
     });
-    return () => unsub();
+    const handleTenantSwitch = () => {
+      loadData();
+    };
+    window.addEventListener('tenant:switched', handleTenantSwitch);
+    window.addEventListener('organization:switched', handleTenantSwitch);
+    return () => {
+      unsub();
+      window.removeEventListener('tenant:switched', handleTenantSwitch);
+      window.removeEventListener('organization:switched', handleTenantSwitch);
+    };
   }, []);
 
   useEffect(() => {
@@ -147,7 +158,7 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
     e.preventDefault();
     if (!validationResult.isValid || !selectedLeaveType) return;
 
-    const targetOrgId = chosenEmp?.organization_id || currentUser?.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
+    const targetOrgId = chosenEmp?.organization_id || currentUser?.organization_id || api.getActiveCompany()?.organization_id || getActiveOrgId();
     leaveApi.submitLeaveRequest({
       organization_id: targetOrgId,
       employee_id: targetEmpId,

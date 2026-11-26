@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { supabase, supabaseAdmin, isSupabaseEnabled } from '../../lib/supabase';
+import { getActiveOrgId } from '../attendance/biometricCommandService';
 import {
   PayrollDeductionPolicy,
   EmployeeLoanAccount,
@@ -17,8 +18,8 @@ import {
 } from '../../types/deductions';
 
 const dbClient = isSupabaseEnabled ? (supabaseAdmin || supabase) : supabase;
-const DEFAULT_ORG_UUID = '0c621892-e938-4707-9957-13534ea32c19';
-const DEFAULT_COMPANY_UUID = '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+const DEFAULT_ORG_UUID = 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
+const DEFAULT_COMPANY_UUID = 'c0bbfb28-1500-4ebb-aba8-453b3681f342';
 
 export class DeductionPolicyEngine {
   private static cachedPolicy: PayrollDeductionPolicy | null = null;
@@ -27,8 +28,8 @@ export class DeductionPolicyEngine {
   // 1. DEDUCTION POLICY MANAGEMENT
   // ──────────────────────────────────────────────────────────────────────────
 
-  public static async getActivePolicy(orgId: string = DEFAULT_ORG_UUID): Promise<PayrollDeductionPolicy> {
-    const validOrgId = orgId && orgId !== 'default' ? orgId : DEFAULT_ORG_UUID;
+  public static async getActivePolicy(orgId: string = getActiveOrgId()): Promise<PayrollDeductionPolicy> {
+    const validOrgId = orgId && orgId !== 'default' ? orgId : getActiveOrgId();
 
     if (isSupabaseEnabled) {
       try {

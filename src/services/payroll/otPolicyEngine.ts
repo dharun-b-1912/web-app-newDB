@@ -17,9 +17,10 @@ import {
   CodeOnWagesAssessment,
 } from '../../types/otPolicy';
 import { supabase, supabaseAdmin, isSupabaseEnabled } from '../../lib/supabase';
+import { getActiveOrgId } from '../attendance/biometricCommandService';
 
 const dbClient = isSupabaseEnabled ? (supabaseAdmin || supabase) : supabase;
-const DEFAULT_ORG_UUID = '0c621892-e938-4707-9957-13534ea32c19';
+const DEFAULT_ORG_UUID = 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
 
 export type OTCalculationBasis =
   | 'SALARY_DERIVED'   // Hourly Rate = (Wage Basis / Divisor Days) / Standard Hours Per Day
@@ -271,7 +272,7 @@ export class OTPolicyEngine {
 
   public static async loadActivePolicyFromBackend(orgId?: string): Promise<OTPolicyRecord | null> {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const resolvedOrgId = (orgId && isUuid.test(orgId)) ? orgId : DEFAULT_ORG_UUID;
+    const resolvedOrgId = (orgId && isUuid.test(orgId)) ? orgId : getActiveOrgId();
 
     if (!isSupabaseEnabled) {
       return this.getActivePolicy();
@@ -659,7 +660,7 @@ export class OTPolicyEngine {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const resolvedOrg = isUuid.test(updatedRecord.organization_id)
           ? updatedRecord.organization_id
-          : DEFAULT_ORG_UUID;
+          : getActiveOrgId();
         const resolvedId = isUuid.test(updatedRecord.id)
           ? updatedRecord.id
           : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '4f2e9871-bc01-4432-8812-76543210abcd');

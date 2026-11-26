@@ -36,8 +36,13 @@ export const ApprovalCenterView: React.FC<ApprovalCenterViewProps> = ({ onOpenRe
   const [delegateToUser, setDelegateToUser] = useState('Priya Sundaram (Lead HRBP)');
   const [delegateUntil, setDelegateUntil] = useState('2026-08-30');
 
-  const loadData = () => {
-    setRequests(leaveApi.getLeaveRequests());
+  const loadData = async () => {
+    try {
+      const res = await leaveApi.getLeaveRequestsAsync();
+      setRequests(res);
+    } catch {
+      setRequests(leaveApi.getLeaveRequests());
+    }
   };
 
   useEffect(() => {

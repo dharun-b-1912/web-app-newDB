@@ -82,18 +82,42 @@ const mapCanonicalToLedgerType = (entryType: string): import('../types/leave').L
   }
 };
 
-function getActiveOrgId(): string {
-  try {
-    const raw = localStorage.getItem('workforce_active_organization');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && (parsed.id || parsed.organization_id)) return parsed.id || parsed.organization_id;
-    }
-  } catch { }
-  return '0c621892-e938-4707-9957-13534ea32c19';
+export function getActiveOrgId(): string {
+  if (typeof window !== 'undefined') {
+    try {
+      const activeCompStr = localStorage.getItem('workforce_active_company');
+      if (activeCompStr) {
+        const parsed = JSON.parse(activeCompStr);
+        if (parsed?.organization_id && isValidUUID(parsed.organization_id)) return parsed.organization_id;
+        if (parsed?.id && isValidUUID(parsed.id)) return parsed.id;
+      }
+    } catch { }
+    try {
+      const cached = localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id');
+      if (cached && isValidUUID(cached)) return cached;
+    } catch { }
+    try {
+      const activeOrg = localStorage.getItem('workforce_active_org') || localStorage.getItem('workforce_active_organization');
+      if (activeOrg) {
+        const parsed = JSON.parse(activeOrg);
+        if (parsed?.organization_id && isValidUUID(parsed.organization_id)) return parsed.organization_id;
+        if (parsed?.id && isValidUUID(parsed.id)) return parsed.id;
+      }
+    } catch { }
+    try {
+      const c = api.getActiveCompany();
+      if (c?.organization_id && isValidUUID(c.organization_id)) return c.organization_id;
+      if (c?.id && isValidUUID(c.id)) return c.id;
+    } catch { }
+    try {
+      const u = api.getCurrentUser();
+      if (u?.organization_id && isValidUUID(u.organization_id)) return u.organization_id;
+    } catch { }
+  }
+  return 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
 }
 
-// Purge legacy mock data from browser localStorage once
+// Purge legacy and unpartitioned mock data from browser localStorage once
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
     const legacyKeys = [
@@ -106,6 +130,10 @@ try {
       'workforce_leave_ledger_v1',
       'workforce_leave_requests_v1',
       'workforce_leave_approvals_v1',
+      // Clean unpartitioned v2 keys so they do not leak cross-tenant
+      'workforce_leave_requests_v2',
+      'workforce_leave_entitlements_v2',
+      'workforce_leave_ledger_v2',
     ];
     legacyKeys.forEach(k => window.localStorage.removeItem(k));
   }
@@ -600,28 +628,43 @@ const initialLeavePolicies: LeavePolicy[] = [
   },
 ];
 
-// Helper Functions for Local Storage & In-Memory Resilient Cache
-function getStored<T>(key: string, defaultVal: T): T {
-  return safeStorage.getObject<T>(key, defaultVal);
+// Helper Functions for Local Storage & In-Memory Resilient Cache (Strict Tenant Partitioning)
+function getStored<T>(key: string, defaultVal: T, orgId: string = getActiveOrgId()): T {
+  const scopedKey = `${key}_${orgId}`;
+  return safeStorage.getObject<T>(scopedKey, defaultVal);
 }
 
-function setStored<T>(key: string, val: T): void {
+function setStored<T>(key: string, val: T, orgId: string = getActiveOrgId()): void {
+  const scopedKey = `${key}_${orgId}`;
   // If array is oversized (e.g. all employees' entitlements/ledger), keep full array in memory cache
   // and persist only a bounded slice to localStorage to guarantee QuotaExceededError is never thrown
   if (Array.isArray(val) && val.length > 30) {
-    safeStorage.setObject<T>(key, val.slice(0, 30) as unknown as T, val);
+    safeStorage.setObject<T>(scopedKey, val.slice(0, 30) as unknown as T, val);
   } else {
-    safeStorage.setObject<T>(key, val);
+    safeStorage.setObject<T>(scopedKey, val);
   }
 }
 
-let _leaveTypesCache: { data: LeaveType[]; timestamp: number } | null = null;
-let _leaveRequestsCache: { data: LeaveRequest[]; timestamp: number } | null = null;
-let _entitlementsCache: { data: LeaveEntitlement[]; timestamp: number } | null = null;
-let _ledgerCache: { data: LeaveLedgerTransaction[]; timestamp: number } | null = null;
+const _leaveTypesCache = new Map<string, { data: LeaveType[]; timestamp: number }>();
+const _leaveRequestsCache = new Map<string, { data: LeaveRequest[]; timestamp: number }>();
+const _entitlementsCache = new Map<string, { data: LeaveEntitlement[]; timestamp: number }>();
+const _ledgerCache = new Map<string, { data: LeaveLedgerTransaction[]; timestamp: number }>();
 let _reqInFlight: Promise<LeaveRequest[]> | null = null;
 let _typesInFlight: Promise<LeaveType[]> | null = null;
 let _entInFlight: Promise<LeaveEntitlement[]> | null = null;
+
+if (typeof window !== 'undefined') {
+  const clearTenantCaches = () => {
+    _leaveTypesCache.clear();
+    _leaveRequestsCache.clear();
+    _entitlementsCache.clear();
+    _ledgerCache.clear();
+  };
+  window.addEventListener('tenant:switched', clearTenantCaches);
+  window.addEventListener('organization:switched', clearTenantCaches);
+  hrEventBus.subscribe('tenant:switched', clearTenantCaches);
+  hrEventBus.subscribe('organization:switched', clearTenantCaches);
+}
 
 function persistLedgerTransactionToSupabase(entry: LeaveLedgerTransaction, companyId: string = 'comp-01') {
   if (isSupabaseEnabled) {
@@ -659,7 +702,7 @@ export async function syncAttendanceForApprovedLeave(req: LeaveRequest): Promise
   const end = new Date(y2, m2 - 1, d2, 12, 0, 0);
 
   const orgId = req.company_id || getActiveOrgId();
-  const effectiveOrgId = isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19';
+  const effectiveOrgId = isValidUUID(orgId) ? orgId : getActiveOrgId();
   const isPaid = req.leave_category !== 'Unpaid' && !req.is_lop;
   const isHalf = Boolean(req.is_half_day);
   const status = isHalf ? 'HALF_DAY' : 'ON_LEAVE';
@@ -846,7 +889,7 @@ export async function syncHolidayCalendarToAttendanceAsync(calendarId?: string):
               name: h.name,
               holiday_date: h.date,
               is_restricted: Boolean(h.is_optional || h.type === 'Restricted' || h.type === 'Optional'),
-              organization_id: activeEmps[0]?.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+              organization_id: activeEmps[0]?.organization_id || getActiveOrgId(),
             }]);
           }
         } catch (hErr) {
@@ -880,7 +923,7 @@ export async function syncHolidayCalendarToAttendanceAsync(calendarId?: string):
           upsertBatch.push({
             employee_id: emp.id,
             attendance_date: hol.date,
-            organization_id: emp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+            organization_id: emp.organization_id || getActiveOrgId(),
             status: 'HOLIDAY',
             payable_status: 1.0,
             total_work_minutes: 480,
@@ -922,8 +965,8 @@ export const leaveApi = {
       try {
         const { data, error } = await supabase.from('leave_types').select('*');
         if (!error && Array.isArray(data) && data.length > 0) {
-          setStored(STORAGE_KEYS.LEAVE_TYPES, data);
-          _leaveTypesCache = { data, timestamp: Date.now() };
+          setStored(STORAGE_KEYS.LEAVE_TYPES, data, 'global');
+          _leaveTypesCache.set('all', { data, timestamp: Date.now() });
           return data;
         }
       } catch (err) {
@@ -934,12 +977,13 @@ export const leaveApi = {
   },
 
   getLeaveTypes: (): LeaveType[] => {
-    if (_leaveTypesCache?.data && _leaveTypesCache.data.length > 0) {
-      return [..._leaveTypesCache.data];
+    const cached = _leaveTypesCache.get('all');
+    if (cached?.data && cached.data.length > 0) {
+      return [...cached.data];
     }
-    const list = getStored(STORAGE_KEYS.LEAVE_TYPES, initialLeaveTypes);
+    const list = getStored(STORAGE_KEYS.LEAVE_TYPES, initialLeaveTypes, 'global');
     if (list.length > 0) {
-      _leaveTypesCache = { data: list, timestamp: Date.now() };
+      _leaveTypesCache.set('all', { data: list, timestamp: Date.now() });
     }
     if (isSupabaseEnabled && !_typesInFlight) {
       _typesInFlight = leaveApi.getLeaveTypesAsync().finally(() => {
@@ -1430,10 +1474,10 @@ export const leaveApi = {
   },
 
   // --- Leave Requests ---
-  async getLeaveRequestsAsync(): Promise<LeaveRequest[]> {
+  async getLeaveRequestsAsync(targetOrgId?: string): Promise<LeaveRequest[]> {
+    const orgId = targetOrgId || getActiveOrgId();
     if (isSupabaseEnabled) {
       try {
-        const orgId = getActiveOrgId();
         let reqQuery = supabase
           .from('leave_requests')
           .select(`
@@ -1463,7 +1507,7 @@ export const leaveApi = {
         }
         const { data, error } = await reqQuery.order('created_at', { ascending: false });
 
-        if (!error && Array.isArray(data) && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           const mapped: LeaveRequest[] = data.map((r: any) => {
             const emp = r.employees;
             const lt = r.leave_types;
@@ -1485,7 +1529,7 @@ export const leaveApi = {
               employee_name: empName,
               department_name: deptName,
               designation: desigName,
-              company_id: r.organization_id || r.company_id || 'comp-01',
+              company_id: r.organization_id || r.company_id || orgId,
               leave_type_id: r.leave_type_id,
               leave_type_name: typeName,
               leave_type_code: typeCode,
@@ -1515,27 +1559,27 @@ export const leaveApi = {
               comments: r.comments,
             };
           });
-          setStored(STORAGE_KEYS.REQUESTS, mapped);
-          _leaveRequestsCache = { data: mapped, timestamp: Date.now() };
+          setStored(STORAGE_KEYS.REQUESTS, mapped, orgId);
+          _leaveRequestsCache.set(orgId, { data: mapped, timestamp: Date.now() });
           return mapped;
         }
       } catch (err) {
         console.warn('[leaveApi] getLeaveRequestsAsync notice:', err);
       }
     }
-    return this.getLeaveRequests();
+    return this.getLeaveRequests(orgId);
   },
 
-  getLeaveRequests: (): LeaveRequest[] => {
-    if (_leaveRequestsCache?.data && _leaveRequestsCache.data.length > 0) {
-      return [..._leaveRequestsCache.data];
+  getLeaveRequests: (targetOrgId?: string): LeaveRequest[] => {
+    const orgId = targetOrgId || getActiveOrgId();
+    const cached = _leaveRequestsCache.get(orgId);
+    if (cached?.data) {
+      return [...cached.data];
     }
-    const list = getStored(STORAGE_KEYS.REQUESTS, initialLeaveRequests);
-    if (list.length > 0) {
-      _leaveRequestsCache = { data: list, timestamp: Date.now() };
-    }
+    const list = getStored<LeaveRequest[]>(STORAGE_KEYS.REQUESTS, [], orgId);
+    _leaveRequestsCache.set(orgId, { data: list, timestamp: Date.now() });
     if (isSupabaseEnabled && !_reqInFlight) {
-      _reqInFlight = leaveApi.getLeaveRequestsAsync().finally(() => {
+      _reqInFlight = leaveApi.getLeaveRequestsAsync(orgId).finally(() => {
         _reqInFlight = null;
       });
     }
@@ -1543,7 +1587,8 @@ export const leaveApi = {
   },
 
   submitLeaveRequest: (req: Partial<LeaveRequest>): LeaveRequest => {
-    const requests = leaveApi.getLeaveRequests();
+    const targetOrg = (req as any).organization_id || req.company_id || getActiveOrgId();
+    const requests = leaveApi.getLeaveRequests(targetOrg);
     const calculatedDays = leaveEngine.calculateWorkingDays({
       fromDate: req.from_date || '',
       toDate: req.to_date || '',
@@ -1558,7 +1603,7 @@ export const leaveApi = {
       employee_id: req.employee_id || 'emp-101',
       employee_name: req.employee_name || 'Staff',
       department_name: req.department_name || 'Engineering',
-      company_id: req.company_id || 'comp-01',
+      company_id: targetOrg,
       avatar_url: req.avatar_url,
       leave_type_id: targetLeaveTypeId,
       leave_type_name: req.leave_type_name || 'Casual Leave',
@@ -1570,13 +1615,12 @@ export const leaveApi = {
       working_days: calculatedDays.workingDays || req.working_days || 1,
       holiday_days: calculatedDays.holidayDays || req.holiday_days || 0,
       weekly_off_days: calculatedDays.weekendDays || req.weekly_off_days || 0,
-      leave_days_deducted: calculatedDays.leaveDaysDeducted || req.leave_days_deducted || 1,
+      leave_days_deducted: calculatedDays.workingDays || req.leave_days_deducted || 1,
       is_half_day: req.is_half_day || false,
       half_day_session: req.half_day_session,
       is_hourly: req.is_hourly || false,
       reason: req.reason || '',
       attachment_url: req.attachment_url,
-      contact_number: req.contact_number,
       manager_id: req.manager_id || 'emp-100',
       manager_name: req.manager_name || 'Reporting Manager',
       status: 'Pending',
@@ -1588,14 +1632,14 @@ export const leaveApi = {
     };
 
     requests.unshift(newReq);
-    setStored(STORAGE_KEYS.REQUESTS, requests);
-    if (_leaveRequestsCache) {
-      _leaveRequestsCache.data.unshift(newReq);
+    setStored(STORAGE_KEYS.REQUESTS, requests, targetOrg);
+    const cached = _leaveRequestsCache.get(targetOrg);
+    if (cached?.data) {
+      cached.data.unshift(newReq);
     }
 
     if (isSupabaseEnabled) {
-      const orgId = (req as any).organization_id || getActiveOrgId() || '0c621892-e938-4707-9957-13534ea32c19';
-      const effectiveOrgId = isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19';
+      const effectiveOrgId = isValidUUID(targetOrg) ? targetOrg : getActiveOrgId();
       const leaveId = ensureUUID(newReq.id);
       newReq.id = leaveId;
 
@@ -1654,7 +1698,7 @@ export const leaveApi = {
       }
     }
 
-    _leaveRequestsCache = null;
+    _leaveRequestsCache.clear();
     const requests = await leaveApi.getLeaveRequestsAsync();
     const idx = requests.findIndex(r => r.id === requestId);
     const req = idx >= 0 ? requests[idx] : {
@@ -1706,9 +1750,11 @@ export const leaveApi = {
     };
 
     ledger.unshift(newLedgerEntry);
-    setStored(STORAGE_KEYS.LEDGER, ledger);
-    if (_ledgerCache) {
-      _ledgerCache.data.unshift(newLedgerEntry);
+    const orgId = (req as any).organization_id || req.company_id || getActiveOrgId();
+    setStored(STORAGE_KEYS.LEDGER, ledger, orgId);
+    const cachedLedger = _ledgerCache.get(orgId);
+    if (cachedLedger?.data) {
+      cachedLedger.data.unshift(newLedgerEntry);
     }
 
     if (isSupabaseEnabled) {
@@ -1779,7 +1825,7 @@ export const leaveApi = {
       }
     }
 
-    _leaveRequestsCache = null;
+    _leaveRequestsCache.clear();
     const requests = await leaveApi.getLeaveRequestsAsync();
     const idx = requests.findIndex(r => r.id === requestId);
     const req = idx >= 0 ? requests[idx] : {
@@ -1859,10 +1905,12 @@ export const leaveApi = {
         reason: `Reversal on withdrawal of leave ${req.request_code || req.id}: ${reason}`,
         created_at: new Date().toISOString(),
       };
+      const orgId = (req as any).organization_id || req.company_id || getActiveOrgId();
       ledger.unshift(reversalEntry);
-      setStored(STORAGE_KEYS.LEDGER, ledger);
-      if (_ledgerCache) {
-        _ledgerCache.data.unshift(reversalEntry);
+      setStored(STORAGE_KEYS.LEDGER, ledger, orgId);
+      const cachedLedger = _ledgerCache.get(orgId);
+      if (cachedLedger?.data) {
+        cachedLedger.data.unshift(reversalEntry);
       }
 
       if (isSupabaseEnabled) {
@@ -1908,7 +1956,7 @@ export const leaveApi = {
     }
 
     // 4. Update in-memory & local store
-    _leaveRequestsCache = null;
+    _leaveRequestsCache.clear();
     const remaining = requests.filter(r => r.id !== requestId);
     setStored(STORAGE_KEYS.REQUESTS, remaining);
 
@@ -1987,10 +2035,12 @@ export const leaveApi = {
         reason: `Reversal for cancelled leave ${req.request_code}: ${reason}`,
         created_at: new Date().toISOString(),
       };
+      const orgId = (req as any).organization_id || req.company_id || getActiveOrgId();
       ledger.unshift(reversalEntry);
-      setStored(STORAGE_KEYS.LEDGER, ledger);
-      if (_ledgerCache) {
-        _ledgerCache.data.unshift(reversalEntry);
+      setStored(STORAGE_KEYS.LEDGER, ledger, orgId);
+      const cachedLedger = _ledgerCache.get(orgId);
+      if (cachedLedger?.data) {
+        cachedLedger.data.unshift(reversalEntry);
       }
 
       if (isSupabaseEnabled) {
@@ -2077,10 +2127,10 @@ export const leaveApi = {
   },
 
   // --- Entitlements & Ledger ---
-  async getEntitlementsAsync(): Promise<LeaveEntitlement[]> {
+  async getEntitlementsAsync(targetOrgId?: string): Promise<LeaveEntitlement[]> {
+    const orgId = targetOrgId || getActiveOrgId();
     if (isSupabaseEnabled) {
       try {
-        const orgId = getActiveOrgId();
         let empQ = supabase.from('employees').select('id, first_name, last_name, employee_code, department_id, departments:department_id(name), designations:designation_id(title)').order('employee_code');
         if (orgId && isValidUUID(orgId)) {
           empQ = empQ.eq('organization_id', orgId);
@@ -2169,8 +2219,8 @@ export const leaveApi = {
           }
 
           if (entitlements.length > 0) {
-            setStored(STORAGE_KEYS.ENTITLEMENTS, entitlements);
-            _entitlementsCache = { data: entitlements, timestamp: Date.now() };
+            setStored(STORAGE_KEYS.ENTITLEMENTS, entitlements, orgId);
+            _entitlementsCache.set(orgId, { data: entitlements, timestamp: Date.now() });
             return entitlements;
           }
         }
@@ -2178,29 +2228,31 @@ export const leaveApi = {
         console.warn('[leaveApi] getEntitlementsAsync notice:', err);
       }
     }
-    return this.getEntitlements();
+    return this.getEntitlements(orgId);
   },
 
-  getEntitlements: (): LeaveEntitlement[] => {
-    if (_entitlementsCache?.data && _entitlementsCache.data.length > 0) {
-      return [..._entitlementsCache.data];
+  getEntitlements: (targetOrgId?: string): LeaveEntitlement[] => {
+    const orgId = targetOrgId || getActiveOrgId();
+    const cached = _entitlementsCache.get(orgId);
+    if (cached?.data && cached.data.length > 0) {
+      return [...cached.data];
     }
-    const list = getStored<LeaveEntitlement[]>(STORAGE_KEYS.ENTITLEMENTS, []);
+    const list = getStored<LeaveEntitlement[]>(STORAGE_KEYS.ENTITLEMENTS, [], orgId);
     if (list.length > 0) {
-      _entitlementsCache = { data: list, timestamp: Date.now() };
+      _entitlementsCache.set(orgId, { data: list, timestamp: Date.now() });
     }
     if (isSupabaseEnabled && !_entInFlight) {
-      _entInFlight = leaveApi.getEntitlementsAsync().finally(() => {
+      _entInFlight = leaveApi.getEntitlementsAsync(orgId).finally(() => {
         _entInFlight = null;
       });
     }
     return list;
   },
 
-  async getLedgerAsync(employeeId?: string): Promise<LeaveLedgerTransaction[]> {
+  async getLedgerAsync(employeeId?: string, targetOrgId?: string): Promise<LeaveLedgerTransaction[]> {
+    const orgId = targetOrgId || getActiveOrgId();
     if (isSupabaseEnabled) {
       try {
-        const orgId = getActiveOrgId();
         let q = supabase.from('leave_ledger_entries').select('*').order('created_at', { ascending: false });
         if (orgId && isValidUUID(orgId)) {
           q = q.eq('organization_id', orgId);
@@ -2224,7 +2276,7 @@ export const leaveApi = {
             error = null;
           }
         }
-        if (!error && Array.isArray(data) && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           const mapped: LeaveLedgerTransaction[] = data.map((d: any) => ({
             id: d.id,
             employee_id: d.employee_id,
@@ -2241,22 +2293,24 @@ export const leaveApi = {
             reason: d.remarks || d.reason || '',
             created_at: d.created_at,
           }));
-          _ledgerCache = { data: mapped, timestamp: Date.now() };
-          setStored(STORAGE_KEYS.LEDGER, mapped);
+          _ledgerCache.set(orgId, { data: mapped, timestamp: Date.now() });
+          setStored(STORAGE_KEYS.LEDGER, mapped, orgId);
           return mapped;
         }
       } catch (err) {
         console.warn('[leaveApi] getLedgerAsync notice:', err);
       }
     }
-    return this.getLedger();
+    return this.getLedger(orgId);
   },
 
-  getLedger: (): LeaveLedgerTransaction[] => {
-    if (_ledgerCache?.data && _ledgerCache.data.length > 0) {
-      return [..._ledgerCache.data];
+  getLedger: (targetOrgId?: string): LeaveLedgerTransaction[] => {
+    const orgId = targetOrgId || getActiveOrgId();
+    const cached = _ledgerCache.get(orgId);
+    if (cached?.data && cached.data.length > 0) {
+      return [...cached.data];
     }
-    let list = getStored<LeaveLedgerTransaction[]>(STORAGE_KEYS.LEDGER, initialLedger);
+    let list = getStored<LeaveLedgerTransaction[]>(STORAGE_KEYS.LEDGER, [], orgId);
     if (!list || list.length === 0) {
       const entitlements = leaveApi.getEntitlements();
       if (entitlements.length > 0) {
@@ -2280,7 +2334,7 @@ export const leaveApi = {
       }
     }
     if (list && list.length > 0) {
-      _ledgerCache = { data: list, timestamp: Date.now() };
+      _ledgerCache.set(orgId, { data: list, timestamp: Date.now() });
     }
     return list || [];
   },
@@ -2358,9 +2412,11 @@ export const leaveApi = {
       reason: `Comp-off approved: ${target.reason}`,
       created_at: new Date().toISOString(),
     };
+    const compOffOrg = (target as any).organization_id || (target as any).company_id || getActiveOrgId();
     ledger.unshift(compOffEntry);
-    setStored(STORAGE_KEYS.LEDGER, ledger);
-    if (_ledgerCache) _ledgerCache.data.unshift(compOffEntry);
+    setStored(STORAGE_KEYS.LEDGER, ledger, compOffOrg);
+    const cachedCompOffLedger = _ledgerCache.get(compOffOrg);
+    if (cachedCompOffLedger?.data) cachedCompOffLedger.data.unshift(compOffEntry);
     persistLedgerTransactionToSupabase(compOffEntry, (target as any).company_id || 'comp-01');
 
     // Also update entitlement balance for lt-comp
@@ -2453,9 +2509,11 @@ export const leaveApi = {
       reason: `Leave encashment approved (${target.request_code || target.id}) for ${target.payroll_period || 'Payroll'}`,
       created_at: new Date().toISOString(),
     };
+    const encashOrg = (target as any).organization_id || (target as any).company_id || getActiveOrgId();
     ledger.unshift(encashEntry);
-    setStored(STORAGE_KEYS.LEDGER, ledger);
-    if (_ledgerCache) _ledgerCache.data.unshift(encashEntry);
+    setStored(STORAGE_KEYS.LEDGER, ledger, encashOrg);
+    const cachedEncashLedger = _ledgerCache.get(encashOrg);
+    if (cachedEncashLedger?.data) cachedEncashLedger.data.unshift(encashEntry);
     persistLedgerTransactionToSupabase(encashEntry, (target as any).company_id || 'comp-01');
 
     // Also update entitlement balance
@@ -2533,9 +2591,11 @@ export const leaveApi = {
         reason: `HR Adjustment: ${adj.reason}`,
         created_at: new Date().toISOString(),
       };
+      const adjOrg = (adj as any).organization_id || (adj as any).company_id || getActiveOrgId();
       ledger.unshift(adjEntry);
-      setStored(STORAGE_KEYS.LEDGER, ledger);
-      if (_ledgerCache) _ledgerCache.data.unshift(adjEntry);
+      setStored(STORAGE_KEYS.LEDGER, ledger, adjOrg);
+      const cachedAdjLedger = _ledgerCache.get(adjOrg);
+      if (cachedAdjLedger?.data) cachedAdjLedger.data.unshift(adjEntry);
       persistLedgerTransactionToSupabase(adjEntry, (adj as any).company_id || 'comp-01');
 
       // Update entitlement balance

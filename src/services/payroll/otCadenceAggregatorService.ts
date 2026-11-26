@@ -19,15 +19,16 @@ import { attendanceApi } from '../attendanceApi';
 import { payrollApi } from '../payrollApi';
 import { OTPolicyEngine } from './otPolicyEngine';
 import { api } from '../api';
+import { getActiveOrgId } from '../attendance/biometricCommandService';
 
-const DEFAULT_ORG_ID = '0c621892-e938-4707-9957-13534ea32c19';
+const DEFAULT_ORG_ID = 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
 const SETTINGS_STORAGE_KEY_PREFIX = 'joy_tenant_ot_stream_settings_';
 
 export class OTCadenceAggregatorService {
   /**
    * Retrieves tenant-specific OT Stream & Disbursal Configuration
    */
-  public static getTenantSettings(organizationId = DEFAULT_ORG_ID): TenantOTStreamSettings {
+  public static getTenantSettings(organizationId = getActiveOrgId()): TenantOTStreamSettings {
     const isElectra = organizationId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e' || organizationId?.toLowerCase().includes('electra');
     
     // Check localStorage cache

@@ -35,6 +35,12 @@ class TenantStorageManager {
   public getActiveOrgId(): string | null {
     if (typeof localStorage === 'undefined') return null;
     try {
+      const activeComp = localStorage.getItem('workforce_active_company');
+      if (activeComp) {
+        const parsed = JSON.parse(activeComp);
+        if (parsed?.organization_id) return parsed.organization_id;
+        if (parsed?.id && parsed.id.length === 36) return parsed.id;
+      }
       return localStorage.getItem('workforce_active_org_id') || localStorage.getItem('joy_active_tenant_id') || null;
     } catch {
       return null;
