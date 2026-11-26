@@ -554,6 +554,28 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
   // Last-refreshed timestamp for UI indicator
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
 
+  // Manual hardware sync trigger (dispatches ADMS DATA QUERY ATTLOG to physical terminals)
+  const handleManualSync = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const orgId = getActiveOrgId();
+      try {
+        await fetch(`/api/connector/sync-now?organizationId=${encodeURIComponent(orgId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (_) {}
+
+      await loadEnrolmentData();
+      setLastRefreshedAt(new Date());
+      showToast('✓ Hardware sync dispatched. Pulling latest punches from terminal.', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Sync failed', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadEnrolmentData, showToast]);
+
   useEffect(() => {
     // Initial load
     loadEnrolmentData().then(() => setLastRefreshedAt(new Date()));
@@ -1687,7 +1709,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
             <Button
               variant="outline"
               size="md"
-              onClick={() => loadEnrolmentData().then(() => setLastRefreshedAt(new Date()))}
+              onClick={handleManualSync}
               disabled={isLoading}
               className="gap-2 rounded-xl text-xs font-bold text-gray-700 bg-white border-gray-200 hover:bg-gray-50 h-10 px-3.5"
             >

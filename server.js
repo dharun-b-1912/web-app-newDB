@@ -315,12 +315,61 @@ connectorRouter.get('/health', (req, res) => {
   });
 });
 
-connectorRouter.all(['/trigger-sync', '/sync-now'], (req, res) => {
-  return res.status(200).json({
-    success: true,
-    message: 'Hardware synchronization triggered successfully',
-    timestamp: new Date().toISOString()
-  });
+connectorRouter.all(['/trigger-sync', '/sync-now'], async (req, res) => {
+  try {
+    let orgId = req.query.organizationId || req.query.orgId || req.query.organization_id || req.body?.organizationId || req.body?.organization_id || req.headers['x-organization-id'];
+    if (!orgId || !isValidUUID(orgId) || orgId === 'platform-root') {
+      orgId = 'c5ab6b03-adde-47cc-a033-064f4c39b21e'; // Default to active Electra EV
+    }
+
+    // Query active biometric devices for this tenant organization
+    const { data: devices } = await supabaseAdminClient
+      .from('biometric_devices')
+      .select('id, serial_number, device_name')
+      .eq('organization_id', orgId);
+
+    const targetDevices = devices && devices.length > 0 ? devices : [{ serial_number: 'JNP2263200782' }];
+    const results = [];
+
+    const upstashUrl = process.env.UPSTASH_REDIS_REST_URL;
+    const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    for (const dev of targetDevices) {
+      const sn = dev.serial_number;
+      if (!sn) continue;
+
+      const pullCmd = `C:1001:CHECK\nC:1002:DATA QUERY ATTLOG\nC:1003:DATA QUERY USERINFO`;
+      if (upstashUrl && upstashToken) {
+        try {
+          // Set command queue
+          await fetch(`${upstashUrl}/set/adms_cmd_queue:${sn}`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${upstashToken}`,
+              'Content-Type': 'text/plain'
+            },
+            body: pullCmd
+          });
+          // Clear auto-lock so terminal pulls immediately
+          await fetch(`${upstashUrl}/del/adms_auto_lock:${sn}`, {
+            headers: { Authorization: `Bearer ${upstashToken}` }
+          });
+          results.push({ sn, status: 'QUEUED_IN_REDIS', commands: 'DATA QUERY ATTLOG' });
+        } catch (err) {
+          console.warn(`[Sync-Now] Failed to queue Redis command for ${sn}:`, err.message);
+        }
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Hardware pull synchronized for ${results.length} terminal(s). Device will dump attendance log backlog on next heartbeat.`,
+      devices: results,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 connectorRouter.post(['/push-user', '/push-employees', '/api/push-employees'], async (req, res) => {

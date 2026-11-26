@@ -526,6 +526,14 @@ serve(async (req: Request) => {
           updated_at: new Date().toISOString(),
         })
         .eq('serial_number', sn);
+
+      // Track last cdata hit in Redis
+      await redisSet(`adms_last_cdata:${sn}`, new Date().toISOString(), 86400);
+
+      // Auto Store-and-Forward Reconnect Recovery:
+      // When terminal powers on or reconnects after an outage, clear auto-lock
+      // so the immediate next getrequest loop orders a fresh DATA QUERY ATTLOG dump!
+      await redisDel(`adms_auto_lock:${sn}`);
     }
 
     return new Response(
@@ -539,6 +547,7 @@ serve(async (req: Request) => {
       `PhotoStamp=0\n` +
       `ErrorDelay=30\n` +
       `Delay=10\n` +
+      `RequestDelay=10\n` +
       `TransTimes=00:00;14:00\n` +
       `TransInterval=1\n` +
       `TransFlag=1111000000\n` +
@@ -556,9 +565,9 @@ serve(async (req: Request) => {
   }
 
   // --------------------------------------------------------------------------
-  // 2. REAL-TIME DATA PUSH FROM TERMINAL (POST /iclock/cdata.aspx?SN=...&table=ATTLOG)
+  // 2. REAL-TIME DATA PUSH FROM TERMINAL (POST /iclock/cdata.aspx or /iclock/devicecmd.aspx)
   // --------------------------------------------------------------------------
-  if (req.method === 'POST' && (pathname.includes('cdata') || pathname.endsWith('/cdata.aspx'))) {
+  if (req.method === 'POST' && (pathname.includes('cdata') || pathname.includes('devicecmd'))) {
     const table = (url.searchParams.get('table') || 'ATTLOG').toUpperCase();
     const bodyText = await req.text();
 
@@ -675,13 +684,13 @@ serve(async (req: Request) => {
 
         const todayDate = punchDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
 
-        // STRICT PRODUCTION ISOLATION:
-        // Only process punches for TODAY (current calendar date in Asia/Kolkata).
-        // Historical buffer dumps from terminal flash memory (e.g. 08-10-2026) MUST NEVER send SMS or alter past records!
-        if (todayDate !== currentIstToday) {
+        // Sanity Check: Discard corrupt/future timestamps or dates outside current operational year
+        if (punchDate.getFullYear() < 2026 || punchDate.getTime() > Date.now() + 86400000) {
           parsedCount++;
           continue;
         }
+
+        const isHistoricalBacklog = (todayDate !== currentIstToday);
 
         const timeFormatted = punchDate.toLocaleTimeString('en-US', {
           timeZone: 'Asia/Kolkata',
@@ -845,7 +854,7 @@ serve(async (req: Request) => {
                 .update({ first_check_in: eventUtcIso })
                 .eq('id', existingDaily.id);
 
-              if (emp.phone && !smsSentTodayCache.has(checkInKey)) {
+              if (!isHistoricalBacklog && emp.phone && !smsSentTodayCache.has(checkInKey)) {
                 const msg = `Dear ${empName}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
                 await dispatchAndLogAirtelSms(supabase, emp, organizationId, msg, DLT_CHECKIN_TEMPLATE_ID, 'SMS_CHECK_IN');
                 smsSentTodayCache.add(checkInKey);
@@ -922,7 +931,7 @@ serve(async (req: Request) => {
 
             console.log(`[ADMS-EDGE] 🟢 Check-in accepted for ${emp.first_name} at ${timeFormatted} -> Adapted to ${adaptiveShiftCode} (Late: ${adaptiveLateMins}m, Early OT: ${adaptiveEarlyOtMins}m).`);
 
-            if (emp.phone && !smsSentTodayCache.has(checkInKey)) {
+            if (!isHistoricalBacklog && emp.phone && !smsSentTodayCache.has(checkInKey)) {
               const msg = `Dear ${empName}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
               await dispatchAndLogAirtelSms(supabase, emp, organizationId, msg, DLT_CHECKIN_TEMPLATE_ID, 'SMS_CHECK_IN');
               smsSentTodayCache.add(checkInKey);
@@ -988,7 +997,7 @@ serve(async (req: Request) => {
 
           console.log(`[ADMS-EDGE] 🟢 Afternoon check-in accepted for ${emp.first_name} at ${timeFormatted} -> Adapted to ${adaptiveShiftCode} (Late: ${adaptiveLateMins}m).`);
 
-          if (emp.phone && !smsSentTodayCache.has(checkInKey)) {
+          if (!isHistoricalBacklog && emp.phone && !smsSentTodayCache.has(checkInKey)) {
             const msg = `Dear ${empName}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
             await dispatchAndLogAirtelSms(supabase, emp, organizationId, msg, DLT_CHECKIN_TEMPLATE_ID, 'SMS_CHECK_IN');
             smsSentTodayCache.add(checkInKey);
@@ -1108,7 +1117,7 @@ serve(async (req: Request) => {
         }, { onConflict: 'employee_id,attendance_date' });
 
         // Dispatch Airtel DLT Checkout SMS
-        if (emp.phone && !alreadyHadCheckout && !smsSentTodayCache.has(checkOutKey) && totalMins >= 180) {
+        if (!isHistoricalBacklog && emp.phone && !alreadyHadCheckout && !smsSentTodayCache.has(checkOutKey) && totalMins >= 180) {
           const totalDurationFormatted = `${hours} hrs ${mins} mins`;
           const msg = `Dear ${empName}, your check-out has been recorded at ${timeFormatted} today. Your total logged time is ${totalDurationFormatted}. Status: Present. - Joy PeopleHR.`;
           console.log(`[ADMS-EDGE] 📤 Dispatching Airtel checkout SMS to ${empName} (${emp.phone})`);
@@ -1126,7 +1135,7 @@ serve(async (req: Request) => {
       }
     }
 
-    return new Response('OK\n', {
+    return new Response(`OK: ${parsedCount}\n`, {
       status: 200,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
@@ -1145,6 +1154,8 @@ serve(async (req: Request) => {
           updated_at: new Date().toISOString(),
         })
         .eq('serial_number', sn);
+
+      await redisSet(`adms_last_getrequest:${sn}`, new Date().toISOString(), 86400);
     }
 
     // A. Check if explicit command is queued in Upstash Redis
@@ -1173,7 +1184,7 @@ serve(async (req: Request) => {
       });
     }
 
-    return new Response('OK\n', {
+    return new Response(`OK: ${parsedCount}\n`, {
       status: 200,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
@@ -1195,7 +1206,7 @@ serve(async (req: Request) => {
   if (pathname.includes('devicecmd') || pathname.endsWith('/devicecmd.aspx')) {
     const ackBody = await req.text();
     console.log(`[ADMS-EDGE] 📋 Device ${sn} command ack received:\n${ackBody}`);
-    return new Response('OK\n', {
+    return new Response(`OK: ${parsedCount}\n`, {
       status: 200,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
