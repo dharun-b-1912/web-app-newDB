@@ -73,7 +73,7 @@ interface MatrixEmployeeRow {
   dept: string;
   designation: string;
   vendor: string;
-  dayMap: Record<number, DayAttendanceSummary>;
+  dayMap: Record<string | number, DayAttendanceSummary>;
   totals: {
     present: number;
     absent: number;
@@ -162,28 +162,132 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
   const monthName = new Date(currentYear, currentMonthIndex, 1).toLocaleString('en-US', { month: 'long' });
   const monthKey = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}`;
   const daysInMonth = new Date(currentYear, currentMonthIndex + 1, 0).getDate();
-  const isCurrentMonth = currentYear === new Date().getFullYear() && currentMonthIndex === new Date().getMonth();
-  const currentDayLimit = isCurrentMonth ? new Date().getDate() : daysInMonth;
 
+  // Tenant-Configurable Month Cycle Engine
+  // Electra EV working cycle is officially 21st of current month to 20th of next month
+  // Other organizations default to Calendar Month (1st to 30/31st), but can toggle freely.
+  const activeComp = api.getActiveCompany();
+  const isElectraTenant = useMemo(() => {
+    const org = getActiveOrgId();
+    const compName = (activeComp?.legal_name || activeComp?.trade_name || '').toLowerCase();
+    return compName.includes('electra') || org === 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
+  }, [activeComp]);
+
+  const [cycleType, setCycleType] = useState<'CYCLE_21_TO_20' | 'CALENDAR_MONTH'>(() => {
+    const org = getActiveOrgId();
+    const comp = api.getActiveCompany();
+    const isElectra = (comp?.legal_name || comp?.trade_name || '').toLowerCase().includes('electra') ||
+                      org === 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
+    return isElectra ? 'CYCLE_21_TO_20' : 'CALENDAR_MONTH';
+  });
+
+  // Keep cycleType aligned when tenant switch occurs
+  useEffect(() => {
+    if (isElectraTenant) {
+      setCycleType('CYCLE_21_TO_20');
+    }
+  }, [isElectraTenant]);
+
+  // Generate date array for the selected cycle
   const daysArray = useMemo(() => {
     const todayLocalStr = getLocalDateString();
+
+    if (cycleType === 'CYCLE_21_TO_20') {
+      const result: {
+        dayNum: number;
+        dateStr: string;
+        monthShort: string;
+        weekdayShort: string;
+        isSunday: boolean;
+        isSaturday: boolean;
+        isToday: boolean;
+      }[] = [];
+
+      // Cycle starts on 21st of currentMonthIndex and ends on 20th of next month
+      const startDt = new Date(currentYear, currentMonthIndex, 21);
+      const nextMonthYear = currentMonthIndex === 11 ? currentYear + 1 : currentYear;
+      const nextMonthIdx = (currentMonthIndex + 1) % 12;
+      const endDt = new Date(nextMonthYear, nextMonthIdx, 20);
+
+      const curr = new Date(startDt);
+      while (curr <= endDt && result.length < 32) {
+        const y = curr.getFullYear();
+        const m = String(curr.getMonth() + 1).padStart(2, '0');
+        const day = String(curr.getDate()).padStart(2, '0');
+        const dateStr = `${y}-${m}-${day}`;
+        const dayNum = curr.getDate();
+        const monthShort = curr.toLocaleDateString('en-US', { month: 'short' });
+        const weekdayShort = curr.toLocaleDateString('en-US', { weekday: 'short' });
+        const isSunday = curr.getDay() === 0;
+        const isSaturday = curr.getDay() === 6;
+
+        result.push({
+          dayNum,
+          dateStr,
+          monthShort,
+          weekdayShort,
+          isSunday,
+          isSaturday,
+          isToday: dateStr === todayLocalStr,
+        });
+
+        curr.setDate(curr.getDate() + 1);
+      }
+      return result;
+    }
+
+    // Default: Standard calendar month (1st to last day)
     return Array.from({ length: daysInMonth }, (_, i) => {
       const dayNum = i + 1;
       const dateStr = `${monthKey}-${String(dayNum).padStart(2, '0')}`;
       const d = new Date(currentYear, currentMonthIndex, dayNum);
+      const monthShort = d.toLocaleDateString('en-US', { month: 'short' });
       const weekdayShort = d.toLocaleDateString('en-US', { weekday: 'short' });
       const isSunday = d.getDay() === 0;
       const isSaturday = d.getDay() === 6;
       return {
         dayNum,
         dateStr,
+        monthShort,
         weekdayShort,
         isSunday,
         isSaturday,
         isToday: dateStr === todayLocalStr,
       };
     });
-  }, [currentYear, currentMonthIndex, daysInMonth, monthKey]);
+  }, [cycleType, currentYear, currentMonthIndex, daysInMonth, monthKey]);
+
+  // Derived cycle properties
+  const startDateStr = daysArray[0]?.dateStr || `${monthKey}-01`;
+  const endDateStr = daysArray[daysArray.length - 1]?.dateStr || `${monthKey}-${String(daysInMonth).padStart(2, '0')}`;
+  const totalDaysInCycle = daysArray.length;
+
+  const todayStr = getLocalDateString();
+  const isCurrentCycle = useMemo(() => {
+    return todayStr >= startDateStr && todayStr <= endDateStr;
+  }, [todayStr, startDateStr, endDateStr]);
+
+  const periodLabel = useMemo(() => {
+    if (cycleType === 'CYCLE_21_TO_20') {
+      const first = daysArray[0];
+      const last = daysArray[daysArray.length - 1];
+      if (first && last) {
+        return `${first.dayNum} ${first.monthShort} ${first.dateStr.slice(0, 4)} – ${last.dayNum} ${last.monthShort} ${last.dateStr.slice(0, 4)}`;
+      }
+      return `${monthName} Cycle`;
+    }
+    return `${monthName} ${currentYear}`;
+  }, [cycleType, daysArray, monthName, currentYear]);
+
+  const currentDayLimit = useMemo(() => {
+    if (isCurrentCycle) {
+      return daysArray.filter(d => d.dateStr <= todayStr).length;
+    }
+    if (endDateStr < todayStr) {
+      return totalDaysInCycle;
+    }
+    return 0;
+  }, [isCurrentCycle, daysArray, todayStr, endDateStr, totalDaysInCycle]);
 
   const loadData = () => {
     const activeComp = api.getActiveCompany();
@@ -227,14 +331,14 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
     });
     attendanceRosterService.fetchShiftAssignmentsFromDb().catch(() => {});
 
-    const startDate = `${monthKey}-01`;
-    const endDate = `${monthKey}-${String(daysInMonth).padStart(2, '0')}`;
-    const tenantId = getActiveOrgId();
+    const startDate = startDateStr;
+    const endDate = endDateStr;
+    const tenantId = employees[0]?.organization_id || activeComp?.organization_id || getActiveOrgId();
 
-    attendanceRosterService.fetchRostersFromDb(startDate, endDate).catch(() => {});
+    attendanceRosterService.fetchRostersFromDb(startDate, endDate, tenantId).catch(() => {});
 
     // Authoritative Backend SQL Attendance Sync with punch synthesis and dynamic status resolution
-    attendanceApi.getDailyAttendanceForPeriodAsync(startDate, endDate)
+    attendanceApi.getDailyAttendanceForPeriodAsync(startDate, endDate, undefined, tenantId)
       .then(records => {
         if (records && records.length > 0) {
           setDailyRecords(records);
@@ -313,7 +417,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
   useEffect(() => {
     loadData();
-  }, [monthKey]);
+  }, [startDateStr, endDateStr, cycleType, currentYear, currentMonthIndex]);
 
   useEffect(() => {
     const unsub1 = hrEventBus.subscribe('attendance.*', () => {
@@ -359,9 +463,9 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       unsubDaily();
       unsubPunches();
     };
-  }, [monthKey]);
+  }, [startDateStr, endDateStr, cycleType]);
 
-  // Navigate months
+  // Navigate months or cycles
   const handlePrevMonth = () => {
     if (currentMonthIndex === 0) {
       setCurrentMonthIndex(11);
@@ -382,8 +486,18 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
   const handleJumpToday = () => {
     const now = new Date();
-    setCurrentYear(now.getFullYear());
-    setCurrentMonthIndex(now.getMonth());
+    if (cycleType === 'CYCLE_21_TO_20') {
+      // In 21-to-20 cycle:
+      // If today is day >= 21, active cycle starts on 21st of this month
+      // If today is day < 21, active cycle started on 21st of prev month
+      const startMonthIndex = now.getDate() >= 21 ? now.getMonth() : (now.getMonth() === 0 ? 11 : now.getMonth() - 1);
+      const startYear = now.getDate() >= 21 ? now.getFullYear() : (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear());
+      setCurrentYear(startYear);
+      setCurrentMonthIndex(startMonthIndex);
+    } else {
+      setCurrentYear(now.getFullYear());
+      setCurrentMonthIndex(now.getMonth());
+    }
   };
 
   const handleResetFilters = () => {
@@ -429,20 +543,27 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
     });
   }, [employees, workforceSegment, deptFilter, locationFilter, vendorFilter, searchQuery]);
 
-  // Month holidays lookup map
-  const holidaysForMonth = useMemo(() => {
+  // Month / Cycle holidays lookup map
+  const holidaysForCycle = useMemo(() => {
+    if (cycleType === 'CYCLE_21_TO_20') {
+      const nextMonthYear = currentMonthIndex === 11 ? currentYear + 1 : currentYear;
+      const nextMonthIdx = (currentMonthIndex + 1) % 12;
+      const h1 = leaveApi.getHolidaysForMonth(currentYear, currentMonthIndex);
+      const h2 = leaveApi.getHolidaysForMonth(nextMonthYear, nextMonthIdx);
+      return [...h1, ...h2];
+    }
     return leaveApi.getHolidaysForMonth(currentYear, currentMonthIndex);
-  }, [currentYear, currentMonthIndex]);
+  }, [cycleType, currentYear, currentMonthIndex]);
 
   const holidayMap = useMemo<Record<string, Holiday>>(() => {
     const map: Record<string, Holiday> = {};
-    holidaysForMonth.forEach(h => {
+    holidaysForCycle.forEach(h => {
       map[h.date] = h;
     });
     return map;
-  }, [holidaysForMonth]);
+  }, [holidaysForCycle]);
 
-  // Compute day-by-day attendance for each employee across the entire month
+  // Compute day-by-day attendance for each employee across the entire month or cycle
   const matrixData = useMemo<MatrixEmployeeRow[]>(() => {
     return scopedEmployees.map(emp => {
       const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name || 'Employee';
@@ -464,7 +585,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       let totalOtMinutes = 0;
       let totalWorkedMinutes = 0;
 
-      const dayMap: Record<number, DayAttendanceSummary> = {};
+      const dayMap: Record<string | number, DayAttendanceSummary> = {};
 
       daysArray.forEach(d => {
         const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, d.dateStr, undefined, emp);
@@ -494,7 +615,6 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
         const hasCheckIn = Boolean(record?.first_check_in);
         const hasCheckOut = Boolean(record?.last_check_out);
         const hasWork = (record?.net_working_minutes || 0) > 0 || (record?.total_work_minutes || 0) > 0 || hasCheckIn;
-        const todayStr = getLocalDateString();
         const isPastDate = d.dateStr < todayStr;
         const hol = holidayMap[d.dateStr];
         const isHol = Boolean(hol && (hol.type === 'Mandatory' || !hol.is_optional));
@@ -602,7 +722,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
           }
         }
 
-        dayMap[d.dayNum] = {
+        const dayEntry: DayAttendanceSummary = {
           statusCode,
           statusLabel,
           first_check_in: record?.first_check_in,
@@ -624,6 +744,9 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
           holiday_category: hol?.category || (record as any)?.holiday_category,
           holiday_type: hol?.type || (record as any)?.holiday_type,
         };
+
+        dayMap[d.dateStr] = dayEntry;
+        dayMap[d.dayNum] = dayEntry;
       });
 
       // Count roster-derived weekly offs (supports 5-day, 6-day, and rotational shift rosters)
@@ -631,9 +754,11 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       let scheduledWorkDaysElapsed = 0;
 
       daysArray.forEach(d => {
-        const isOff = dayMap[d.dayNum]?.isWeeklyOff;
-        const sCode = dayMap[d.dayNum]?.statusCode;
-        if (d.dayNum <= currentDayLimit) {
+        const entry = dayMap[d.dateStr] || dayMap[d.dayNum];
+        const isOff = entry?.isWeeklyOff;
+        const sCode = entry?.statusCode;
+        const isElapsed = isCurrentCycle ? (d.dateStr <= todayStr) : (endDateStr < todayStr);
+        if (isElapsed) {
           if (isOff && sCode === 'WO') {
             weeklyOffsElapsed++;
           } else if (!isOff) {
@@ -645,7 +770,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       // Month-to-date Paid Days = Present + (HalfDay * 0.5) + Approved Leaves + Statutory Paid Holidays + Weekly Offs (Elapsed)
       const mtdPaidDays = Math.max(0, totalPresent + (totalHalfDay * 0.5) + totalLeave + totalHoliday + weeklyOffsElapsed);
       // Full Month Projected Paid Days (Standard monthly salary base if active and 0 LOP)
-      const fullMonthPaidDays = Math.min(daysInMonth, Math.max(0, daysInMonth - totalAbsent - (totalHalfDay * 0.5)));
+      const fullMonthPaidDays = Math.min(totalDaysInCycle, Math.max(0, totalDaysInCycle - totalAbsent - (totalHalfDay * 0.5)));
 
       return {
         emp,
@@ -675,7 +800,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
         },
       };
     });
-  }, [scopedEmployees, dailyRecords, daysArray, currentYear, currentMonthIndex, daysInMonth, currentDayLimit, holidayMap]);
+  }, [scopedEmployees, dailyRecords, daysArray, currentYear, currentMonthIndex, daysInMonth, totalDaysInCycle, currentDayLimit, holidayMap, isCurrentCycle, todayStr, endDateStr]);
 
   // Group matrix rows by department
   const departmentGroups = useMemo<Record<string, MatrixEmployeeRow[]>>(() => {
@@ -872,21 +997,57 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       {/* 1. FLAT PAGE HEADER WITH CONTROLS */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-gray-200">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-xl font-bold text-gray-900 tracking-tight">Attendance History</h2>
             <span className="text-gray-300">·</span>
-            <span className="text-xs font-semibold text-gray-700">{monthName} {currentYear}</span>
+            <span className="text-xs font-bold text-gray-800 bg-gray-100 px-2.5 py-1 rounded-md border border-gray-200 shadow-2xs font-mono">
+              {periodLabel}
+            </span>
+            <span className={cn(
+              "text-[10px] font-extrabold px-2 py-0.5 rounded-full border shadow-2xs flex items-center gap-1",
+              cycleType === 'CYCLE_21_TO_20'
+                ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                : "bg-blue-50 text-blue-800 border-blue-200"
+            )}>
+              <span className={cn("w-1.5 h-1.5 rounded-full", cycleType === 'CYCLE_21_TO_20' ? "bg-emerald-600" : "bg-blue-600")} />
+              {cycleType === 'CYCLE_21_TO_20' ? (isElectraTenant ? 'Electra EV Cycle (21st – 20th)' : 'Cycle (21st – 20th)') : 'Calendar Month (1st – 31st)'}
+            </span>
             <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full border", isPayrollLocked ? "bg-amber-50 text-amber-800 border-amber-200" : "bg-emerald-50 text-emerald-800 border-emerald-200")}>
               {isPayrollLocked ? 'Payroll Locked' : 'Payroll Open'}
             </span>
           </div>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Monthly employee attendance ledger for review, reconciliation and payroll preparation.
+          <p className="text-xs text-gray-500 mt-1">
+            {isElectraTenant
+              ? 'Electra EV official working month ledger (21st of previous month to 20th of current month) for biometric reconciliation & payroll.'
+              : 'Multi-tenant employee attendance ledger for review, reconciliation and payroll preparation.'}
           </p>
         </div>
 
         {/* Action controls */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0 shrink-0">
+          {/* Tenant-Configurable Cycle Switcher Toggle */}
+          <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 text-xs font-semibold shrink-0" title="Switch between working month cycle and standard calendar month">
+            <button
+              onClick={() => setCycleType('CYCLE_21_TO_20')}
+              className={cn(
+                "px-2.5 py-1 rounded-md transition-colors whitespace-nowrap flex items-center gap-1",
+                cycleType === 'CYCLE_21_TO_20' ? "bg-white text-emerald-900 shadow-2xs font-bold border border-emerald-200" : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+              <span>Cycle (21st – 20th)</span>
+            </button>
+            <button
+              onClick={() => setCycleType('CALENDAR_MONTH')}
+              className={cn(
+                "px-2.5 py-1 rounded-md transition-colors whitespace-nowrap",
+                cycleType === 'CALENDAR_MONTH' ? "bg-white text-gray-900 shadow-2xs font-bold" : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <span>Calendar (1st – {daysInMonth})</span>
+            </button>
+          </div>
+
           {/* Segmented View Mode Toggle */}
           <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 text-xs font-semibold shrink-0">
             <button
@@ -964,13 +1125,13 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
             <button
               onClick={handlePrevMonth}
               className="px-2 h-full hover:bg-gray-50 border-r border-gray-200 flex items-center text-gray-600 hover:text-gray-900"
-              title="Previous Month"
+              title="Previous Month / Cycle"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
             <div className="relative px-3 flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 h-full group" title="Click to select month and year">
               <Calendar className="w-3.5 h-3.5 text-gray-500 group-hover:text-[#07563D] transition-colors" />
-              <span className="select-none font-bold text-gray-900">{monthName} {currentYear}</span>
+              <span className="select-none font-bold text-gray-900">{periodLabel}</span>
               <input
                 type="month"
                 value={`${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}`}
@@ -988,7 +1149,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
             <button
               onClick={handleNextMonth}
               className="px-2 h-full hover:bg-gray-50 border-l border-gray-200 flex items-center text-gray-600 hover:text-gray-900"
-              title="Next Month"
+              title="Next Month / Cycle"
             >
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
@@ -998,15 +1159,58 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
             onClick={handleJumpToday}
             className={cn(
               "h-9 px-3 text-xs font-semibold border rounded-lg transition-colors flex items-center gap-1.5",
-              isCurrentMonth
+              isCurrentCycle
                 ? "bg-emerald-50 border-emerald-300 text-[#07563D] font-bold"
                 : "bg-white border-gray-200 hover:bg-gray-50 text-gray-700"
             )}
-            title="Jump to current date & month"
+            title="Jump to current active cycle"
           >
-            {isCurrentMonth && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-            Today
+            {isCurrentCycle && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+            Active Cycle
           </button>
+
+          {/* Quick cycle jump shortcuts for rapid payroll review */}
+          {cycleType === 'CYCLE_21_TO_20' && (
+            <div className="hidden sm:flex items-center gap-1 text-xs">
+              <button
+                onClick={() => {
+                  setCurrentYear(2026);
+                  setCurrentMonthIndex(10); // Nov: 21 Nov – 20 Dec
+                }}
+                className={cn(
+                  "h-9 px-2.5 rounded-lg border text-xs font-semibold transition-colors flex items-center gap-1",
+                  currentYear === 2026 && currentMonthIndex === 10
+                    ? "bg-emerald-100/70 border-emerald-300 text-emerald-950 font-bold shadow-2xs"
+                    : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                )}
+                title="View Active Electra Cycle: 21 Nov 2026 – 20 Dec 2026"
+              >
+                <span>21 Nov – 20 Dec</span>
+                {currentYear === 2026 && currentMonthIndex === 10 && (
+                  <span className="text-[9px] px-1 py-0.2 bg-emerald-700 text-white rounded font-bold">ACTIVE</span>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setCurrentYear(2026);
+                  setCurrentMonthIndex(9); // Oct: 21 Oct – 20 Nov
+                }}
+                className={cn(
+                  "h-9 px-2.5 rounded-lg border text-xs font-semibold transition-colors flex items-center gap-1",
+                  currentYear === 2026 && currentMonthIndex === 9
+                    ? "bg-emerald-100/70 border-emerald-300 text-emerald-950 font-bold shadow-2xs"
+                    : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                )}
+                title="View Prior Electra Cycle: 21 Oct 2026 – 20 Nov 2026"
+              >
+                <span>21 Oct – 20 Nov</span>
+                {currentYear === 2026 && currentMonthIndex === 9 && (
+                  <span className="text-[9px] px-1 py-0.2 bg-gray-600 text-white rounded font-bold">PAST</span>
+                )}
+              </button>
+            </div>
+          )}
 
           {/* Workforce Segment Quick Filter Pills */}
           <div className="flex items-center gap-1 p-0.5 bg-gray-100 rounded-lg text-xs font-semibold text-gray-700 border border-gray-200">
@@ -1321,19 +1525,22 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                     Employee
                   </th>
 
-                  {/* Day Columns 1..31 */}
+                  {/* Day Columns — keyed by dateStr to prevent dayNum collisions across month boundary in 21→20 cycles */}
                   {daysArray.map(d => {
                     const colHol = holidayMap[d.dateStr];
+                    // Show month badge when crossing the month boundary in cycle mode
+                    const showMonthBadge = cycleType === 'CYCLE_21_TO_20' && (d.dayNum === 21 || d.dayNum === 1);
                     return (
                       <th
-                        key={d.dayNum}
-                        title={colHol ? `🎉 Holiday: ${colHol.name} (${colHol.category || 'National Gazetted'}${colHol.type ? ' - ' + colHol.type : ''})` : undefined}
+                        key={d.dateStr}
+                        title={colHol ? `🎉 Holiday: ${colHol.name} (${colHol.category || 'National Gazetted'}${colHol.type ? ' - ' + colHol.type : ''})` : `${d.dateStr} (${d.weekdayShort})`}
                         className={cn(
                           "p-1 text-center font-mono border-r border-gray-200/60 min-w-[34px] transition-colors",
                           colHol && "bg-purple-50/90 border-t-2 border-t-purple-600 shadow-2xs",
                           d.isSunday && !colHol && "bg-gray-100/50 text-gray-600",
                           d.isSaturday && !colHol && "bg-gray-50 text-gray-500",
-                          d.isToday && !colHol && "bg-emerald-50 text-emerald-950 font-black border-t-2 border-t-[#07563D] shadow-2xs"
+                          d.isToday && !colHol && "bg-emerald-50 text-emerald-950 font-black border-t-2 border-t-[#07563D] shadow-2xs",
+                          showMonthBadge && !colHol && !d.isToday && "border-l-2 border-l-indigo-400"
                         )}
                       >
                         <div className="flex flex-col items-center justify-center">
@@ -1344,6 +1551,10 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                           ) : d.isToday ? (
                             <span className="text-[7px] font-black uppercase tracking-tighter text-[#07563D] leading-none mb-0.5 bg-emerald-100/90 px-1 py-0.5 rounded">
                               TODAY
+                            </span>
+                          ) : showMonthBadge ? (
+                            <span className="text-[7px] font-extrabold uppercase tracking-tighter text-indigo-700 leading-none mb-0.5 bg-indigo-50 px-1 py-0.5 rounded">
+                              {d.monthShort.toUpperCase()}
                             </span>
                           ) : null}
                           <div className={cn("text-[11px] font-bold leading-tight", colHol ? "text-purple-950 font-black" : d.isToday ? "text-[#07563D] font-black scale-105" : "text-gray-800")}>
@@ -1440,16 +1651,16 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                                   </div>
                                 </td>
 
-                              {/* Matrix Days 1..31 */}
+                              {/* Matrix Days — keyed by dateStr to prevent 1–20 collision between months in 21→20 cycle */}
                               {daysArray.map(d => {
-                                const daySummary = row.dayMap[d.dayNum];
+                                const daySummary = row.dayMap[d.dateStr] || row.dayMap[d.dayNum];
                                 const matchingDaily = dailyRecords.find(r =>
                                   (r.employee_id === row.emp.id || (r.employee_code && row.emp.employee_code && r.employee_code.toLowerCase() === row.emp.employee_code.toLowerCase())) &&
                                   r.date === d.dateStr
                                 );
                                 return (
                                   <td
-                                    key={d.dayNum}
+                                    key={d.dateStr}
                                     onClick={() => {
                                       if (isPayrollLocked) {
                                         showToast(`Attendance for ${monthName} ${currentYear} is finalized and locked for payroll. Click "Unlock Month" in the top bar to make adjustments.`, 'warning');
@@ -1543,10 +1754,10 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {matrixData.flatMap(row =>
-                  daysArray.slice(0, Math.min(daysInMonth, Math.max(15, currentDayLimit))).map(d => {
-                    const daySummary = row.dayMap[d.dayNum];
+                  daysArray.slice(0, Math.max(15, currentDayLimit)).map(d => {
+                    const daySummary = row.dayMap[d.dateStr] || row.dayMap[d.dayNum];
                     return (
-                      <tr key={`${row.emp.id}-${d.dayNum}`} className="hover:bg-gray-50 text-xs">
+                      <tr key={`${row.emp.id}-${d.dateStr}`} className="hover:bg-gray-50 text-xs">
                         <td className="p-2.5">
                           <div className="font-bold text-gray-900">{row.empName}</div>
                           <div className="text-[10px] text-gray-400 font-mono">{row.empCode}</div>

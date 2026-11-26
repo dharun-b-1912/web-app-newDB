@@ -506,8 +506,13 @@ export const attendanceApi = {
     return this.getDailyAttendance(date, department, status, search);
   },
 
-  async getDailyAttendanceForPeriodAsync(startDate: string, endDate: string, employeeId?: string): Promise<AttendanceDaily[]> {
-    const tenantId = getActiveOrgId();
+  async getDailyAttendanceForPeriodAsync(
+    startDate: string,
+    endDate: string,
+    employeeId?: string,
+    organizationId?: string
+  ): Promise<AttendanceDaily[]> {
+    const tenantId = organizationId || getActiveOrgId();
 
     if (isSupabaseEnabled) {
       try {
@@ -563,7 +568,7 @@ export const attendanceApi = {
           .gte('punch_time', startRange.toISOString())
           .lte('punch_time', endRange.toISOString())
           .order('punch_time', { ascending: true })
-          .limit(500)
+          .limit(5000)
           .abortSignal(ctrl.signal);
 
         if (employeeId) {

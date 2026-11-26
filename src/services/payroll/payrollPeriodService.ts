@@ -78,7 +78,11 @@ export interface PayrollWeekRange {
   daysCount: number;
 }
 
-export function generateDynamicRollingPeriods(referenceYear: number = 2026): PayrollPeriod[] {
+export function generateDynamicRollingPeriods(
+  referenceYear: number = 2026,
+  cycleStartDay: number = 1,
+  tenantId: string = ''
+): PayrollPeriod[] {
   const months = [
     { name: 'January', num: 1, days: 31 },
     { name: 'February', num: 2, days: (referenceYear % 4 === 0 && (referenceYear % 100 !== 0 || referenceYear % 400 === 0)) ? 29 : 28 },
@@ -100,9 +104,25 @@ export function generateDynamicRollingPeriods(referenceYear: number = 2026): Pay
 
   return months.map((m) => {
     const mm = String(m.num).padStart(2, '0');
-    const start_date = `${referenceYear}-${mm}-01`;
-    const end_date = `${referenceYear}-${mm}-${String(m.days).padStart(2, '0')}`;
-    const period_name = `${m.name} ${referenceYear}`;
+    let start_date: string;
+    let end_date: string;
+    let period_name: string;
+
+    if (cycleStartDay === 21) {
+      // 21st to 20th cycle: Month M covers 21st of prev month to 20th of month M
+      const prevYear = m.num === 1 ? referenceYear - 1 : referenceYear;
+      const prevMonthNum = m.num === 1 ? 12 : m.num - 1;
+      const prevMm = String(prevMonthNum).padStart(2, '0');
+      start_date = `${prevYear}-${prevMm}-21`;
+      end_date = `${referenceYear}-${mm}-20`;
+      const prevMonthName = months[prevMonthNum - 1].name.slice(0, 3);
+      const currMonthName = m.name.slice(0, 3);
+      period_name = `${m.name} Cycle (21 ${prevMonthName} – 20 ${currMonthName})`;
+    } else {
+      start_date = `${referenceYear}-${mm}-01`;
+      end_date = `${referenceYear}-${mm}-${String(m.days).padStart(2, '0')}`;
+      period_name = `${m.name} ${referenceYear}`;
+    }
 
     let status: PayrollPeriod['status'] = 'OPEN';
     if (referenceYear < currentYear || (referenceYear === currentYear && m.num < currentMonthNum)) {
@@ -114,9 +134,9 @@ export function generateDynamicRollingPeriods(referenceYear: number = 2026): Pay
     }
 
     return {
-      id: `period-${referenceYear}-${mm}`,
-      tenant_id: '0c621892-e938-4707-9957-13534ea32c19',
-      organization_id: '0c621892-e938-4707-9957-13534ea32c19',
+      id: `period-${referenceYear}-${mm}${cycleStartDay === 21 ? '-c21' : ''}`,
+      tenant_id: tenantId,
+      organization_id: tenantId,
       period_name,
       start_date,
       end_date,
@@ -168,13 +188,31 @@ class PayrollPeriodService {
   /**
    * Get all registered payroll periods for the tenant dynamically merged with DB
    */
-  async getPayrollPeriods(tenantId: string = 'org-joy-01'): Promise<PayrollPeriod[]> {
+  async getPayrollPeriods(tenantId?: string): Promise<PayrollPeriod[]> {
+    let resolvedOrg = tenantId;
+    if (!resolvedOrg) {
+      try {
+        const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('workforce_active_company') : null;
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          resolvedOrg = parsed?.organization_id || parsed?.id;
+        }
+      } catch {}
+    }
+    const orgId = resolvedOrg || 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
+    const isElectra = orgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
+    const cycleStartDay = isElectra ? 21 : 1;
+
     let dbPeriods: PayrollPeriod[] = [];
     try {
-      const { data, error } = await supabase
+      let q = supabase
         .from('payroll_periods')
         .select('*')
         .order('start_date', { ascending: false });
+      if (orgId && orgId !== 'platform-root') {
+        q = q.eq('organization_id', orgId);
+      }
+      const { data, error } = await q;
 
       if (!error && data !== null && data.length > 0) {
         dbPeriods = data as PayrollPeriod[];
@@ -186,7 +224,7 @@ class PayrollPeriodService {
     // Generate dynamic 12-month rolling periods for active year
     const today = new Date();
     const activeYear = today.getFullYear() >= 2026 ? today.getFullYear() : 2026;
-    const dynamicPeriods = generateDynamicRollingPeriods(activeYear);
+    const dynamicPeriods = generateDynamicRollingPeriods(activeYear, cycleStartDay, orgId);
 
     // Merge: ensure all months exist while preserving Supabase DB state (like August 2026 calculations)
     const periodMap = new Map<string, PayrollPeriod>();
