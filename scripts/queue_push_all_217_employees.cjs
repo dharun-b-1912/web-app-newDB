@@ -84,11 +84,9 @@ async function queueEmployeesToMB160() {
   const delJson = await delRes.json();
   console.log(`Redis DEL ${lockKey}:`, delJson);
 
-  // 3. Update device registered_users_count in Supabase
+  // 3. Update device updated_at in Supabase
   const { data: devUpd, error: devUpdErr } = await sb.from('biometric_devices')
     .update({
-      registered_users_count: emps.length,
-      last_sync_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     })
     .eq('serial_number', SN)
