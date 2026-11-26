@@ -2738,7 +2738,7 @@ class BiometricGatewayService {
         const rawFp = raw.fingerprintCount !== undefined ? raw.fingerprintCount : raw.fingerprints_count !== undefined ? raw.fingerprints_count : null;
         const fpCount = rawFp !== null && rawFp !== undefined ? (Number(rawFp) > 10 ? 1 : Math.max(1, Number(rawFp))) : (existing?.fingerprint_count || 1);
         const faceCount = raw.faceCount !== undefined ? raw.faceCount : 1;
-        const faceEnrolled = raw.faceEnrolled !== undefined ? !!raw.faceEnrolled : raw.has_face_enrolled !== undefined ? !!raw.has_face_enrolled : true;
+        const faceEnrolled = raw.faceEnrolled !== undefined ? !!raw.faceEnrolled : raw.has_face_enrolled !== undefined ? !!raw.has_face_enrolled : false;
 
         if (!existing) {
           createdCount++;
@@ -3403,8 +3403,8 @@ class BiometricGatewayService {
         timezone: 'Asia/Kolkata',
         user_group: isElectra ? 'Electra EV Plant' : (isMB160 ? 'Plant Operations' : 'Default Group'),
         enabled: true,
-        fingerprint_count: 1,
-        face_count: 0,
+        fingerprint_count: 0,
+        face_count: null,
         face_enrolled: false,
         palm_enrolled: null,
         iris_enrolled: null,
@@ -3446,9 +3446,9 @@ class BiometricGatewayService {
 
     let list = (candidateList || store[deviceId] || []).filter(u => u.sync_status !== 'NOT_PRESENT_ON_DEVICE' && u.sync_status !== 'ARCHIVED');
     list.forEach(u => {
-      const rawFp = Number(u.fingerprint_count ?? (u as any).fingerprints_count ?? 1);
-      u.fingerprint_count = rawFp > 10 ? 1 : Math.max(1, rawFp);
-      u.face_enrolled = u.face_enrolled !== undefined ? !!u.face_enrolled : true;
+      const rawFp = Number(u.fingerprint_count ?? (u as any).fingerprints_count ?? 0);
+      u.fingerprint_count = rawFp > 0 ? (rawFp > 10 ? 1 : rawFp) : 0;
+      u.face_enrolled = Boolean(u.face_enrolled || (u as any).has_face_enrolled);
     });
 
     if (list.length === 0) {
@@ -3479,8 +3479,8 @@ class BiometricGatewayService {
       }
     }
 
-    // Index punches to discover verified live biometric hardware modalities (Face, Fingerprint, Card) - limited to 50 for O(1) UI performance
-    const punches = this.getRawPunches(50);
+    // Index punches to discover verified live biometric hardware modalities (Face, Fingerprint, Card)
+    const punches = this.getRawPunches(2000, targetOrg);
     const punchModalityMap = new Map<string, Set<string>>();
     for (const p of punches) {
       const pin = (p as any).device_user_id || p.biometric_pin || '';
@@ -3509,18 +3509,18 @@ class BiometricGatewayService {
       const mapping = mappingMap.get(u.device_user_id) || (pinNum ? mappingMap.get(pinNum) : undefined);
       const modalities = punchModalityMap.get(u.device_user_id) || (pinNum ? punchModalityMap.get(pinNum) : undefined);
 
-      let faceEnrolled = !!u.face_enrolled || !!(u as any).has_face_enrolled || (u.face_count !== null && u.face_count !== undefined && u.face_count > 0);
+      let faceEnrolled = Boolean(u.face_enrolled || (u as any).has_face_enrolled || (u.face_count !== null && u.face_count !== undefined && u.face_count > 0));
       let fpCount = Number(u.fingerprint_count || (u as any).fingerprints_count || 0);
       let cardNum = u.card_number;
 
       if (modalities?.has('FACE')) faceEnrolled = true;
-      if (modalities?.has('FINGERPRINT')) fpCount = Math.max(fpCount || 1, 1);
+      if (modalities?.has('FINGERPRINT')) fpCount = Math.max(fpCount, 1);
       if (modalities?.has('CARD') && !cardNum) cardNum = 'Verified via Scanner';
 
       const userEnrollments = enrollmentMap.get(u.device_user_id) || (pinNum ? enrollmentMap.get(pinNum) : undefined) || [];
       for (const enr of userEnrollments) {
         if (enr.biometric_type === 'FACE') faceEnrolled = true;
-        if (enr.biometric_type === 'FINGERPRINT') fpCount = Math.max(fpCount || 1, 1);
+        if (enr.biometric_type === 'FINGERPRINT') fpCount = Math.max(fpCount, 1);
         if (enr.biometric_type === 'CARD') {
           cardNum = (enr as any).card_number || cardNum;
         }
@@ -3532,11 +3532,11 @@ class BiometricGatewayService {
 
       return {
         ...u,
-        face_enrolled: faceEnrolled !== false,
-        face_count: faceEnrolled ? (u.face_count || 1) : 1,
-        fingerprint_count: fpCount > 0 ? (fpCount > 10 ? 1 : fpCount) : 1,
+        face_enrolled: faceEnrolled,
+        face_count: faceEnrolled ? (u.face_count || 1) : 0,
+        fingerprint_count: fpCount,
         card_number: cardNum,
-        is_mapped: mapping ? true : u.is_mapped,
+        is_mapped: !!mapping || u.is_mapped,
         mapped_employee_id: mapping?.employee_id || u.mapped_employee_id,
         mapped_employee_name: mapping?.employee_name || u.mapped_employee_name,
         mapped_employee_code: mapping?.employee_code || u.mapped_employee_code,

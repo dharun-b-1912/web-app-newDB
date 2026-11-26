@@ -172,7 +172,7 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
       }
 
       // 2. Always load punches matching device identifiers and scoped strictly to this organization
-      const rawAllPunches = biometricGatewayService.getRawPunches(500, targetOrg) || [];
+      const rawAllPunches = biometricGatewayService.getRawPunches(2000, targetOrg) || [];
       const devPunches = rawAllPunches.filter(p => {
         if ((p as any).organization_id && (p as any).organization_id !== targetOrg) return false;
         return (
@@ -524,6 +524,24 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
     return filteredUsers.slice(start, start + usersPerPage);
   }, [filteredUsers, usersPage, usersPerPage]);
 
+  const resolvedOrgName = useMemo(() => {
+    const orgId = liveDevice.organization_id || device.organization_id;
+    if (!orgId) return 'Electra EV';
+    if (orgId === 'c5ab6b03-adde-47cc-a033-064f4c39b21e') return 'Electra EV';
+    if (orgId === '0c621892-e938-4707-9957-13534ea32c19') return 'Joy Corporate Solutions';
+    const currentOrg = api.getOrganizationSync?.();
+    if (currentOrg && currentOrg.id === orgId && currentOrg.name) return currentOrg.name;
+    return 'Electra EV';
+  }, [liveDevice.organization_id, device.organization_id]);
+
+  const todayPunchesCount = useMemo(() => {
+    const todayDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    return punches.filter(p => {
+      const pDate = p.punch_time ? new Date(p.punch_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) : '';
+      return pDate === todayDateStr;
+    }).length;
+  }, [punches]);
+
   const { unmappedCount, mappedCount, realFaceCount, realFpCount } = useMemo(() => {
     let unmapped = 0;
     let mapped = 0;
@@ -533,10 +551,10 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
       const u = users[i];
       if (u.is_mapped) mapped++;
       else unmapped++;
-      if (u.face_enrolled || (u as any).has_face_enrolled || (u.face_count && u.face_count > 0) || (u as any).credentials?.face?.status === 'ENROLLED') {
+      if (u.face_enrolled || (u as any).has_face_enrolled || (u.face_count && u.face_count > 0)) {
         face++;
       }
-      fp += Number(u.fingerprint_count || (u as any).fingerprints_count || (u as any).credentials?.fingerprint?.count || 0);
+      fp += Number(u.fingerprint_count || (u as any).fingerprints_count || 0);
     }
     return { unmappedCount: unmapped, mappedCount: mapped, realFaceCount: face, realFpCount: fp };
   }, [users]);
@@ -869,7 +887,7 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
                     {liveDevice.last_punch_at ? attendanceTimeService.formatAttendanceTime(liveDevice.last_punch_at, (liveDevice as any).timezone || 'Asia/Kolkata', true) : (punches.length > 0 ? attendanceTimeService.formatAttendanceTime(punches[0].punch_time, (liveDevice as any).timezone || 'Asia/Kolkata', true) : '09:12:34 AM')}
                   </p>
                   <p className="text-[11px] text-blue-700 font-semibold mt-0.5">
-                    {punches.length} punch(es) today
+                    {todayPunchesCount} punch(es) today
                   </p>
                 </div>
                 <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center">
@@ -917,7 +935,7 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
 
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-mono px-3 py-1 rounded-xl bg-white/10 border border-white/10 text-emerald-300 font-bold">
-                  Channel: {liveDevice.port === 80 || liveDevice.port === 443 || liveDevice.gateway_agent_id?.includes('adms') ? 'ADMS Cloud Push (HTTP/HTTPS)' : `LAN TCP Socket (Port ${liveDevice.port || 4370})`}
+                  Channel: {liveDevice.serial_number || liveDevice.port === 80 || liveDevice.port === 443 || liveDevice.device_name?.includes('4G') || liveDevice.gateway_agent_id?.includes('adms') ? 'ADMS Cloud Push (HTTP/HTTPS)' : `LAN TCP Socket (Port ${liveDevice.port || 4370})`}
                 </span>
                 <span className="text-xs font-mono px-3 py-1 rounded-xl bg-white/10 border border-white/10 text-emerald-300 font-bold">
                   Algorithm: Face VX3.5 • Finger VX10.0
@@ -1029,15 +1047,15 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
                 </div>
                 <div>
                   <span className="text-gray-400 block">Firmware / Platform</span>
-                  <span className="font-mono font-bold text-emerald-800">ZMM510_TFT (v8.4.3)</span>
+                  <span className="font-mono font-bold text-emerald-800">{liveDevice.firmware_version || 'ZMM510_TFT (v8.4.3)'}</span>
                 </div>
                 <div>
                   <span className="text-gray-400 block">IP Endpoint</span>
-                  <span className="font-mono font-bold text-gray-800">{liveDevice.ip_address}:{liveDevice.port}</span>
+                  <span className="font-mono font-bold text-gray-800">{liveDevice.ip_address}:{liveDevice.port || 4370}</span>
                 </div>
                 <div>
                   <span className="text-gray-400 block">Protocol</span>
-                  <span className="font-bold text-gray-800">{(liveDevice as any).protocol || 'ZKTeco Native TCP (CMD 60/61)'}</span>
+                  <span className="font-bold text-gray-800">{liveDevice.serial_number || liveDevice.device_name?.includes('4G') ? 'ADMS Cloud Push (HTTP/HTTPS)' : ((liveDevice as any).protocol || 'ZKTeco Native TCP (CMD 60/61)')}</span>
                 </div>
               </div>
             </Card>
@@ -1050,7 +1068,7 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
               <div className="grid grid-cols-2 gap-4 text-xs">
                 <div>
                   <span className="text-gray-400 block">Organization</span>
-                  <span className="font-bold text-gray-800">{liveDevice.organization_id}</span>
+                  <span className="font-bold text-gray-800">{resolvedOrgName}</span>
                 </div>
                 <div>
                   <span className="text-gray-400 block">Branch / Campus</span>
@@ -1320,9 +1338,9 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
                     const rawCard = u.card_number && u.card_number !== 'null' && u.card_number !== 'undefined' ? u.card_number : (u as any).credentials?.card?.uid;
                     const activeCard = rawCard ? String(rawCard).trim() : null;
 
-                    const rawFp = Number(u.fingerprint_count ?? (u as any).fingerprints_count ?? (u as any).credentials?.fingerprint?.count ?? (u as any).fingerprintCount ?? 1);
-                    const fpCount = (rawFp > 10) ? 1 : Math.max(1, rawFp);
-                    const hasFace = Boolean(u.face_enrolled || (u as any).has_face_enrolled || (u as any).credentials?.face?.status === 'ENROLLED' || (u.face_count && u.face_count > 0) || (u as any).faceCount > 0);
+                    const rawFp = Number(u.fingerprint_count ?? (u as any).fingerprints_count ?? (u as any).credentials?.fingerprint?.count ?? (u as any).fingerprintCount ?? 0);
+                    const fpCount = Math.max(0, rawFp);
+                    const hasFace = Boolean(u.face_enrolled || (u as any).has_face_enrolled || (u.face_count && u.face_count > 0) || (u as any).faceCount > 0);
                     const isFaceUnknown = !hasFace && (u as any).credentials?.face?.status === 'UNKNOWN';
 
                     const isAwaiting = !hasFace && fpCount === 0 && !activeCard;
