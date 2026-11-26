@@ -643,21 +643,24 @@ serve(async (req: Request) => {
 
     let parsedCount = 0;
 
-    // Process Attendance Punches
+    // Process Attendance Punches asynchronously via EdgeRuntime.waitUntil
+    // Returning OK\n immediately (<20ms) guarantees the terminal gets instant 200 OK
+    // so live employee check-in / check-out is NEVER interrupted or delayed by DB queries!
     if (table === 'ATTLOG' && bodyText.trim()) {
-      const lines = bodyText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      const currentIstToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      runBackground((async () => {
+        const lines = bodyText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const currentIstToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-      // Load all employees across the authorized tenants sharing this hardware terminal
-      const { data: emps } = await supabase
-        .from('employees')
-        .select('id, employee_code, first_name, last_name, display_name, phone, organization_id, reporting_manager_id, department_id, sms_enabled, communication_preference')
-        .in('organization_id', authorizedOrgIds);
+        // Load all employees across the authorized tenants sharing this hardware terminal
+        const { data: emps } = await supabase
+          .from('employees')
+          .select('id, employee_code, first_name, last_name, display_name, phone, organization_id, reporting_manager_id, department_id, sms_enabled, communication_preference')
+          .in('organization_id', authorizedOrgIds);
 
-      const candidateEmployees = emps || [];
-      const historicalPunches: any[] = [];
+        const candidateEmployees = emps || [];
+        const historicalPunches: any[] = [];
 
-      for (const line of lines) {
+        for (const line of lines) {
         const parts = line.split('\t');
         if (parts.length < 2) continue;
 
@@ -1191,6 +1194,7 @@ serve(async (req: Request) => {
           console.warn('[ADMS-EDGE] Historical backlog insert notice:', hErr?.message || hErr);
         }
       }
+      })());
     }
 
     // In ZKTeco Push SDK protocol:
