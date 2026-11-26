@@ -390,13 +390,29 @@ connectorRouter.post(['/push-user', '/push-employees', '/api/push-employees', '/
     const upstashUrl = process.env.UPSTASH_REDIS_REST_URL;
     const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-    // Find active biometric devices for this tenant
-    const { data: devices } = await supabaseAdminClient
+    // Find active biometric devices for this tenant (Strict Multi-Tenant Isolation)
+    let queryDev = supabaseAdminClient
       .from('biometric_devices')
       .select('id, serial_number, device_name')
       .eq('organization_id', orgId);
 
-    const targetDevices = devices && devices.length > 0 ? devices : [{ serial_number: 'JNP2263200782' }];
+    const targetDevId = req.body?.deviceId || req.body?.device_id || req.query?.deviceId;
+    const targetSn = req.body?.serial_number || req.body?.sn || req.query?.sn;
+    if (targetDevId) {
+      queryDev = queryDev.eq('id', targetDevId);
+    } else if (targetSn) {
+      queryDev = queryDev.eq('serial_number', targetSn);
+    }
+
+    const { data: devices } = await queryDev;
+    const targetDevices = devices && devices.length > 0 ? devices : [];
+    if (targetDevices.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No active biometric hardware terminals registered for this tenant organization.',
+        count: 0
+      });
+    }
 
     let usersToPush = [];
     if (req.body?.users && Array.isArray(req.body.users) && req.body.users.length > 0) {
@@ -443,13 +459,11 @@ connectorRouter.post(['/push-user', '/push-employees', '/api/push-employees', '/
       return res.status(200).json({ success: true, message: 'No users to push.', count: 0 });
     }
 
-    // Protect embedded terminal from buffer overflow:
-    // If more than 12 users are requested in a single shot without chunking, prioritize the first 12
-    const batchUsers = usersToPush.slice(0, 12);
-
-    // Format ADMS commands (strictly <= 1000 bytes per packet)
+    // Format ADMS commands for all requested users
+    // adms-gateway automatically chunks these into micro-batches of 12 per poll (<1000 bytes)
+    // protecting embedded microcontroller memory from buffer overflow
     const admsCommands = [
-      ...batchUsers.map((u, i) =>
+      ...usersToPush.map((u, i) =>
         `C:${7001 + i}:DATA UPDATE USERINFO PIN=${u.pin}\tName=${u.name}\tPri=${u.privilege}\tPasswd=\tCard=${u.cardNumber}\tGrp=1\tTZ=0`
       ),
       `C:7999:DATA QUERY ATTLOG`
@@ -461,13 +475,31 @@ connectorRouter.post(['/push-user', '/push-employees', '/api/push-employees', '/
         const sn = dev.serial_number;
         if (!sn) continue;
         try {
+          // Read existing queue to preserve any pending commands (e.g. check-in, previous users)
+          let finalCommands = admsCommands;
+          try {
+            const existRes = await fetch(`${upstashUrl}/get/adms_cmd_queue:${sn}`, {
+              headers: { Authorization: `Bearer ${upstashToken}` }
+            });
+            if (existRes.ok) {
+              const existJson = await existRes.json();
+              const existingQueue = (existJson?.result || '').trim();
+              if (existingQueue) {
+                const existingLines = existingQueue.split('\n').filter(l => l.trim().length > 0);
+                const newLines = admsCommands.split('\n').filter(l => l.trim().length > 0);
+                // Combine and deduplicate
+                finalCommands = Array.from(new Set([...existingLines, ...newLines])).join('\n');
+              }
+            }
+          } catch (_) {}
+
           await fetch(`${upstashUrl}/set/adms_cmd_queue:${sn}`, {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${upstashToken}`,
               'Content-Type': 'text/plain'
             },
-            body: admsCommands
+            body: finalCommands
           });
           await fetch(`${upstashUrl}/del/adms_auto_lock:${sn}`, {
             headers: { Authorization: `Bearer ${upstashToken}` }

@@ -427,9 +427,10 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
     ]);
 
     // Create session in state engine
+    const targetOrgId = selectedEmployee.organization_id || device.organization_id || 'c5ab6b03-adde-47cc-a033-064f4c39b21e';
     const session = deviceCommandEngine.createEnrollmentSession({
-      tenant_id: 'org-joy-corporate-solutions-private-',
-      organization_id: selectedEmployee.organization_id || 'org-main',
+      tenant_id: targetOrgId,
+      organization_id: targetOrgId,
       employee_id: selectedEmployee.id,
       employee_name: selectedEmployee.display_name || selectedEmployee.name,
       employee_code: selectedEmployee.employee_code || selectedEmployee.id,

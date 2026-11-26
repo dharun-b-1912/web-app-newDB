@@ -2202,6 +2202,10 @@ class BiometricGatewayService {
           ip: dev.ip_address,
           port: dev.port || 4370,
           users: usersToPush,
+          organizationId: targetOrg,
+          organization_id: targetOrg,
+          deviceId: dev.id,
+          serial_number: dev.serial_number,
         }),
       });
       if (resp && resp.ok) localPushSucceeded = true;
@@ -2315,6 +2319,47 @@ class BiometricGatewayService {
       syncedCount: usersToPush.length,
       message: `Pushed ${usersToPush.length} employee biometric PINs and RFID profiles to ${dev.device_name} (${dev.ip_address}:${dev.port}).`,
     };
+  }
+
+  /**
+   * Automatically provisions a newly created employee profile to active biometric hardware.
+   * Dispatches command to cloud ADMS queue and local network gateway.
+   */
+  async pushSingleEmployeeToDevice(emp: any, deviceId?: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const targetOrg = emp.organization_id || getActiveOrgId();
+      const rawDigits = (emp.employee_code || '').replace(/\D/g, '');
+      const pin = emp.employee_code?.startsWith('TEMP-')
+        ? String(parseInt(emp.employee_code.replace(/\D/g, ''), 10))
+        : (emp.employee_code === 'SUB01' ? '9001' : (rawDigits || String(1001)));
+      const name = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || `Emp ${emp.employee_code}`;
+
+      const payload = {
+        organizationId: targetOrg,
+        organization_id: targetOrg,
+        users: [{
+          pin,
+          name: name.replace(/[\t\r\n]/g, ' ').slice(0, 24).trim(),
+          privilege: '0',
+          cardNumber: emp.card_number || emp.rfid_card || ''
+        }],
+        deviceId,
+      };
+
+      await this.fetchGateway('/push-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      return {
+        success: true,
+        message: `Employee ${name} (PIN #${pin}) queued to biometric device.`
+      };
+    } catch (err: any) {
+      console.warn('[BiometricGatewayService] pushSingleEmployeeToDevice notice:', err?.message || err);
+      return { success: false, message: err?.message || 'Failed to push employee to device' };
+    }
   }
 
   /**

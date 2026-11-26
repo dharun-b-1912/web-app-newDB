@@ -4007,6 +4007,12 @@ export const api = {
       }
     }
 
+    // Auto-provision new employee profile to tenant's active biometric hardware
+    try {
+      const { biometricGatewayService } = await import('./attendance/biometricGatewayService');
+      biometricGatewayService.pushSingleEmployeeToDevice(newEmp).catch(() => {});
+    } catch (_) {}
+
     hrEventBus.publish('employee.created', newEmp);
     return newEmp;
   },

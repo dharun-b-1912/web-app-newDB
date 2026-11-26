@@ -12,3 +12,4 @@ Header set Content-Encoding "identity"
 </IfModule>
 
 RewriteRule ^ index.php [QSA,L]
+
