@@ -1606,7 +1606,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
               </span>
             </h1>
             <p className="text-xs text-gray-500 mt-1 max-w-4xl">
-              Authoritative biometric machine user mapping and 5-day attendance audit (Nov 20 – Nov 24, 2026). Tracks staggered machine enrollment rollout, shift assignments (Shift 1, General, Shift 2, Shift 3), late arrivals, early check-ins, and overtime hours.
+              Authoritative biometric machine user mapping and live attendance audit ledger. Tracks real-time machine enrollment rollout, shift assignments, late arrivals, early check-ins, and overtime hours.
             </p>
           </div>
 
@@ -1749,7 +1749,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
           }`}
         >
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider">Active Today (Nov 24)</p>
+            <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider">Active Today ({new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' })})</p>
             <Activity className="w-4 h-4 text-teal-600" />
           </div>
           <p className="text-2xl font-black text-teal-800 mt-1 font-mono">{kpis.activeToday}</p>
@@ -1838,7 +1838,7 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
               <option value="SHIFT-3">Shift 3 (23:00 - 06:00)</option>
             </select>
 
-            {/* Enrolment Batch Filter */}
+            {/* Enrolment Batch Filter — dynamically generated from records */}
             <select
               value={selectedBatchFilter}
               onChange={(e) => {
@@ -1848,10 +1848,14 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
               className="px-3 py-1.5 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-[#07563D] bg-white font-semibold text-gray-700"
             >
               <option value="ALL">All Enrolment Batches</option>
-              <option value="Batch 1 (20-Nov)">Batch 1: 20-Nov (74 enrolled)</option>
-              <option value="Batch 2 (21-Nov)">Batch 2: 21-Nov (26 enrolled)</option>
-              <option value="Batch 3 (23-Nov)">Batch 3: 23-Nov (46 enrolled)</option>
-              <option value="Pending">Pending Enrolment (71)</option>
+              {Array.from(new Set(records.map(r => r.enrolmentBatch).filter(Boolean))).sort().map(b => {
+                const count = records.filter(r => r.enrolmentBatch === b).length;
+                return (
+                  <option key={b} value={b}>
+                    {b} ({count})
+                  </option>
+                );
+              })}
             </select>
 
             {/* Department */}
@@ -1926,11 +1930,26 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-600 min-w-[150px]">20-Nov (Fri)</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-600 min-w-[150px]">21-Nov (Sat)</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-600 min-w-[110px]">22-Nov (Sun)</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-600 min-w-[170px]">23-Nov (Mon)</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-emerald-800 min-w-[170px] bg-emerald-50/50">24-Nov (Today)</TableHead>
+                  {AUDIT_DATES.map((ad) => {
+                    const isToday = ad.key === todayIst;
+                    return (
+                      <TableHead
+                        key={ad.key}
+                        className={`text-[10px] font-black uppercase min-w-[150px] transition-colors ${
+                          isToday
+                            ? 'text-emerald-900 bg-emerald-100/70 border-b-2 border-b-emerald-600 font-extrabold shadow-2xs'
+                            : 'text-gray-600'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1">
+                          <span>{ad.label}</span>
+                          {isToday && (
+                            <span className="px-1 py-0.2 rounded text-[8px] font-extrabold bg-emerald-600 text-white">TODAY</span>
+                          )}
+                        </div>
+                      </TableHead>
+                    );
+                  })}
                   <TableHead
                     onClick={() => handleSort('ot')}
                     className="text-[10px] font-black uppercase text-amber-800 cursor-pointer hover:text-amber-900 text-right pr-6 w-[120px]"
@@ -1953,11 +1972,6 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
                 ) : (
                   paginatedRecords.map((r, index) => {
                     const sNo = (currentPage - 1) * pageSize + index + 1;
-                    const d20 = r.dailyHistory['2026-11-20'];
-                    const d21 = r.dailyHistory['2026-11-21'];
-                    const d22 = r.dailyHistory['2026-11-22'];
-                    const d23 = r.dailyHistory['2026-11-23'];
-                    const d24 = r.dailyHistory['2026-11-24'];
 
                     const renderDayCell = (d?: DayAttendanceDetail, isTodayCell = false) => {
                       if (!d || !d.firstCheckIn) {
@@ -2042,20 +2056,19 @@ export const BiometricEnrolmentDirectoryView: React.FC<BiometricEnrolmentDirecto
                           )}
                         </TableCell>
 
-                        {/* 20-Nov */}
-                        <TableCell>{renderDayCell(d20)}</TableCell>
-
-                        {/* 21-Nov */}
-                        <TableCell>{renderDayCell(d21)}</TableCell>
-
-                        {/* 22-Nov */}
-                        <TableCell>{renderDayCell(d22)}</TableCell>
-
-                        {/* 23-Nov */}
-                        <TableCell>{renderDayCell(d23)}</TableCell>
-
-                        {/* 24-Nov (Today) */}
-                        <TableCell className="bg-emerald-50/20">{renderDayCell(d24, true)}</TableCell>
+                        {/* Dynamic Day Attendance Columns */}
+                        {AUDIT_DATES.map((ad) => {
+                          const isToday = ad.key === todayIst;
+                          const dayData = r.dailyHistory[ad.key];
+                          return (
+                            <TableCell
+                              key={ad.key}
+                              className={isToday ? 'bg-emerald-50/40 border-x border-emerald-100/80 font-medium' : undefined}
+                            >
+                              {renderDayCell(dayData, isToday)}
+                            </TableCell>
+                          );
+                        })}
 
                         {/* Total OT */}
                         <TableCell className="text-right pr-6 font-mono font-bold">
