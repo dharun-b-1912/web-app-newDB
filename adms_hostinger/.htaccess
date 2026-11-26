@@ -1,0 +1,14 @@
+RewriteEngine On
+RewriteBase /
+
+# Prevent LiteSpeed from compressing responses for biometric micro-controllers
+<IfModule mod_rewrite.c>
+RewriteRule .* - [E=no-gzip:1,E=no-brotli:1]
+</IfModule>
+
+<IfModule mod_headers.c>
+Header set Cache-Control "no-transform, no-cache, no-store"
+Header set Content-Encoding "identity"
+</IfModule>
+
+RewriteRule ^ index.php [QSA,L]
