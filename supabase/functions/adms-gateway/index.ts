@@ -1163,15 +1163,27 @@ serve(async (req: Request) => {
     const queuedCmd = sn ? await redisGet(queueKey) : null;
 
     if (queuedCmd) {
-      await redisDel(queueKey);
+      const allLines = queuedCmd.split('\n').filter((l: string) => l.trim().length > 0);
+      // Chunk max 12 commands per poll so eSSL MB160 embedded buffer never overflows (< 1000 bytes)
+      const batchSize = 12;
+      const currentBatch = allLines.slice(0, batchSize).join('\n');
+      const remaining = allLines.slice(batchSize).join('\n');
+
+      if (remaining.length > 0) {
+        await redisSet(queueKey, remaining, 604800);
+      } else {
+        await redisDel(queueKey);
+      }
+
       if (sn) {
         await redisSet(`adms_last_dispatched:${sn}`, JSON.stringify({
           timestamp: new Date().toISOString(),
-          commands: queuedCmd
+          commands: currentBatch,
+          remaining_count: Math.max(0, allLines.length - batchSize)
         }), 86400);
       }
-      console.log(`[ADMS-EDGE] 🚀 Dispatching queued command to terminal ${sn}:\n${queuedCmd}`);
-      return new Response(`${queuedCmd}\n`, {
+      console.log(`[ADMS-EDGE] 🚀 Dispatching chunk (${Math.min(allLines.length, batchSize)}/${allLines.length}) to terminal ${sn}:\n${currentBatch}`);
+      return new Response(`${currentBatch}\n`, {
         status: 200,
         headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       });

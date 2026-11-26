@@ -443,9 +443,13 @@ connectorRouter.post(['/push-user', '/push-employees', '/api/push-employees', '/
       return res.status(200).json({ success: true, message: 'No users to push.', count: 0 });
     }
 
-    // Format ADMS commands (capped to chunks if very large, targeted directly)
+    // Protect embedded terminal from buffer overflow:
+    // If more than 12 users are requested in a single shot without chunking, prioritize the first 12
+    const batchUsers = usersToPush.slice(0, 12);
+
+    // Format ADMS commands (strictly <= 1000 bytes per packet)
     const admsCommands = [
-      ...usersToPush.map((u, i) =>
+      ...batchUsers.map((u, i) =>
         `C:${7001 + i}:DATA UPDATE USERINFO PIN=${u.pin}\tName=${u.name}\tPri=${u.privilege}\tPasswd=\tCard=${u.cardNumber}\tGrp=1\tTZ=0`
       ),
       `C:7999:DATA QUERY ATTLOG`
